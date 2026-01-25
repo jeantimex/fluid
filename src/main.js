@@ -14,7 +14,7 @@ const stats = new Stats({ trackGPU: false, horizontal: true })
 document.body.appendChild(stats.dom)
 const uiState = { showStats: true }
 
-const spawnDensityCtrl = gui
+gui
   .add(sim.config, 'spawnDensity', 10, 300, 1)
   .name('Spawn Density')
   .onFinishChange(() => sim.reset())
