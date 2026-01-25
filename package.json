@@ -12,6 +12,7 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
-    "lil-gui": "^0.21.0"
+    "lil-gui": "^0.21.0",
+    "stats-gl": "^3.8.0"
   }
 }
