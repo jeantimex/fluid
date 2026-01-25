@@ -16,6 +16,8 @@ function createConfig() {
     interactionRadius: 2,
     interactionStrength: 90,
     velocityDisplayMax: 6.5,
+    particleRadius: 2,
+    boundsPaddingPx: 10,
     gradientResolution: 64,
     colorKeys: [
       { t: 4064 / 65535, r: 0.13363299, g: 0.34235913, b: 0.7264151 },
@@ -200,8 +202,8 @@ export function createSim(canvas) {
     config.colorKeys,
     config.gradientResolution
   )
-  const imageData = ctx.createImageData(canvas.width, canvas.height)
-  const pixelBuffer = imageData.data
+  let imageData = ctx.createImageData(canvas.width, canvas.height)
+  let pixelBuffer = imageData.data
   const state = {
     positions: spawn.positions,
     predicted: new Float32Array(spawn.positions),
@@ -225,23 +227,51 @@ export function createSim(canvas) {
     },
   }
 
-  const bounds = config.boundsSize
-  const scaleX = canvas.width / bounds.x
-  const scaleY = canvas.height / bounds.y
-  const originX = canvas.width * 0.5
-  const originY = canvas.height * 0.5
+  let baseUnitsPerPixel = null
+  let bounds = config.boundsSize
+  let scale = canvas.width / bounds.x
+  let originX = canvas.width * 0.5
+  let originY = canvas.height * 0.5
+
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect()
+    const nextWidth = Math.max(1, Math.round(rect.width))
+    const nextHeight = Math.max(1, Math.round(rect.height))
+    if (baseUnitsPerPixel === null) {
+      const refWidth = Math.max(1, rect.width)
+      baseUnitsPerPixel = config.boundsSize.x / refWidth
+    }
+    if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+      canvas.width = nextWidth
+      canvas.height = nextHeight
+      imageData = ctx.createImageData(canvas.width, canvas.height)
+      pixelBuffer = imageData.data
+    }
+
+    config.boundsSize = {
+      x: canvas.width * baseUnitsPerPixel,
+      y: canvas.height * baseUnitsPerPixel,
+    }
+    bounds = config.boundsSize
+    scale = canvas.width / bounds.x
+    originX = canvas.width * 0.5
+    originY = canvas.height * 0.5
+  }
+
+  resizeCanvas()
+  window.addEventListener('resize', resizeCanvas)
 
   function worldToCanvas(x, y) {
     return {
-      x: originX + x * scaleX,
-      y: originY - y * scaleY,
+      x: originX + x * scale,
+      y: originY - y * scale,
     }
   }
 
   function canvasToWorld(x, y) {
     return {
-      x: (x - originX) / scaleX,
-      y: (originY - y) / scaleY,
+      x: (x - originX) / scale,
+      y: (originY - y) / scale,
     }
   }
 
@@ -283,6 +313,8 @@ export function createSim(canvas) {
   let spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4))
   let spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5))
   let spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4))
+  let stampRadius = -1
+  let stampOffsets = []
 
   function refreshSettings() {
     radius = config.smoothingRadius
@@ -292,6 +324,22 @@ export function createSim(canvas) {
     spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4))
     spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5))
     spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4))
+  }
+
+  function rebuildStamp() {
+    const nextRadius = Math.max(1, Math.round(config.particleRadius))
+    if (nextRadius === stampRadius) return
+    stampRadius = nextRadius
+    const offsets = []
+    const r2 = stampRadius * stampRadius
+    for (let oy = -stampRadius; oy <= stampRadius; oy += 1) {
+      for (let ox = -stampRadius; ox <= stampRadius; ox += 1) {
+        if (ox * ox + oy * oy <= r2) {
+          offsets.push([ox, oy])
+        }
+      }
+    }
+    stampOffsets = offsets
   }
 
   function reset() {
@@ -618,8 +666,11 @@ export function createSim(canvas) {
   function handleCollisions() {
     const positions = state.positions
     const velocities = state.velocities
-    const halfX = bounds.x * 0.5
-    const halfY = bounds.y * 0.5
+    const paddingPx =
+      Math.max(1, Math.round(config.particleRadius)) + config.boundsPaddingPx
+    const padding = paddingPx / scale
+    const halfX = Math.max(0, bounds.x * 0.5 - padding)
+    const halfY = Math.max(0, bounds.y * 0.5 - padding)
     const obstacleHalfX = config.obstacleSize.x * 0.5
     const obstacleHalfY = config.obstacleSize.y * 0.5
     const hasObstacle =
@@ -714,6 +765,7 @@ export function createSim(canvas) {
     }
 
     const maxSpeed = config.velocityDisplayMax
+    rebuildStamp()
     for (let i = 0; i < state.count; i += 1) {
       const x = state.positions[i * 2]
       const y = state.positions[i * 2 + 1]
@@ -733,25 +785,24 @@ export function createSim(canvas) {
       const px = Math.round(p.x)
       const py = Math.round(p.y)
 
-      for (let oy = -1; oy <= 1; oy += 1) {
-        const yy = py + oy
+      for (let j = 0; j < stampOffsets.length; j += 1) {
+        const offset = stampOffsets[j]
+        const yy = py + offset[1]
         if (yy < 0 || yy >= height) continue
-        for (let ox = -1; ox <= 1; ox += 1) {
-          const xx = px + ox
-          if (xx < 0 || xx >= width) continue
-          const offset = (yy * width + xx) * 4
-          pixelBuffer[offset] = r
-          pixelBuffer[offset + 1] = g
-          pixelBuffer[offset + 2] = b
-          pixelBuffer[offset + 3] = 255
-        }
+        const xx = px + offset[0]
+        if (xx < 0 || xx >= width) continue
+        const idx = (yy * width + xx) * 4
+        pixelBuffer[idx] = r
+        pixelBuffer[idx + 1] = g
+        pixelBuffer[idx + 2] = b
+        pixelBuffer[idx + 3] = 255
       }
     }
 
     ctx.putImageData(imageData, 0, 0)
 
-    const halfW = (bounds.x * scaleX) / 2
-    const halfH = (bounds.y * scaleY) / 2
+    const halfW = (bounds.x * scale) / 2
+    const halfH = (bounds.y * scale) / 2
     ctx.strokeStyle = '#1b2432'
     ctx.lineWidth = 1
     ctx.strokeRect(originX - halfW, originY - halfH, halfW * 2, halfH * 2)

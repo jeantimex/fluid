@@ -3,7 +3,7 @@ import GUI from 'lil-gui'
 import { createSim } from './sim.js'
 
 document.querySelector('#app').innerHTML = `
-  <canvas id="sim-canvas" width="900" height="600" aria-label="Fluid simulation"></canvas>
+  <canvas id="sim-canvas" aria-label="Fluid simulation"></canvas>
 `
 
 const canvas = document.querySelector('#sim-canvas')
@@ -22,6 +22,8 @@ gui.add(sim.config, 'targetDensity', 0, 100, 1)
 gui.add(sim.config, 'pressureMultiplier', 0, 1000, 1)
 gui.add(sim.config, 'nearPressureMultiplier', 0, 20, 0.1)
 gui.add(sim.config, 'viscosityStrength', 0, 0.2, 0.001)
+gui.add(sim.config, 'particleRadius', 1, 6, 1)
+gui.add(sim.config, 'boundsPaddingPx', 0, 40, 1)
 gui
   .add(sim.config, 'spawnDensity', 10, 300, 1)
   .onFinishChange(() => sim.reset())
