@@ -16,7 +16,7 @@ function createConfig() {
     interactionRadius: 2,
     interactionStrength: 90,
     velocityDisplayMax: 6.5,
-    particleRadius: 2,
+    particleRadius: 3,
     boundsPaddingPx: 10,
     gradientResolution: 64,
     colorKeys: [
