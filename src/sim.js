@@ -14,6 +14,14 @@ const CONFIG = {
   obstacleCentre: { x: 0, y: 0 },
   interactionRadius: 2,
   interactionStrength: 90,
+  velocityDisplayMax: 6.5,
+  gradientResolution: 64,
+  colorKeys: [
+    { t: 4064 / 65535, r: 0.13363299, g: 0.34235913, b: 0.7264151 },
+    { t: 33191 / 65535, r: 0.2980392, g: 1, b: 0.56327766 },
+    { t: 46738 / 65535, r: 1, g: 0.9309917, b: 0 },
+    { t: 1, r: 0.96862745, g: 0.28555763, b: 0.031372573 },
+  ],
   spawnDensity: 159,
   initialVelocity: { x: 0, y: 0 },
   jitterStr: 0.03,
@@ -155,10 +163,40 @@ function derivativeSpikyPow2(dst, radius, scale) {
   return 0
 }
 
+function buildGradientLut(keys, resolution) {
+  const sorted = [...keys].sort((a, b) => a.t - b.t)
+  const lut = new Array(resolution)
+  for (let i = 0; i < resolution; i += 1) {
+    const t = resolution === 1 ? 0 : i / (resolution - 1)
+    let left = sorted[0]
+    let right = sorted[sorted.length - 1]
+    for (let k = 0; k < sorted.length - 1; k += 1) {
+      const a = sorted[k]
+      const b = sorted[k + 1]
+      if (t >= a.t && t <= b.t) {
+        left = a
+        right = b
+        break
+      }
+    }
+    const span = right.t - left.t || 1
+    const localT = (t - left.t) / span
+    const r = left.r + (right.r - left.r) * localT
+    const g = left.g + (right.g - left.g) * localT
+    const b = left.b + (right.b - left.b) * localT
+    lut[i] = { r, g, b }
+  }
+  return lut
+}
+
 export function createSim(canvas) {
   const ctx = canvas.getContext('2d')
   const spawn = createSpawnData(CONFIG)
   const count = spawn.count
+  const gradientLut = buildGradientLut(
+    CONFIG.colorKeys,
+    CONFIG.gradientResolution
+  )
   const state = {
     positions: spawn.positions,
     predicted: new Float32Array(spawn.positions),
@@ -641,12 +679,24 @@ export function createSim(canvas) {
     const halfH = (bounds.y * scale) / 2
     ctx.strokeRect(originX - halfW, originY - halfH, halfW * 2, halfH * 2)
 
-    ctx.fillStyle = '#7bdcff'
     const radius = 2
+    const maxSpeed = CONFIG.velocityDisplayMax
     for (let i = 0; i < state.count; i += 1) {
       const x = state.positions[i * 2]
       const y = state.positions[i * 2 + 1]
       const p = worldToCanvas(x, y)
+      const vx = state.velocities[i * 2]
+      const vy = state.velocities[i * 2 + 1]
+      const speed = Math.sqrt(vx * vx + vy * vy)
+      const t = Math.max(0, Math.min(1, speed / maxSpeed))
+      const idx = Math.min(
+        gradientLut.length - 1,
+        Math.floor(t * (gradientLut.length - 1))
+      )
+      const col = gradientLut[idx]
+      ctx.fillStyle = `rgb(${Math.round(col.r * 255)}, ${Math.round(
+        col.g * 255
+      )}, ${Math.round(col.b * 255)})`
       ctx.beginPath()
       ctx.arc(p.x, p.y, radius, 0, Math.PI * 2)
       ctx.fill()
