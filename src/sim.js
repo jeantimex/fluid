@@ -1,33 +1,35 @@
-const CONFIG = {
-  timeScale: 1,
-  maxTimestepFPS: 60,
-  iterationsPerFrame: 3,
-  gravity: -12,
-  collisionDamping: 0.95,
-  smoothingRadius: 0.35,
-  targetDensity: 55,
-  pressureMultiplier: 500,
-  nearPressureMultiplier: 5,
-  viscosityStrength: 0.03,
-  boundsSize: { x: 17.1, y: 9.3 },
-  obstacleSize: { x: 0, y: 0 },
-  obstacleCentre: { x: 0, y: 0 },
-  interactionRadius: 2,
-  interactionStrength: 90,
-  velocityDisplayMax: 6.5,
-  gradientResolution: 64,
-  colorKeys: [
-    { t: 4064 / 65535, r: 0.13363299, g: 0.34235913, b: 0.7264151 },
-    { t: 33191 / 65535, r: 0.2980392, g: 1, b: 0.56327766 },
-    { t: 46738 / 65535, r: 1, g: 0.9309917, b: 0 },
-    { t: 1, r: 0.96862745, g: 0.28555763, b: 0.031372573 },
-  ],
-  spawnDensity: 159,
-  initialVelocity: { x: 0, y: 0 },
-  jitterStr: 0.03,
-  spawnRegions: [
-    { position: { x: 0, y: 0.66 }, size: { x: 6.42, y: 4.39 } },
-  ],
+function createConfig() {
+  return {
+    timeScale: 1,
+    maxTimestepFPS: 60,
+    iterationsPerFrame: 2,
+    gravity: -12,
+    collisionDamping: 0.95,
+    smoothingRadius: 0.35,
+    targetDensity: 55,
+    pressureMultiplier: 500,
+    nearPressureMultiplier: 5,
+    viscosityStrength: 0.03,
+    boundsSize: { x: 17.1, y: 9.3 },
+    obstacleSize: { x: 0, y: 0 },
+    obstacleCentre: { x: 0, y: 0 },
+    interactionRadius: 2,
+    interactionStrength: 90,
+    velocityDisplayMax: 6.5,
+    gradientResolution: 64,
+    colorKeys: [
+      { t: 4064 / 65535, r: 0.13363299, g: 0.34235913, b: 0.7264151 },
+      { t: 33191 / 65535, r: 0.2980392, g: 1, b: 0.56327766 },
+      { t: 46738 / 65535, r: 1, g: 0.9309917, b: 0 },
+      { t: 1, r: 0.96862745, g: 0.28555763, b: 0.031372573 },
+    ],
+    spawnDensity: 129,
+    initialVelocity: { x: 0, y: 0 },
+    jitterStr: 0.03,
+    spawnRegions: [
+      { position: { x: 0, y: 0.66 }, size: { x: 6.42, y: 4.39 } },
+    ],
+  }
 }
 
 function createRng(seed) {
@@ -191,12 +193,15 @@ function buildGradientLut(keys, resolution) {
 
 export function createSim(canvas) {
   const ctx = canvas.getContext('2d')
-  const spawn = createSpawnData(CONFIG)
+  const config = createConfig()
+  const spawn = createSpawnData(config)
   const count = spawn.count
   const gradientLut = buildGradientLut(
-    CONFIG.colorKeys,
-    CONFIG.gradientResolution
+    config.colorKeys,
+    config.gradientResolution
   )
+  const imageData = ctx.createImageData(canvas.width, canvas.height)
+  const pixelBuffer = imageData.data
   const state = {
     positions: spawn.positions,
     predicted: new Float32Array(spawn.positions),
@@ -220,24 +225,23 @@ export function createSim(canvas) {
     },
   }
 
-  const bounds = CONFIG.boundsSize
+  const bounds = config.boundsSize
   const scaleX = canvas.width / bounds.x
   const scaleY = canvas.height / bounds.y
-  const scale = Math.min(scaleX, scaleY)
   const originX = canvas.width * 0.5
   const originY = canvas.height * 0.5
 
   function worldToCanvas(x, y) {
     return {
-      x: originX + x * scale,
-      y: originY - y * scale,
+      x: originX + x * scaleX,
+      y: originY - y * scaleY,
     }
   }
 
   function canvasToWorld(x, y) {
     return {
-      x: (x - originX) / scale,
-      y: (originY - y) / scale,
+      x: (x - originX) / scaleX,
+      y: (originY - y) / scaleY,
     }
   }
 
@@ -272,13 +276,41 @@ export function createSim(canvas) {
 
   installInputHandlers()
 
-  const radius = CONFIG.smoothingRadius
-  const radiusSq = radius * radius
-  const poly6Scale = 4 / (Math.PI * Math.pow(radius, 8))
-  const spikyPow3Scale = 10 / (Math.PI * Math.pow(radius, 5))
-  const spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4))
-  const spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5))
-  const spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4))
+  let radius = config.smoothingRadius
+  let radiusSq = radius * radius
+  let poly6Scale = 4 / (Math.PI * Math.pow(radius, 8))
+  let spikyPow3Scale = 10 / (Math.PI * Math.pow(radius, 5))
+  let spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4))
+  let spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5))
+  let spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4))
+
+  function refreshSettings() {
+    radius = config.smoothingRadius
+    radiusSq = radius * radius
+    poly6Scale = 4 / (Math.PI * Math.pow(radius, 8))
+    spikyPow3Scale = 10 / (Math.PI * Math.pow(radius, 5))
+    spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4))
+    spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5))
+    spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4))
+  }
+
+  function reset() {
+    const nextSpawn = createSpawnData(config)
+    const nextCount = nextSpawn.count
+    state.positions = nextSpawn.positions
+    state.predicted = new Float32Array(nextSpawn.positions)
+    state.velocities = nextSpawn.velocities
+    state.densities = new Float32Array(nextCount * 2)
+    state.keys = new Uint32Array(nextCount)
+    state.sortedKeys = new Uint32Array(nextCount)
+    state.indices = new Uint32Array(nextCount)
+    state.sortOffsets = new Uint32Array(nextCount)
+    state.spatialOffsets = new Uint32Array(nextCount)
+    state.positionsSorted = new Float32Array(nextCount * 2)
+    state.predictedSorted = new Float32Array(nextCount * 2)
+    state.velocitiesSorted = new Float32Array(nextCount * 2)
+    state.count = nextCount
+  }
 
   function externalForcesStep(dt) {
     const positions = state.positions
@@ -287,13 +319,13 @@ export function createSim(canvas) {
     const pull = state.input.pull
     const push = state.input.push
     const interactionStrength = push
-      ? -CONFIG.interactionStrength
+      ? -config.interactionStrength
       : pull
-        ? CONFIG.interactionStrength
+        ? config.interactionStrength
         : 0
     const inputX = state.input.worldX
     const inputY = state.input.worldY
-    const inputRadius = CONFIG.interactionRadius
+    const inputRadius = config.interactionRadius
     const inputRadiusSq = inputRadius * inputRadius
 
     for (let i = 0; i < state.count; i += 1) {
@@ -302,7 +334,7 @@ export function createSim(canvas) {
       let vy = velocities[idx + 1]
 
       let ax = 0
-      let ay = CONFIG.gravity
+      let ay = config.gravity
       if (interactionStrength !== 0) {
         const dx = inputX - positions[idx]
         const dy = inputY - positions[idx + 1]
@@ -461,8 +493,8 @@ export function createSim(canvas) {
       const nearDensity = densities[idx + 1]
       if (density <= 0) continue
 
-      const pressure = (density - CONFIG.targetDensity) * CONFIG.pressureMultiplier
-      const nearPressure = CONFIG.nearPressureMultiplier * nearDensity
+      const pressure = (density - config.targetDensity) * config.pressureMultiplier
+      const nearPressure = config.nearPressureMultiplier * nearDensity
 
       const posX = predicted[idx]
       const posY = predicted[idx + 1]
@@ -497,10 +529,10 @@ export function createSim(canvas) {
               const neighbourDensity = densities[nIdx]
               const neighbourNearDensity = densities[nIdx + 1]
               const neighbourPressure =
-                (neighbourDensity - CONFIG.targetDensity) *
-                CONFIG.pressureMultiplier
+                (neighbourDensity - config.targetDensity) *
+                config.pressureMultiplier
               const neighbourNearPressure =
-                CONFIG.nearPressureMultiplier * neighbourNearDensity
+                config.nearPressureMultiplier * neighbourNearDensity
               const sharedPressure = (pressure + neighbourPressure) * 0.5
               const sharedNearPressure =
                 (nearPressure + neighbourNearPressure) * 0.5
@@ -578,8 +610,8 @@ export function createSim(canvas) {
         }
       }
 
-      velocities[idx] += forceX * CONFIG.viscosityStrength * dt
-      velocities[idx + 1] += forceY * CONFIG.viscosityStrength * dt
+      velocities[idx] += forceX * config.viscosityStrength * dt
+      velocities[idx + 1] += forceY * config.viscosityStrength * dt
     }
   }
 
@@ -588,10 +620,10 @@ export function createSim(canvas) {
     const velocities = state.velocities
     const halfX = bounds.x * 0.5
     const halfY = bounds.y * 0.5
-    const obstacleHalfX = CONFIG.obstacleSize.x * 0.5
-    const obstacleHalfY = CONFIG.obstacleSize.y * 0.5
+    const obstacleHalfX = config.obstacleSize.x * 0.5
+    const obstacleHalfY = config.obstacleSize.y * 0.5
     const hasObstacle =
-      CONFIG.obstacleSize.x > 0 && CONFIG.obstacleSize.y > 0
+      config.obstacleSize.x > 0 && config.obstacleSize.y > 0
 
     for (let i = 0; i < state.count; i += 1) {
       const idx = i * 2
@@ -605,27 +637,27 @@ export function createSim(canvas) {
 
       if (edgeDstX <= 0) {
         px = halfX * Math.sign(px)
-        vx *= -CONFIG.collisionDamping
+        vx *= -config.collisionDamping
       }
       if (edgeDstY <= 0) {
         py = halfY * Math.sign(py)
-        vy *= -CONFIG.collisionDamping
+        vy *= -config.collisionDamping
       }
 
       if (hasObstacle) {
-        const ox = px - CONFIG.obstacleCentre.x
-        const oy = py - CONFIG.obstacleCentre.y
+        const ox = px - config.obstacleCentre.x
+        const oy = py - config.obstacleCentre.y
         const obstacleEdgeX = obstacleHalfX - Math.abs(ox)
         const obstacleEdgeY = obstacleHalfY - Math.abs(oy)
         if (obstacleEdgeX >= 0 && obstacleEdgeY >= 0) {
           if (obstacleEdgeX < obstacleEdgeY) {
             px =
-              obstacleHalfX * Math.sign(ox) + CONFIG.obstacleCentre.x
-            vx *= -CONFIG.collisionDamping
+              obstacleHalfX * Math.sign(ox) + config.obstacleCentre.x
+            vx *= -config.collisionDamping
           } else {
             py =
-              obstacleHalfY * Math.sign(oy) + CONFIG.obstacleCentre.y
-            vy *= -CONFIG.collisionDamping
+              obstacleHalfY * Math.sign(oy) + config.obstacleCentre.y
+            vy *= -config.collisionDamping
           }
         }
       }
@@ -652,13 +684,13 @@ export function createSim(canvas) {
 
   function step(dt) {
     state.lastDt = dt
-    const maxDeltaTime = CONFIG.maxTimestepFPS
-      ? 1 / CONFIG.maxTimestepFPS
+    const maxDeltaTime = config.maxTimestepFPS
+      ? 1 / config.maxTimestepFPS
       : Number.POSITIVE_INFINITY
-    const frameTime = Math.min(dt * CONFIG.timeScale, maxDeltaTime)
-    const timeStep = frameTime / CONFIG.iterationsPerFrame
+    const frameTime = Math.min(dt * config.timeScale, maxDeltaTime)
+    const timeStep = frameTime / config.iterationsPerFrame
 
-    for (let i = 0; i < CONFIG.iterationsPerFrame; i += 1) {
+    for (let i = 0; i < config.iterationsPerFrame; i += 1) {
       externalForcesStep(timeStep)
       runSpatialHash()
       calculateDensities()
@@ -669,18 +701,19 @@ export function createSim(canvas) {
   }
 
   function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.fillStyle = '#0a0f18'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    const width = canvas.width
+    const height = canvas.height
+    pixelBuffer.fill(0)
 
-    ctx.strokeStyle = '#1b2432'
-    ctx.lineWidth = 1
-    const halfW = (bounds.x * scale) / 2
-    const halfH = (bounds.y * scale) / 2
-    ctx.strokeRect(originX - halfW, originY - halfH, halfW * 2, halfH * 2)
+    const bg = [5, 7, 11]
+    for (let i = 0; i < pixelBuffer.length; i += 4) {
+      pixelBuffer[i] = bg[0]
+      pixelBuffer[i + 1] = bg[1]
+      pixelBuffer[i + 2] = bg[2]
+      pixelBuffer[i + 3] = 255
+    }
 
-    const radius = 2
-    const maxSpeed = CONFIG.velocityDisplayMax
+    const maxSpeed = config.velocityDisplayMax
     for (let i = 0; i < state.count; i += 1) {
       const x = state.positions[i * 2]
       const y = state.positions[i * 2 + 1]
@@ -694,14 +727,35 @@ export function createSim(canvas) {
         Math.floor(t * (gradientLut.length - 1))
       )
       const col = gradientLut[idx]
-      ctx.fillStyle = `rgb(${Math.round(col.r * 255)}, ${Math.round(
-        col.g * 255
-      )}, ${Math.round(col.b * 255)})`
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2)
-      ctx.fill()
+      const r = Math.round(col.r * 255)
+      const g = Math.round(col.g * 255)
+      const b = Math.round(col.b * 255)
+      const px = Math.round(p.x)
+      const py = Math.round(p.y)
+
+      for (let oy = -1; oy <= 1; oy += 1) {
+        const yy = py + oy
+        if (yy < 0 || yy >= height) continue
+        for (let ox = -1; ox <= 1; ox += 1) {
+          const xx = px + ox
+          if (xx < 0 || xx >= width) continue
+          const offset = (yy * width + xx) * 4
+          pixelBuffer[offset] = r
+          pixelBuffer[offset + 1] = g
+          pixelBuffer[offset + 2] = b
+          pixelBuffer[offset + 3] = 255
+        }
+      }
     }
+
+    ctx.putImageData(imageData, 0, 0)
+
+    const halfW = (bounds.x * scaleX) / 2
+    const halfH = (bounds.y * scaleY) / 2
+    ctx.strokeStyle = '#1b2432'
+    ctx.lineWidth = 1
+    ctx.strokeRect(originX - halfW, originY - halfH, halfW * 2, halfH * 2)
   }
 
-  return { step, draw, state }
+  return { step, draw, state, config, refreshSettings, reset }
 }
