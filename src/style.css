@@ -1,0 +1,20 @@
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d0f14;
+}
+
+#app {
+  padding: 24px;
+}
+
+canvas {
+  display: block;
+  width: 900px;
+  height: 600px;
+  border: 1px solid #1e2430;
+  background: #05070b;
+}
