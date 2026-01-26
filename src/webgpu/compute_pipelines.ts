@@ -95,7 +95,10 @@ export class ComputePipelines {
     this.clearOffsets = this.createPipeline(sortShader, 'clearOffsets');
     this.countOffsets = this.createPipeline(sortShader, 'countOffsets');
     this.scatter = this.createPipeline(scatterShader, 'prefixAndScatter');
-    this.spatialOffsets = this.createPipeline(spatialOffsetsShader, 'buildOffsets');
+    this.spatialOffsets = this.createPipeline(
+      spatialOffsetsShader,
+      'buildOffsets'
+    );
     this.density = this.createPipeline(densityShader, 'main');
     this.pressure = this.createPipeline(pressureShader, 'main');
     this.viscosity = this.createPipeline(viscosityShader, 'main');

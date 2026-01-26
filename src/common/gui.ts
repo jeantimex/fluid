@@ -82,7 +82,9 @@ export function setupGui(
     .add(config, 'viscosityStrength', 0, 0.2, 0.001)
     .name('Viscosity Strength');
 
-  particlesFolder.add(config, 'particleRadius', 1, 6, 1).name('Particle Radius');
+  particlesFolder
+    .add(config, 'particleRadius', 1, 6, 1)
+    .name('Particle Radius');
 
   // === Obstacle Folder ===
   const obstacleFolder = gui.addFolder('Obstacle');
@@ -90,14 +92,20 @@ export function setupGui(
 
   obstacleFolder.add(config.obstacleSize, 'x', 0, 20, 0.01).name('Size X');
   obstacleFolder.add(config.obstacleSize, 'y', 0, 20, 0.01).name('Size Y');
-  obstacleFolder.add(config.obstacleCentre, 'x', -10, 10, 0.01).name('Center X');
-  obstacleFolder.add(config.obstacleCentre, 'y', -10, 10, 0.01).name('Center Y');
+  obstacleFolder
+    .add(config.obstacleCentre, 'x', -10, 10, 0.01)
+    .name('Center X');
+  obstacleFolder
+    .add(config.obstacleCentre, 'y', -10, 10, 0.01)
+    .name('Center Y');
 
   // === Interaction Folder ===
   const interactionFolder = gui.addFolder('Interaction');
   interactionFolder.close();
 
-  interactionFolder.add(config, 'interactionRadius', 0, 10, 0.01).name('Radius');
+  interactionFolder
+    .add(config, 'interactionRadius', 0, 10, 0.01)
+    .name('Radius');
   interactionFolder
     .add(config, 'interactionStrength', 0, 200, 1)
     .name('Strength');

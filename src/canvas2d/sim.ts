@@ -13,7 +13,13 @@
  * - Makes the API simple and explicit
  */
 
-import type { InputState, Sim, SimState, SpawnData, Vec2 } from '../common/types.ts';
+import type {
+  InputState,
+  Sim,
+  SimState,
+  SpawnData,
+  Vec2,
+} from '../common/types.ts';
 import { createConfig } from '../common/config.ts';
 import { buildGradientLut } from '../common/kernels.ts';
 import { createPhysics } from '../common/physics.ts';

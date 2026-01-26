@@ -6,7 +6,11 @@ import './style.css';
 import { createConfig } from '../common/config.ts';
 import { setupGui } from '../common/gui.ts';
 import { FluidSimulation } from './fluid_simulation.ts';
-import { initWebGPU, configureContext, WebGPUInitError } from './webgpu_utils.ts';
+import {
+  initWebGPU,
+  configureContext,
+  WebGPUInitError,
+} from './webgpu_utils.ts';
 import type { SimConfig, InputState } from '../common/types.ts';
 
 // ============================================================================
@@ -17,7 +21,8 @@ import type { SimConfig, InputState } from '../common/types.ts';
  * Creates a canvas element inside the app container.
  */
 function createCanvas(app: HTMLDivElement): HTMLCanvasElement {
-  app.innerHTML = '<canvas id="sim-canvas" aria-label="Fluid simulation"></canvas>';
+  app.innerHTML =
+    '<canvas id="sim-canvas" aria-label="Fluid simulation"></canvas>';
   const canvas = document.querySelector<HTMLCanvasElement>('#sim-canvas');
   if (!canvas) {
     throw new Error('Failed to create canvas element');
@@ -57,7 +62,12 @@ function setupInputHandlers(
   const updatePointer = (event: MouseEvent): void => {
     const input = getInput();
     if (!input) return;
-    const world = canvasToWorld(canvas, event.clientX, event.clientY, getScale());
+    const world = canvasToWorld(
+      canvas,
+      event.clientX,
+      event.clientY,
+      getScale()
+    );
     input.worldX = world.x;
     input.worldY = world.y;
   };
@@ -160,7 +170,7 @@ async function main(): Promise<void> {
     ({ device, context, format } = await initWebGPU(canvas));
   } catch (error) {
     if (error instanceof WebGPUInitError) {
-      app.innerHTML = `<p>${error.message}</p>`;
+      app!.innerHTML = `<p>${error.message}</p>`;
       return;
     }
     throw error;

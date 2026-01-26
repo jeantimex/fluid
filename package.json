@@ -10,6 +10,7 @@
     "format": "prettier --write ."
   },
   "devDependencies": {
+    "@webgpu/types": "^0.1.69",
     "prettier": "^3.8.1",
     "typescript": "^5.7.0",
     "vite": "^7.2.4"

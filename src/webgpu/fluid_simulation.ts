@@ -95,7 +95,9 @@ export class FluidSimulation {
     const spawn = createSpawnData(this.config);
     this.state = this.createStateFromSpawn(spawn);
     this.buffers = new SimulationBuffers(this.device, spawn);
-    this.physics = createPhysics(this.state, this.config, () => this.getScale());
+    this.physics = createPhysics(this.state, this.config, () =>
+      this.getScale()
+    );
 
     // Recreate bind groups
     this.pipelines.createBindGroups(this.buffers);
@@ -106,7 +108,11 @@ export class FluidSimulation {
     this.physics.refreshSettings();
   }
 
-  private createStateFromSpawn(spawn: { positions: Float32Array; velocities: Float32Array; count: number }): SimState {
+  private createStateFromSpawn(spawn: {
+    positions: Float32Array;
+    velocities: Float32Array;
+    count: number;
+  }): SimState {
     return {
       positions: spawn.positions,
       predicted: new Float32Array(spawn.positions),
@@ -139,11 +145,13 @@ export class FluidSimulation {
         : Number.POSITIVE_INFINITY;
       const frameTime = Math.min(dt * config.timeScale, maxDeltaTime);
       const timeStep = frameTime / config.iterationsPerFrame;
-      const paddingPx = Math.max(1, Math.round(config.particleRadius)) + config.boundsPaddingPx;
+      const paddingPx =
+        Math.max(1, Math.round(config.particleRadius)) + config.boundsPaddingPx;
       const padding = paddingPx / this.getScale();
       const halfX = Math.max(0, config.boundsSize.x * 0.5 - padding);
       const halfY = Math.max(0, config.boundsSize.y * 0.5 - padding);
-      const hasObstacle = config.obstacleSize.x > 0 && config.obstacleSize.y > 0;
+      const hasObstacle =
+        config.obstacleSize.x > 0 && config.obstacleSize.y > 0;
 
       for (let i = 0; i < config.iterationsPerFrame; i++) {
         let shouldReadbackDensities = false;
@@ -160,7 +168,11 @@ export class FluidSimulation {
         this.computeData[3] = interactionStrength;
         this.computeData[4] = state.input.worldX;
         this.computeData[5] = state.input.worldY;
-        device.queue.writeBuffer(pipelines.uniformBuffers.compute, 0, this.computeData);
+        device.queue.writeBuffer(
+          pipelines.uniformBuffers.compute,
+          0,
+          this.computeData
+        );
 
         const encoder = device.createCommandEncoder();
 
@@ -168,7 +180,9 @@ export class FluidSimulation {
         const computePass = encoder.beginComputePass();
         computePass.setPipeline(pipelines.externalForces);
         computePass.setBindGroup(0, pipelines.externalForcesBindGroup);
-        computePass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
+        computePass.dispatchWorkgroups(
+          Math.ceil(buffers.particleCount / this.workgroupSize)
+        );
         computePass.end();
 
         // CPU spatial hash fallback
@@ -180,9 +194,21 @@ export class FluidSimulation {
         // Density calculation
         if (options.useGpuDensity) {
           if (options.useCpuSpatialDataForGpuDensity) {
-            device.queue.writeBuffer(buffers.predicted, 0, state.predicted);
-            device.queue.writeBuffer(buffers.sortedKeys, 0, state.sortedKeys);
-            device.queue.writeBuffer(buffers.spatialOffsets, 0, state.spatialOffsets);
+            device.queue.writeBuffer(
+              buffers.predicted,
+              0,
+              state.predicted as Float32Array<ArrayBuffer>
+            );
+            device.queue.writeBuffer(
+              buffers.sortedKeys,
+              0,
+              state.sortedKeys as Uint32Array<ArrayBuffer>
+            );
+            device.queue.writeBuffer(
+              buffers.spatialOffsets,
+              0,
+              state.spatialOffsets as Uint32Array<ArrayBuffer>
+            );
           } else if (options.useGpuSpatialHash) {
             this.dispatchSpatialHash(encoder);
           }
@@ -191,13 +217,17 @@ export class FluidSimulation {
           const densityPass = encoder.beginComputePass();
           densityPass.setPipeline(pipelines.density);
           densityPass.setBindGroup(0, pipelines.densityBindGroup);
-          densityPass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
+          densityPass.dispatchWorkgroups(
+            Math.ceil(buffers.particleCount / this.workgroupSize)
+          );
           densityPass.end();
 
           if (options.useGpuDensityReadback) {
             encoder.copyBufferToBuffer(
-              buffers.densities, 0,
-              buffers.densityReadback, 0,
+              buffers.densities,
+              0,
+              buffers.densityReadback,
+              0,
               buffers.particleCount * 2 * 4
             );
             shouldReadbackDensities = true;
@@ -205,7 +235,11 @@ export class FluidSimulation {
         } else {
           this.physics.calculateDensities();
           if (options.useGpuPressure) {
-            device.queue.writeBuffer(buffers.densities, 0, state.densities);
+            device.queue.writeBuffer(
+              buffers.densities,
+              0,
+              state.densities as Float32Array<ArrayBuffer>
+            );
           }
         }
 
@@ -215,7 +249,9 @@ export class FluidSimulation {
           const pressurePass = encoder.beginComputePass();
           pressurePass.setPipeline(pipelines.pressure);
           pressurePass.setBindGroup(0, pipelines.pressureBindGroup);
-          pressurePass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
+          pressurePass.dispatchWorkgroups(
+            Math.ceil(buffers.particleCount / this.workgroupSize)
+          );
           pressurePass.end();
         } else {
           this.physics.calculatePressure(timeStep);
@@ -227,7 +263,9 @@ export class FluidSimulation {
           const viscosityPass = encoder.beginComputePass();
           viscosityPass.setPipeline(pipelines.viscosity);
           viscosityPass.setBindGroup(0, pipelines.viscosityBindGroup);
-          viscosityPass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
+          viscosityPass.dispatchWorkgroups(
+            Math.ceil(buffers.particleCount / this.workgroupSize)
+          );
           viscosityPass.end();
         } else {
           this.physics.calculateViscosity(timeStep);
@@ -238,14 +276,18 @@ export class FluidSimulation {
         const integratePass = encoder.beginComputePass();
         integratePass.setPipeline(pipelines.integrate);
         integratePass.setBindGroup(0, pipelines.integrateBindGroup);
-        integratePass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
+        integratePass.dispatchWorkgroups(
+          Math.ceil(buffers.particleCount / this.workgroupSize)
+        );
         integratePass.end();
 
         device.queue.submit([encoder.finish()]);
 
         if (shouldReadbackDensities) {
           await buffers.densityReadback.mapAsync(GPUMapMode.READ);
-          const mapped = new Float32Array(buffers.densityReadback.getMappedRange());
+          const mapped = new Float32Array(
+            buffers.densityReadback.getMappedRange()
+          );
           state.densities.set(mapped);
           buffers.densityReadback.unmap();
         }
@@ -256,9 +298,21 @@ export class FluidSimulation {
 
     // Sync CPU data to GPU if not using GPU external forces
     if (!options.useGpuExternalForces) {
-      device.queue.writeBuffer(buffers.positions, 0, state.positions);
-      device.queue.writeBuffer(buffers.velocities, 0, state.velocities);
-      device.queue.writeBuffer(buffers.predicted, 0, state.predicted);
+      device.queue.writeBuffer(
+        buffers.positions,
+        0,
+        state.positions as Float32Array<ArrayBuffer>
+      );
+      device.queue.writeBuffer(
+        buffers.velocities,
+        0,
+        state.velocities as Float32Array<ArrayBuffer>
+      );
+      device.queue.writeBuffer(
+        buffers.predicted,
+        0,
+        state.predicted as Float32Array<ArrayBuffer>
+      );
     }
   }
 
@@ -269,10 +323,18 @@ export class FluidSimulation {
     // Update uniforms
     this.hashParamsData[0] = this.config.smoothingRadius;
     this.hashParamsData[1] = buffers.particleCount;
-    this.device.queue.writeBuffer(pipelines.uniformBuffers.hash, 0, this.hashParamsData);
+    this.device.queue.writeBuffer(
+      pipelines.uniformBuffers.hash,
+      0,
+      this.hashParamsData
+    );
 
     this.sortParamsData[0] = buffers.particleCount;
-    this.device.queue.writeBuffer(pipelines.uniformBuffers.sort, 0, this.sortParamsData);
+    this.device.queue.writeBuffer(
+      pipelines.uniformBuffers.sort,
+      0,
+      this.sortParamsData
+    );
 
     // Hash pass
     const hashPass = encoder.beginComputePass();
@@ -318,7 +380,11 @@ export class FluidSimulation {
     this.densityParamsData[1] = spikyPow2Scale;
     this.densityParamsData[2] = spikyPow3Scale;
     this.densityParamsData[3] = this.buffers.particleCount;
-    this.device.queue.writeBuffer(this.pipelines.uniformBuffers.density, 0, this.densityParamsData);
+    this.device.queue.writeBuffer(
+      this.pipelines.uniformBuffers.density,
+      0,
+      this.densityParamsData
+    );
   }
 
   private updatePressureUniforms(timeStep: number): void {
@@ -333,7 +399,11 @@ export class FluidSimulation {
     this.pressureParamsData[5] = spikyPow2DerivScale;
     this.pressureParamsData[6] = spikyPow3DerivScale;
     this.pressureParamsData[7] = this.buffers.particleCount;
-    this.device.queue.writeBuffer(this.pipelines.uniformBuffers.pressure, 0, this.pressureParamsData);
+    this.device.queue.writeBuffer(
+      this.pipelines.uniformBuffers.pressure,
+      0,
+      this.pressureParamsData
+    );
   }
 
   private updateViscosityUniforms(timeStep: number): void {
@@ -344,7 +414,11 @@ export class FluidSimulation {
     this.viscosityParamsData[2] = radius;
     this.viscosityParamsData[3] = poly6Scale;
     this.viscosityParamsData[4] = this.buffers.particleCount;
-    this.device.queue.writeBuffer(this.pipelines.uniformBuffers.viscosity, 0, this.viscosityParamsData);
+    this.device.queue.writeBuffer(
+      this.pipelines.uniformBuffers.viscosity,
+      0,
+      this.viscosityParamsData
+    );
   }
 
   private updateIntegrateUniforms(
@@ -365,13 +439,26 @@ export class FluidSimulation {
     this.integrateParamsData[9] = this.config.obstacleCentre.y;
     this.integrateParamsData[10] = this.config.obstacleSize.x * 0.5;
     this.integrateParamsData[11] = this.config.obstacleSize.y * 0.5;
-    this.device.queue.writeBuffer(this.pipelines.uniformBuffers.integrate, 0, this.integrateParamsData);
+    this.device.queue.writeBuffer(
+      this.pipelines.uniformBuffers.integrate,
+      0,
+      this.integrateParamsData
+    );
   }
 
   render(): void {
-    this.renderer.updateUniforms(this.config, this.canvas.width, this.canvas.height);
+    this.renderer.updateUniforms(
+      this.config,
+      this.canvas.width,
+      this.canvas.height
+    );
     const encoder = this.device.createCommandEncoder();
-    this.renderer.render(encoder, this.context, this.config, this.buffers.particleCount);
+    this.renderer.render(
+      encoder,
+      this.context,
+      this.config,
+      this.buffers.particleCount
+    );
     this.device.queue.submit([encoder.finish()]);
   }
 }

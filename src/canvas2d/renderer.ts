@@ -16,7 +16,13 @@
  * - Scale factor converts between them, maintaining aspect ratio
  */
 
-import type { RGB, Renderer, SimConfig, SimState, Vec2 } from '../common/types.ts';
+import type {
+  RGB,
+  Renderer,
+  SimConfig,
+  SimState,
+  Vec2,
+} from '../common/types.ts';
 
 /**
  * Creates a renderer for the fluid simulation.

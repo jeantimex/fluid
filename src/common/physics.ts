@@ -259,7 +259,8 @@ export function createPhysics(
     for (let i = 0; i < state.count; i += 1) {
       const idx = i * 2;
       predicted[idx] = positions[idx] + velocities[idx] * predictionFactor;
-      predicted[idx + 1] = positions[idx + 1] + velocities[idx + 1] * predictionFactor;
+      predicted[idx + 1] =
+        positions[idx + 1] + velocities[idx + 1] * predictionFactor;
     }
   }
 

@@ -3,7 +3,7 @@
  */
 
 import type { SimConfig } from '../common/types.ts';
-import type { SimulationBuffers } from './SimulationBuffers.ts';
+import type { SimulationBuffers } from './simulation_buffers.ts';
 import { buildGradientLut } from '../common/kernels.ts';
 
 import particleShader from './shaders/particle.wgsl?raw';
@@ -11,7 +11,6 @@ import lineShader from './shaders/line.wgsl?raw';
 
 export class Renderer {
   private device: GPUDevice;
-  private format: GPUTextureFormat;
 
   // Pipelines
   private particlePipeline: GPURenderPipeline;
@@ -37,7 +36,6 @@ export class Renderer {
 
   constructor(device: GPUDevice, format: GPUTextureFormat, config: SimConfig) {
     this.device = device;
-    this.format = format;
 
     // Create uniform buffer
     this.uniformBuffer = device.createBuffer({
@@ -46,7 +44,10 @@ export class Renderer {
     });
 
     // Create gradient buffer
-    const gradientLut = buildGradientLut(config.colorKeys, config.gradientResolution);
+    const gradientLut = buildGradientLut(
+      config.colorKeys,
+      config.gradientResolution
+    );
     const gradientData = new Float32Array(config.gradientResolution * 4);
     for (let i = 0; i < gradientLut.length; i++) {
       gradientData[i * 4] = gradientLut[i].r;
@@ -133,7 +134,11 @@ export class Renderer {
     });
   }
 
-  updateUniforms(config: SimConfig, canvasWidth: number, canvasHeight: number): void {
+  updateUniforms(
+    config: SimConfig,
+    canvasWidth: number,
+    canvasHeight: number
+  ): void {
     this.uniformData[0] = config.boundsSize.x;
     this.uniformData[1] = config.boundsSize.y;
     this.uniformData[2] = canvasWidth;
@@ -154,8 +159,14 @@ export class Renderer {
     // Build line vertices
     let lineVertexCount = 0;
     const pushLine = (
-      x0: number, y0: number, x1: number, y1: number,
-      r: number, g: number, b: number, a: number
+      x0: number,
+      y0: number,
+      x1: number,
+      y1: number,
+      r: number,
+      g: number,
+      b: number,
+      a: number
     ): void => {
       const base = lineVertexCount * 6;
       this.lineVertexData[base] = x0;
@@ -177,10 +188,46 @@ export class Renderer {
     const halfX = config.boundsSize.x * 0.5;
     const halfY = config.boundsSize.y * 0.5;
     const boundsCol = { r: 0x1b / 255, g: 0x24 / 255, b: 0x32 / 255, a: 1 };
-    pushLine(-halfX, -halfY, halfX, -halfY, boundsCol.r, boundsCol.g, boundsCol.b, boundsCol.a);
-    pushLine(halfX, -halfY, halfX, halfY, boundsCol.r, boundsCol.g, boundsCol.b, boundsCol.a);
-    pushLine(halfX, halfY, -halfX, halfY, boundsCol.r, boundsCol.g, boundsCol.b, boundsCol.a);
-    pushLine(-halfX, halfY, -halfX, -halfY, boundsCol.r, boundsCol.g, boundsCol.b, boundsCol.a);
+    pushLine(
+      -halfX,
+      -halfY,
+      halfX,
+      -halfY,
+      boundsCol.r,
+      boundsCol.g,
+      boundsCol.b,
+      boundsCol.a
+    );
+    pushLine(
+      halfX,
+      -halfY,
+      halfX,
+      halfY,
+      boundsCol.r,
+      boundsCol.g,
+      boundsCol.b,
+      boundsCol.a
+    );
+    pushLine(
+      halfX,
+      halfY,
+      -halfX,
+      halfY,
+      boundsCol.r,
+      boundsCol.g,
+      boundsCol.b,
+      boundsCol.a
+    );
+    pushLine(
+      -halfX,
+      halfY,
+      -halfX,
+      -halfY,
+      boundsCol.r,
+      boundsCol.g,
+      boundsCol.b,
+      boundsCol.a
+    );
 
     // Draw obstacle
     if (config.obstacleSize.x > 0 && config.obstacleSize.y > 0) {
@@ -189,21 +236,56 @@ export class Renderer {
       const cx = config.obstacleCentre.x;
       const cy = config.obstacleCentre.y;
       const obstacleCol = { r: 0x36 / 255, g: 0x51 / 255, b: 0x6d / 255, a: 1 };
-      pushLine(cx - obsHalfX, cy - obsHalfY, cx + obsHalfX, cy - obsHalfY,
-        obstacleCol.r, obstacleCol.g, obstacleCol.b, obstacleCol.a);
-      pushLine(cx + obsHalfX, cy - obsHalfY, cx + obsHalfX, cy + obsHalfY,
-        obstacleCol.r, obstacleCol.g, obstacleCol.b, obstacleCol.a);
-      pushLine(cx + obsHalfX, cy + obsHalfY, cx - obsHalfX, cy + obsHalfY,
-        obstacleCol.r, obstacleCol.g, obstacleCol.b, obstacleCol.a);
-      pushLine(cx - obsHalfX, cy + obsHalfY, cx - obsHalfX, cy - obsHalfY,
-        obstacleCol.r, obstacleCol.g, obstacleCol.b, obstacleCol.a);
+      pushLine(
+        cx - obsHalfX,
+        cy - obsHalfY,
+        cx + obsHalfX,
+        cy - obsHalfY,
+        obstacleCol.r,
+        obstacleCol.g,
+        obstacleCol.b,
+        obstacleCol.a
+      );
+      pushLine(
+        cx + obsHalfX,
+        cy - obsHalfY,
+        cx + obsHalfX,
+        cy + obsHalfY,
+        obstacleCol.r,
+        obstacleCol.g,
+        obstacleCol.b,
+        obstacleCol.a
+      );
+      pushLine(
+        cx + obsHalfX,
+        cy + obsHalfY,
+        cx - obsHalfX,
+        cy + obsHalfY,
+        obstacleCol.r,
+        obstacleCol.g,
+        obstacleCol.b,
+        obstacleCol.a
+      );
+      pushLine(
+        cx - obsHalfX,
+        cy + obsHalfY,
+        cx - obsHalfX,
+        cy - obsHalfY,
+        obstacleCol.r,
+        obstacleCol.g,
+        obstacleCol.b,
+        obstacleCol.a
+      );
     }
 
     // Upload line vertices
     this.device.queue.writeBuffer(
       this.lineVertexBuffer,
       0,
-      this.lineVertexData.subarray(0, lineVertexCount * 6)
+      this.lineVertexData.subarray(
+        0,
+        lineVertexCount * 6
+      ) as Float32Array<ArrayBuffer>
     );
 
     // Begin render pass

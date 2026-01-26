@@ -22,7 +22,9 @@ export class WebGPUInitError extends Error {
  * @returns WebGPU device, context, and texture format
  * @throws WebGPUInitError if WebGPU is not supported or initialization fails
  */
-export async function initWebGPU(canvas: HTMLCanvasElement): Promise<WebGPUContext> {
+export async function initWebGPU(
+  canvas: HTMLCanvasElement
+): Promise<WebGPUContext> {
   if (!navigator.gpu) {
     throw new WebGPUInitError('WebGPU is not supported in this browser.');
   }
