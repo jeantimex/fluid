@@ -107,6 +107,11 @@ async function initWebGPU(): Promise<void> {
   const spawn = createSpawnData(config);
   const particleCount = spawn.count;
 
+  const uniformBuffer = device.createBuffer({
+    size: 32,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
   const createBufferFromArray = (
     data: Float32Array | Uint32Array,
     usage: GPUBufferUsageFlags
@@ -185,8 +190,105 @@ async function initWebGPU(): Promise<void> {
     GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
   );
 
+  const gpuBuffers = {
+    predictedBuffer,
+    velocitiesBuffer,
+    densitiesBuffer,
+    keysBuffer,
+    sortedKeysBuffer,
+    indicesBuffer,
+    sortOffsetsBuffer,
+    spatialOffsetsBuffer,
+    positionsSortedBuffer,
+    predictedSortedBuffer,
+    velocitiesSortedBuffer,
+  };
+  void gpuBuffers;
+
+  const shaderModule = device.createShaderModule({
+    code: `
+struct SimUniforms {
+  boundsSize: vec2<f32>,
+  canvasSize: vec2<f32>,
+  particleRadius: f32,
+  pad0: f32,
+  pad1: vec2<f32>,
+};
+
+@group(0) @binding(0) var<storage, read> positions: array<vec2<f32>>;
+@group(0) @binding(1) var<uniform> uniforms: SimUniforms;
+
+struct VertexOut {
+  @builtin(position) position: vec4<f32>,
+};
+
+@vertex
+fn vs_main(
+  @builtin(vertex_index) vertexIndex: u32,
+  @builtin(instance_index) instanceIndex: u32
+) -> VertexOut {
+  var quad = array<vec2<f32>, 6>(
+    vec2<f32>(-1.0, -1.0),
+    vec2<f32>(1.0, -1.0),
+    vec2<f32>(1.0, 1.0),
+    vec2<f32>(-1.0, -1.0),
+    vec2<f32>(1.0, 1.0),
+    vec2<f32>(-1.0, 1.0)
+  );
+
+  let pos = positions[instanceIndex];
+  let halfBounds = uniforms.boundsSize * 0.5;
+  let ndc = vec2<f32>(pos.x / halfBounds.x, pos.y / halfBounds.y);
+  let radiusNdc = vec2<f32>(
+    uniforms.particleRadius / uniforms.canvasSize.x * 2.0,
+    uniforms.particleRadius / uniforms.canvasSize.y * 2.0
+  );
+  let offset = quad[vertexIndex] * radiusNdc;
+
+  var out: VertexOut;
+  out.position = vec4<f32>(ndc + offset, 0.0, 1.0);
+  return out;
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4<f32> {
+  return vec4<f32>(0.2, 0.7, 1.0, 1.0);
+}
+`,
+  });
+
+  const pipeline = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: {
+      module: shaderModule,
+      entryPoint: 'vs_main',
+    },
+    fragment: {
+      module: shaderModule,
+      entryPoint: 'fs_main',
+      targets: [{ format }],
+    },
+    primitive: {
+      topology: 'triangle-list',
+    },
+  });
+
+  const bindGroup = device.createBindGroup({
+    layout: pipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: positionsBuffer } },
+      { binding: 1, resource: { buffer: uniformBuffer } },
+    ],
+  });
+
+  let baseUnitsPerPixel: number | null = null;
+  const uniformData = new Float32Array(8);
+
   const resize = (): void => {
     const rect = canvas.getBoundingClientRect();
+    if (baseUnitsPerPixel === null) {
+      baseUnitsPerPixel = config.boundsSize.x / Math.max(1, rect.width);
+    }
     const dpr = window.devicePixelRatio || 1;
     const nextWidth = Math.max(1, Math.round(rect.width * dpr));
     const nextHeight = Math.max(1, Math.round(rect.height * dpr));
@@ -194,6 +296,10 @@ async function initWebGPU(): Promise<void> {
     if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
       canvas.width = nextWidth;
       canvas.height = nextHeight;
+      config.boundsSize = {
+        x: (canvas.width / dpr) * baseUnitsPerPixel,
+        y: (canvas.height / dpr) * baseUnitsPerPixel,
+      };
       context.configure({
         device,
         format,
@@ -209,6 +315,15 @@ async function initWebGPU(): Promise<void> {
 
   const frame = (): void => {
     stats.begin();
+    uniformData[0] = config.boundsSize.x;
+    uniformData[1] = config.boundsSize.y;
+    uniformData[2] = canvas.width;
+    uniformData[3] = canvas.height;
+    uniformData[4] = config.particleRadius;
+    uniformData[5] = 0;
+    uniformData[6] = 0;
+    uniformData[7] = 0;
+    device.queue.writeBuffer(uniformBuffer, 0, uniformData);
     const encoder = device.createCommandEncoder();
     const view = context.getCurrentTexture().createView();
     const pass = encoder.beginRenderPass({
@@ -221,6 +336,9 @@ async function initWebGPU(): Promise<void> {
         },
       ],
     });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(6, particleCount);
     pass.end();
     device.queue.submit([encoder.finish()]);
     stats.end();
