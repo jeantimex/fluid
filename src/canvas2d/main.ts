@@ -14,9 +14,8 @@
  */
 
 import './style.css';
-import GUI from 'lil-gui';
-import Stats from 'stats-gl';
 import { createSim } from './sim.ts';
+import { setupGui } from '../common/gui.ts';
 
 // === DOM Setup ===
 // Create canvas element inside the #app container
@@ -29,115 +28,14 @@ const canvas = document.querySelector<HTMLCanvasElement>('#sim-canvas')!;
 const sim = createSim(canvas);
 
 // === GUI Setup ===
-// lil-gui provides a lightweight control panel for adjusting simulation parameters
-const gui = new GUI({ title: 'Simulation Settings' });
-
-// stats-gl provides FPS and performance monitoring
-const stats = new Stats({ trackGPU: false, horizontal: true });
-stats.dom.style.display = 'none';
-document.body.appendChild(stats.dom);
-
-// UI state for controlling stats visibility
-const uiState = { showStats: false };
-
-// === Parameter Controls ===
-// Each control binds to a config property and optionally triggers callbacks
-
-const particlesFolder = gui.addFolder('Particles');
-
-// Spawn density control - requires simulation reset to take effect
-particlesFolder
-  .add(sim.config, 'spawnDensity', 10, 300, 1)
-  .name('Spawn Density')
-  .onFinishChange(() => sim.reset()); // Reset when slider is released
-
-// Gravity control - affects simulation immediately
-particlesFolder.add(sim.config, 'gravity', -30, 30, 1).name('Gravity');
-
-// Collision damping - how much energy is lost on boundary collision
-particlesFolder
-  .add(sim.config, 'collisionDamping', 0, 1, 0.01)
-  .name('Collision Damping');
-
-// Smoothing radius - requires kernel recalculation
-const smoothingCtrl = particlesFolder
-  .add(sim.config, 'smoothingRadius', 0.05, 3, 0.01)
-  .name('Smoothing Radius')
-  .onChange(sim.refreshSettings); // Recalculate kernel constants
-
-// Target density - rest density the fluid tries to maintain
-const targetDensityCtrl = particlesFolder
-  .add(sim.config, 'targetDensity', 0, 3000, 1)
-  .name('Target Density');
-
-// Pressure multiplier - stiffness of the fluid
-const pressureCtrl = particlesFolder
-  .add(sim.config, 'pressureMultiplier', 0, 2000, 1)
-  .name('Pressure Multiplier');
-
-// Near pressure - close-range repulsion for surface tension
-const nearPressureCtrl = particlesFolder
-  .add(sim.config, 'nearPressureMultiplier', 0, 40, 0.1)
-  .name('Near Pressure Multiplier');
-
-// Viscosity - internal friction (higher = thicker fluid)
-const viscosityCtrl = particlesFolder
-  .add(sim.config, 'viscosityStrength', 0, 0.2, 0.001)
-  .name('Viscosity Strength');
-
-// Particle radius - visual size, also triggers parameter scaling
-const particleRadiusCtrl = particlesFolder
-  .add(sim.config, 'particleRadius', 1, 6, 1)
-  .name('Particle Radius');
-
-// Particle radius changes are visual-only (no auto-scaling of sim params).
-
-// Obstacle controls
-const obstacleFolder = gui.addFolder('Obstacle');
-obstacleFolder.close();
-
-obstacleFolder.add(sim.config.obstacleSize, 'x', 0, 20, 0.01).name('Size X');
-obstacleFolder.add(sim.config.obstacleSize, 'y', 0, 20, 0.01).name('Size Y');
-obstacleFolder
-  .add(sim.config.obstacleCentre, 'x', -10, 10, 0.01)
-  .name('Center X');
-obstacleFolder
-  .add(sim.config.obstacleCentre, 'y', -10, 10, 0.01)
-  .name('Center Y');
-
-const interactionFolder = gui.addFolder('Interaction');
-interactionFolder.close();
-
-interactionFolder
-  .add(sim.config, 'interactionRadius', 0, 10, 0.01)
-  .name('Radius');
-interactionFolder
-  .add(sim.config, 'interactionStrength', 0, 200, 1)
-  .name('Strength');
-
-const performanceFolder = gui.addFolder('Performance');
-performanceFolder.close();
-
-// Time scale - slow motion or speed up
-performanceFolder.add(sim.config, 'timeScale', 0, 2, 0.01).name('Time Scale');
-
-// Maximum timestep - prevents instability on frame drops
-performanceFolder
-  .add(sim.config, 'maxTimestepFPS', 0, 120, 1)
-  .name('Max Timestep FPS');
-
-// Iterations per frame - more = more accurate but slower
-performanceFolder
-  .add(sim.config, 'iterationsPerFrame', 1, 8, 1)
-  .name('Iterations Per Frame');
-
-// Toggle FPS display
-performanceFolder
-  .add(uiState, 'showStats')
-  .name('Show FPS')
-  .onChange((value: boolean) => {
-    stats.dom.style.display = value ? 'block' : 'none';
-  });
+const { stats } = setupGui(
+  sim.config,
+  {
+    onReset: () => sim.reset(),
+    onSmoothingRadiusChange: () => sim.refreshSettings(),
+  },
+  { trackGPU: false }
+);
 
 // === Animation Loop ===
 

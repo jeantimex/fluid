@@ -1,10 +1,9 @@
 import './style.css';
-import GUI from 'lil-gui';
-import Stats from 'stats-gl';
 import { createConfig } from '../common/config.ts';
 import { createPhysics } from '../common/physics.ts';
 import { buildGradientLut } from '../common/kernels.ts';
 import { createSpawnData } from '../common/spawn.ts';
+import { setupGui } from '../common/gui.ts';
 import type { SimState, SpawnData } from '../common/types.ts';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -36,15 +35,19 @@ const canvasToWorld = (
   };
 };
 
-const gui = new GUI({ title: 'Simulation Settings' });
-const stats = new Stats({ trackGPU: true, horizontal: true });
-stats.dom.style.display = 'none';
-document.body.appendChild(stats.dom);
-
-const uiState = { showStats: false };
 const config = createConfig();
 let resetSim: (() => void) | null = null;
 let physics: ReturnType<typeof createPhysics> | null = null;
+
+const { stats } = setupGui(
+  config,
+  {
+    onReset: () => resetSim?.(),
+    onSmoothingRadiusChange: () => physics?.refreshSettings(),
+  },
+  { trackGPU: true }
+);
+
 const useGpuExternalForces = true;
 const useGpuSpatialHash = true;
 const useGpuDensity = true;
@@ -52,69 +55,6 @@ const useGpuDensityReadback = false;
 const useCpuSpatialDataForGpuDensity = false;
 const useGpuPressure = true;
 const useGpuViscosity = true;
-
-const particlesFolder = gui.addFolder('Particles');
-particlesFolder
-  .add(config, 'spawnDensity', 10, 300, 1)
-  .name('Spawn Density')
-  .onFinishChange(() => resetSim?.());
-particlesFolder.add(config, 'gravity', -30, 30, 0.1).name('Gravity');
-particlesFolder
-  .add(config, 'collisionDamping', 0, 1, 0.01)
-  .name('Collision Damping');
-const smoothingCtrl = particlesFolder
-  .add(config, 'smoothingRadius', 0.05, 3, 0.01)
-  .name('Smoothing Radius')
-  .onChange(() => physics?.refreshSettings());
-const targetDensityCtrl = particlesFolder
-  .add(config, 'targetDensity', 0, 3000, 1)
-  .name('Target Density');
-const pressureCtrl = particlesFolder
-  .add(config, 'pressureMultiplier', 0, 2000, 1)
-  .name('Pressure Multiplier');
-const nearPressureCtrl = particlesFolder
-  .add(config, 'nearPressureMultiplier', 0, 40, 0.1)
-  .name('Near Pressure Multiplier');
-const viscosityCtrl = particlesFolder
-  .add(config, 'viscosityStrength', 0, 0.2, 0.001)
-  .name('Viscosity Strength');
-particlesFolder.add(config, 'particleRadius', 1, 6, 1).name('Particle Radius');
-
-const obstacleFolder = gui.addFolder('Obstacle');
-obstacleFolder.close();
-obstacleFolder.add(config.obstacleSize, 'x', 0, 20, 0.01).name('Size X');
-obstacleFolder.add(config.obstacleSize, 'y', 0, 20, 0.01).name('Size Y');
-obstacleFolder
-  .add(config.obstacleCentre, 'x', -10, 10, 0.01)
-  .name('Center X');
-obstacleFolder
-  .add(config.obstacleCentre, 'y', -10, 10, 0.01)
-  .name('Center Y');
-
-const interactionFolder = gui.addFolder('Interaction');
-interactionFolder.close();
-interactionFolder
-  .add(config, 'interactionRadius', 0, 10, 0.01)
-  .name('Radius');
-interactionFolder
-  .add(config, 'interactionStrength', 0, 200, 1)
-  .name('Strength');
-
-const performanceFolder = gui.addFolder('Performance');
-performanceFolder.close();
-performanceFolder.add(config, 'timeScale', 0, 2, 0.01).name('Time Scale');
-performanceFolder
-  .add(config, 'maxTimestepFPS', 0, 120, 1)
-  .name('Max Timestep FPS');
-performanceFolder
-  .add(config, 'iterationsPerFrame', 1, 8, 1)
-  .name('Iterations Per Frame');
-performanceFolder
-  .add(uiState, 'showStats')
-  .name('Show FPS')
-  .onChange((value: boolean) => {
-    stats.dom.style.display = value ? 'block' : 'none';
-  });
 
 async function initWebGPU(): Promise<void> {
   if (!navigator.gpu) {
