@@ -246,6 +246,24 @@ export function createPhysics(
   }
 
   /**
+   * Predicts positions based on current velocities without applying forces.
+   *
+   * This is used when external forces are handled elsewhere (e.g. GPU).
+   */
+  function predictPositions(): void {
+    const positions = state.positions;
+    const predicted = state.predicted;
+    const velocities = state.velocities;
+    const predictionFactor = 1 / 120;
+
+    for (let i = 0; i < state.count; i += 1) {
+      const idx = i * 2;
+      predicted[idx] = positions[idx] + velocities[idx] * predictionFactor;
+      predicted[idx + 1] = positions[idx + 1] + velocities[idx + 1] * predictionFactor;
+    }
+  }
+
+  /**
    * Sorts particles by spatial hash for cache-efficient neighbor queries.
    *
    * This is a critical optimization that transforms neighbor search from
@@ -779,6 +797,19 @@ export function createPhysics(
    *
    * @param dt - Real-world time since last frame (seconds)
    */
+  function substep(dt: number, includeExternalForces: boolean): void {
+    if (includeExternalForces) {
+      externalForcesStep(dt);
+    } else {
+      predictPositions();
+    }
+    runSpatialHash();
+    calculateDensities();
+    calculatePressure(dt);
+    calculateViscosity(dt);
+    updatePositions(dt);
+  }
+
   function step(dt: number): void {
     // Limit timestep for stability (avoid simulation explosion)
     const maxDeltaTime = config.maxTimestepFPS
@@ -793,14 +824,9 @@ export function createPhysics(
 
     // Run multiple iterations per frame for stability
     for (let i = 0; i < config.iterationsPerFrame; i += 1) {
-      externalForcesStep(timeStep);
-      runSpatialHash();
-      calculateDensities();
-      calculatePressure(timeStep);
-      calculateViscosity(timeStep);
-      updatePositions(timeStep);
+      substep(timeStep, true);
     }
   }
 
-  return { step, refreshSettings, applyParticleScale };
+  return { step, substep, refreshSettings, applyParticleScale };
 }

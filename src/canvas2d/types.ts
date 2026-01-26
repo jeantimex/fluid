@@ -263,6 +263,9 @@ export interface Physics {
   /** Advance simulation by dt seconds */
   step: (dt: number) => void;
 
+  /** Advance simulation by a single substep */
+  substep: (dt: number, includeExternalForces: boolean) => void;
+
   /** Recalculate derived values after config changes */
   refreshSettings: () => void;
 

@@ -45,7 +45,8 @@ const uiState = { showStats: false };
 const config = createConfig();
 let resetSim: (() => void) | null = null;
 let physics: ReturnType<typeof createPhysics> | null = null;
-const useGpuExternalForces = false;
+const useGpuExternalForces = true;
+const useGpuSpatialHash = true;
 
 const particlesFolder = gui.addFolder('Particles');
 particlesFolder
@@ -145,8 +146,10 @@ async function initWebGPU(): Promise<void> {
   let positionsSortedBuffer: GPUBuffer | null = null;
   let predictedSortedBuffer: GPUBuffer | null = null;
   let velocitiesSortedBuffer: GPUBuffer | null = null;
+  let velocityReadbackBuffer: GPUBuffer | null = null;
   let bindGroup: GPUBindGroup | null = null;
   let computeBindGroup: GPUBindGroup | null = null;
+  let hashBindGroup: GPUBindGroup | null = null;
 
   const getScale = (): number => canvas.width / config.boundsSize.x;
 
@@ -186,6 +189,11 @@ async function initWebGPU(): Promise<void> {
 
   const computeUniformBuffer = device.createBuffer({
     size: 32,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const hashUniformBuffer = device.createBuffer({
+    size: 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const lineVertexStride = 6 * 4;
@@ -387,12 +395,50 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   }
 
   let pos = positions[index];
-  let vel = velocities[index];
+  var vel = velocities[index];
   vel = vel + externalForces(pos, vel) * params.deltaTime;
   velocities[index] = vel;
 
   let predictionFactor = 1.0 / 120.0;
   predicted[index] = pos + vel * predictionFactor;
+}
+`,
+  });
+
+  const hashShaderModule = device.createShaderModule({
+    code: `
+struct HashParams {
+  radius: f32,
+  particleCount: f32,
+  pad0: vec2<f32>,
+};
+
+@group(0) @binding(0) var<storage, read> predicted: array<vec2<f32>>;
+@group(0) @binding(1) var<storage, read_write> keys: array<u32>;
+@group(0) @binding(2) var<storage, read_write> indices: array<u32>;
+@group(0) @binding(3) var<uniform> params: HashParams;
+
+fn hashCell2D(cellX: i32, cellY: i32) -> u32 {
+  let ax = cellX * 15823;
+  let by = cellY * 9737333;
+  return u32(ax + by);
+}
+
+@compute @workgroup_size(128)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  let index = id.x;
+  let count = u32(params.particleCount + 0.5);
+  if (index >= count) {
+    return;
+  }
+
+  let pos = predicted[index];
+  let cellX = i32(floor(pos.x / params.radius));
+  let cellY = i32(floor(pos.y / params.radius));
+  let hash = hashCell2D(cellX, cellY);
+  let key = hash % count;
+  keys[index] = key;
+  indices[index] = index;
 }
 `,
   });
@@ -461,6 +507,14 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     },
   });
 
+  const hashPipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: hashShaderModule,
+      entryPoint: 'main',
+    },
+  });
+
   const linePipeline = device.createRenderPipeline({
     layout: 'auto',
     vertex: {
@@ -505,6 +559,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       positionsSortedBuffer,
       predictedSortedBuffer,
       velocitiesSortedBuffer,
+      velocityReadbackBuffer,
     ]);
 
     const spawn = createSpawnData(config);
@@ -522,7 +577,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     );
     velocitiesBuffer = createBufferFromArray(
       spawn.velocities,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
     );
     densitiesBuffer = createEmptyBuffer(
       particleCount * 2 * 4,
@@ -560,6 +615,10 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       particleCount * 2 * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     );
+    velocityReadbackBuffer = device.createBuffer({
+      size: particleCount * 2 * 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
 
     const simBuffers = {
       predictedBuffer,
@@ -595,6 +654,16 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         { binding: 3, resource: { buffer: computeUniformBuffer } },
       ],
     });
+
+    hashBindGroup = device.createBindGroup({
+      layout: hashPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: predictedBuffer } },
+        { binding: 1, resource: { buffer: keysBuffer } },
+        { binding: 2, resource: { buffer: indicesBuffer } },
+        { binding: 3, resource: { buffer: hashUniformBuffer } },
+      ],
+    });
   };
 
   resetSim = resetSimulation;
@@ -602,6 +671,8 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
 
   let baseUnitsPerPixel: number | null = null;
   const uniformData = new Float32Array(8);
+  const computeData = new Float32Array(8);
+  const hashParamsData = new Float32Array(4);
 
   const resize = (): void => {
     const rect = canvas.getBoundingClientRect();
@@ -633,7 +704,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
   const clearColor = { r: 5 / 255, g: 7 / 255, b: 11 / 255, a: 1 };
 
   let lastTime = performance.now();
-  const frame = (now: number): void => {
+  const frame = async (now: number): Promise<void> => {
     stats.begin();
     if (
       !state ||
@@ -641,8 +712,10 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       !positionsBuffer ||
       !velocitiesBuffer ||
       !predictedBuffer ||
+      !velocityReadbackBuffer ||
       !bindGroup ||
-      !computeBindGroup
+      !computeBindGroup ||
+      !hashBindGroup
     ) {
       stats.end();
       stats.update();
@@ -651,7 +724,62 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     }
     const dt = Math.min(0.033, (now - lastTime) / 1000);
     lastTime = now;
-    physics.step(dt);
+    if (useGpuExternalForces) {
+      const maxDeltaTime = config.maxTimestepFPS
+        ? 1 / config.maxTimestepFPS
+        : Number.POSITIVE_INFINITY;
+      const frameTime = Math.min(dt * config.timeScale, maxDeltaTime);
+      const timeStep = frameTime / config.iterationsPerFrame;
+
+      for (let i = 0; i < config.iterationsPerFrame; i += 1) {
+        device.queue.writeBuffer(positionsBuffer, 0, state.positions);
+        device.queue.writeBuffer(velocitiesBuffer, 0, state.velocities);
+
+        const pull = state.input.pull;
+        const push = state.input.push;
+        const interactionStrength = push
+          ? -config.interactionStrength
+          : pull
+            ? config.interactionStrength
+            : 0;
+        computeData[0] = timeStep;
+        computeData[1] = config.gravity;
+        computeData[2] = config.interactionRadius;
+        computeData[3] = interactionStrength;
+        computeData[4] = state.input.worldX;
+        computeData[5] = state.input.worldY;
+        computeData[6] = 0;
+        computeData[7] = 0;
+        device.queue.writeBuffer(computeUniformBuffer, 0, computeData);
+
+        const computeEncoder = device.createCommandEncoder();
+        const computePass = computeEncoder.beginComputePass();
+        computePass.setPipeline(computePipeline);
+        computePass.setBindGroup(0, computeBindGroup);
+        computePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+        computePass.end();
+        computeEncoder.copyBufferToBuffer(
+          velocitiesBuffer,
+          0,
+          velocityReadbackBuffer,
+          0,
+          particleCount * 2 * 4
+        );
+        device.queue.submit([computeEncoder.finish()]);
+
+        await velocityReadbackBuffer.mapAsync(GPUMapMode.READ);
+        const mappedVelocities = new Float32Array(
+          velocityReadbackBuffer.getMappedRange()
+        );
+        state.velocities.set(mappedVelocities);
+        velocityReadbackBuffer.unmap();
+
+        physics.substep(timeStep, false);
+      }
+    } else {
+      physics.step(dt);
+    }
+
     device.queue.writeBuffer(positionsBuffer, 0, state.positions);
     device.queue.writeBuffer(velocitiesBuffer, 0, state.velocities);
     device.queue.writeBuffer(predictedBuffer, 0, state.predicted);
@@ -664,32 +792,14 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     uniformData[6] = config.gradientResolution;
     uniformData[7] = 0;
     device.queue.writeBuffer(uniformBuffer, 0, uniformData);
-
-    if (useGpuExternalForces) {
-      const pull = state.input.pull;
-      const push = state.input.push;
-      const interactionStrength = push
-        ? -config.interactionStrength
-        : pull
-          ? config.interactionStrength
-          : 0;
-      const computeData = new Float32Array(8);
-      computeData[0] = dt;
-      computeData[1] = config.gravity;
-      computeData[2] = config.interactionRadius;
-      computeData[3] = interactionStrength;
-      computeData[4] = state.input.worldX;
-      computeData[5] = state.input.worldY;
-      device.queue.writeBuffer(computeUniformBuffer, 0, computeData);
-
-      const computeEncoder = device.createCommandEncoder();
-      const pass = computeEncoder.beginComputePass();
-      pass.setPipeline(computePipeline);
-      pass.setBindGroup(0, computeBindGroup);
-      pass.dispatchWorkgroups(Math.ceil(particleCount / 128));
-      pass.end();
-      device.queue.submit([computeEncoder.finish()]);
+    if (useGpuSpatialHash) {
+      hashParamsData[0] = config.smoothingRadius;
+      hashParamsData[1] = particleCount;
+      hashParamsData[2] = 0;
+      hashParamsData[3] = 0;
+      device.queue.writeBuffer(hashUniformBuffer, 0, hashParamsData);
     }
+
     let lineVertexCount = 0;
     const pushLine = (
       x0: number,
@@ -780,6 +890,13 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     );
 
     const encoder = device.createCommandEncoder();
+    if (useGpuSpatialHash) {
+      const hashPass = encoder.beginComputePass();
+      hashPass.setPipeline(hashPipeline);
+      hashPass.setBindGroup(0, hashBindGroup);
+      hashPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+      hashPass.end();
+    }
     const view = context.getCurrentTexture().createView();
     const pass = encoder.beginRenderPass({
       colorAttachments: [
