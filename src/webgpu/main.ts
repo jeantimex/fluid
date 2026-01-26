@@ -155,6 +155,7 @@ async function initWebGPU(): Promise<void> {
   let densityReadbackBuffer: GPUBuffer | null = null;
   let bindGroup: GPUBindGroup | null = null;
   let computeBindGroup: GPUBindGroup | null = null;
+  let integrateBindGroup: GPUBindGroup | null = null;
   let hashBindGroup: GPUBindGroup | null = null;
   let clearOffsetsBindGroup: GPUBindGroup | null = null;
   let countOffsetsBindGroup: GPUBindGroup | null = null;
@@ -202,6 +203,11 @@ async function initWebGPU(): Promise<void> {
 
   const computeUniformBuffer = device.createBuffer({
     size: 32,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const integrateUniformBuffer = device.createBuffer({
+    size: 64,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
@@ -931,6 +937,71 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 `,
   });
 
+  const integrateShaderModule = device.createShaderModule({
+    code: `
+struct IntegrateParams {
+  dt: f32,
+  collisionDamping: f32,
+  hasObstacle: f32,
+  pad0: f32,
+  halfBounds: vec2<f32>,
+  pad1: vec2<f32>,
+  obstacleCenter: vec2<f32>,
+  obstacleHalf: vec2<f32>,
+};
+
+@group(0) @binding(0) var<storage, read_write> positions: array<vec2<f32>>;
+@group(0) @binding(1) var<storage, read_write> velocities: array<vec2<f32>>;
+@group(0) @binding(2) var<uniform> params: IntegrateParams;
+
+@compute @workgroup_size(128)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  let index = id.x;
+  if (index >= arrayLength(&positions)) {
+    return;
+  }
+
+  var pos = positions[index];
+  var vel = velocities[index];
+
+  pos = pos + vel * params.dt;
+
+  let halfBounds = params.halfBounds;
+  let edgeDstX = halfBounds.x - abs(pos.x);
+  let edgeDstY = halfBounds.y - abs(pos.y);
+
+  if (edgeDstX <= 0.0) {
+    pos.x = halfBounds.x * sign(pos.x);
+    vel.x = -vel.x * params.collisionDamping;
+  }
+  if (edgeDstY <= 0.0) {
+    pos.y = halfBounds.y * sign(pos.y);
+    vel.y = -vel.y * params.collisionDamping;
+  }
+
+  if (params.hasObstacle > 0.5) {
+    let ox = pos.x - params.obstacleCenter.x;
+    let oy = pos.y - params.obstacleCenter.y;
+    let obstacleEdgeX = params.obstacleHalf.x - abs(ox);
+    let obstacleEdgeY = params.obstacleHalf.y - abs(oy);
+
+    if (obstacleEdgeX >= 0.0 && obstacleEdgeY >= 0.0) {
+      if (obstacleEdgeX < obstacleEdgeY) {
+        pos.x = params.obstacleHalf.x * sign(ox) + params.obstacleCenter.x;
+        vel.x = -vel.x * params.collisionDamping;
+      } else {
+        pos.y = params.obstacleHalf.y * sign(oy) + params.obstacleCenter.y;
+        vel.y = -vel.y * params.collisionDamping;
+      }
+    }
+  }
+
+  positions[index] = pos;
+  velocities[index] = vel;
+}
+`,
+  });
+
   const lineShaderModule = device.createShaderModule({
     code: `
 struct SimUniforms {
@@ -991,6 +1062,14 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     layout: 'auto',
     compute: {
       module: computeShaderModule,
+      entryPoint: 'main',
+    },
+  });
+
+  const integratePipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: integrateShaderModule,
       entryPoint: 'main',
     },
   });
@@ -1204,6 +1283,15 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       ],
     });
 
+    integrateBindGroup = device.createBindGroup({
+      layout: integratePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: positionsBuffer } },
+        { binding: 1, resource: { buffer: velocitiesBuffer } },
+        { binding: 2, resource: { buffer: integrateUniformBuffer } },
+      ],
+    });
+
     hashBindGroup = device.createBindGroup({
       layout: hashPipeline.getBindGroupLayout(0),
       entries: [
@@ -1300,6 +1388,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
   const densityParamsData = new Float32Array(12);
   const pressureParamsData = new Float32Array(12);
   const viscosityParamsData = new Float32Array(12);
+  const integrateParamsData = new Float32Array(16);
 
   const resize = (): void => {
     const rect = canvas.getBoundingClientRect();
@@ -1343,6 +1432,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       !densityReadbackBuffer ||
       !bindGroup ||
       !computeBindGroup ||
+      !integrateBindGroup ||
       !hashBindGroup ||
       !clearOffsetsBindGroup ||
       !countOffsetsBindGroup ||
@@ -1365,11 +1455,14 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         : Number.POSITIVE_INFINITY;
       const frameTime = Math.min(dt * config.timeScale, maxDeltaTime);
       const timeStep = frameTime / config.iterationsPerFrame;
+      const paddingPx =
+        Math.max(1, Math.round(config.particleRadius)) + config.boundsPaddingPx;
+      const padding = paddingPx / getScale();
+      const halfX = Math.max(0, config.boundsSize.x * 0.5 - padding);
+      const halfY = Math.max(0, config.boundsSize.y * 0.5 - padding);
+      const hasObstacle = config.obstacleSize.x > 0 && config.obstacleSize.y > 0;
 
       for (let i = 0; i < config.iterationsPerFrame; i += 1) {
-        device.queue.writeBuffer(positionsBuffer, 0, state.positions);
-        device.queue.writeBuffer(velocitiesBuffer, 0, state.velocities);
-
         const pull = state.input.pull;
         const push = state.input.push;
         const interactionStrength = push
@@ -1534,34 +1627,44 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
           viscosityPass.setBindGroup(0, viscosityBindGroup);
           viscosityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
           viscosityPass.end();
-          viscosityEncoder.copyBufferToBuffer(
-            velocitiesBuffer,
-            0,
-            velocityReadbackBuffer,
-            0,
-            particleCount * 2 * 4
-          );
           device.queue.submit([viscosityEncoder.finish()]);
-
-          await velocityReadbackBuffer.mapAsync(GPUMapMode.READ);
-          const viscosityVelocities = new Float32Array(
-            velocityReadbackBuffer.getMappedRange()
-          );
-          state.velocities.set(viscosityVelocities);
-          velocityReadbackBuffer.unmap();
         } else {
           physics.calculateViscosity(timeStep);
         }
 
-        physics.updatePositions(timeStep);
+        integrateParamsData[0] = timeStep;
+        integrateParamsData[1] = config.collisionDamping;
+        integrateParamsData[2] = hasObstacle ? 1 : 0;
+        integrateParamsData[3] = 0;
+        integrateParamsData[4] = halfX;
+        integrateParamsData[5] = halfY;
+        integrateParamsData[6] = 0;
+        integrateParamsData[7] = 0;
+        integrateParamsData[8] = config.obstacleCentre.x;
+        integrateParamsData[9] = config.obstacleCentre.y;
+        integrateParamsData[10] = config.obstacleSize.x * 0.5;
+        integrateParamsData[11] = config.obstacleSize.y * 0.5;
+        integrateParamsData[12] = 0;
+        integrateParamsData[13] = 0;
+        integrateParamsData[14] = 0;
+        integrateParamsData[15] = 0;
+        device.queue.writeBuffer(integrateUniformBuffer, 0, integrateParamsData);
+
+        const integrateEncoder = device.createCommandEncoder();
+        const integratePass = integrateEncoder.beginComputePass();
+        integratePass.setPipeline(integratePipeline);
+        integratePass.setBindGroup(0, integrateBindGroup);
+        integratePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+        integratePass.end();
+        device.queue.submit([integrateEncoder.finish()]);
       }
     } else {
       physics.step(dt);
     }
 
-    device.queue.writeBuffer(positionsBuffer, 0, state.positions);
-    device.queue.writeBuffer(velocitiesBuffer, 0, state.velocities);
     if (!useGpuExternalForces) {
+      device.queue.writeBuffer(positionsBuffer, 0, state.positions);
+      device.queue.writeBuffer(velocitiesBuffer, 0, state.velocities);
       device.queue.writeBuffer(predictedBuffer, 0, state.predicted);
     }
     uniformData[0] = config.boundsSize.x;
