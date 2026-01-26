@@ -37,7 +37,7 @@ const canvasToWorld = (
 };
 
 const gui = new GUI({ title: 'Simulation Settings' });
-const stats = new Stats({ trackGPU: false, horizontal: true });
+const stats = new Stats({ trackGPU: true, horizontal: true });
 stats.dom.style.display = 'none';
 document.body.appendChild(stats.dom);
 
