@@ -48,7 +48,7 @@ let physics: ReturnType<typeof createPhysics> | null = null;
 const useGpuExternalForces = true;
 const useGpuSpatialHash = true;
 const useGpuDensity = true;
-const useGpuDensityReadback = true;
+const useGpuDensityReadback = false;
 const useCpuSpatialDataForGpuDensity = false;
 const useGpuPressure = true;
 const useGpuViscosity = true;
@@ -1393,31 +1393,16 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         computePass.setBindGroup(0, computeBindGroup);
         computePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
         computePass.end();
-        computeEncoder.copyBufferToBuffer(
-          velocitiesBuffer,
-          0,
-          velocityReadbackBuffer,
-          0,
-          particleCount * 2 * 4
-        );
         device.queue.submit([computeEncoder.finish()]);
 
-        await velocityReadbackBuffer.mapAsync(GPUMapMode.READ);
-        const mappedVelocities = new Float32Array(
-          velocityReadbackBuffer.getMappedRange()
-        );
-        state.velocities.set(mappedVelocities);
-        velocityReadbackBuffer.unmap();
-
-        physics.predictPositions();
         if (!useGpuDensity || useCpuSpatialDataForGpuDensity) {
+          physics.predictPositions();
           physics.runSpatialHash();
         }
 
         if (useGpuDensity) {
-          device.queue.writeBuffer(predictedBuffer, 0, state.predicted);
-          device.queue.writeBuffer(velocitiesBuffer, 0, state.velocities);
           if (useCpuSpatialDataForGpuDensity) {
+            device.queue.writeBuffer(predictedBuffer, 0, state.predicted);
             device.queue.writeBuffer(sortedKeysBuffer, 0, state.sortedKeys);
             device.queue.writeBuffer(
               spatialOffsetsBuffer,
@@ -1517,21 +1502,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
           pressurePass.setBindGroup(0, pressureBindGroup);
           pressurePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
           pressurePass.end();
-          pressureEncoder.copyBufferToBuffer(
-            velocitiesBuffer,
-            0,
-            velocityReadbackBuffer,
-            0,
-            particleCount * 2 * 4
-          );
           device.queue.submit([pressureEncoder.finish()]);
-
-          await velocityReadbackBuffer.mapAsync(GPUMapMode.READ);
-          const pressureVelocities = new Float32Array(
-            velocityReadbackBuffer.getMappedRange()
-          );
-          state.velocities.set(pressureVelocities);
-          velocityReadbackBuffer.unmap();
         } else {
           physics.calculatePressure(timeStep);
         }
@@ -1590,7 +1561,9 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
 
     device.queue.writeBuffer(positionsBuffer, 0, state.positions);
     device.queue.writeBuffer(velocitiesBuffer, 0, state.velocities);
-    device.queue.writeBuffer(predictedBuffer, 0, state.predicted);
+    if (!useGpuExternalForces) {
+      device.queue.writeBuffer(predictedBuffer, 0, state.predicted);
+    }
     uniformData[0] = config.boundsSize.x;
     uniformData[1] = config.boundsSize.y;
     uniformData[2] = canvas.width;
