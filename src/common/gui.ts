@@ -5,9 +5,32 @@
  * used by both canvas2d and webgpu implementations.
  */
 
-import GUI from 'lil-gui';
+import GUI, { Controller } from 'lil-gui';
 import Stats from 'stats-gl';
 import type { SimConfig } from './types.ts';
+
+/**
+ * Calculates the total particle count based on spawn regions and density.
+ * This replicates the logic from spawn.ts to show accurate counts in the GUI.
+ */
+function calculateParticleCount(config: SimConfig): number {
+  let total = 0;
+  for (const region of config.spawnRegions) {
+    const area = region.size.x * region.size.y;
+    const targetTotal = Math.ceil(area * config.spawnDensity);
+
+    // Replicate grid calculation from spawn.ts
+    const lenSum = region.size.x + region.size.y;
+    const tx = region.size.x / lenSum;
+    const ty = region.size.y / lenSum;
+    const m = Math.sqrt(targetTotal / (tx * ty));
+    const nx = Math.ceil(tx * m);
+    const ny = Math.ceil(ty * m);
+
+    total += nx * ny;
+  }
+  return total;
+}
 
 export interface GuiCallbacks {
   onReset: () => void;
@@ -50,10 +73,28 @@ export function setupGui(
   const particlesFolder = gui.addFolder('Particles');
   particlesFolder.close();
 
+  // Display object for particle count (updated dynamically)
+  const display = { particleCount: calculateParticleCount(config) };
+
+  // Helper to update particle count display
+  const updateParticleCount = (): void => {
+    display.particleCount = calculateParticleCount(config);
+    particleCountController.updateDisplay();
+  };
+
   particlesFolder
     .add(config, 'spawnDensity', 10, 300, 1)
     .name('Spawn Density')
-    .onFinishChange(() => callbacks.onReset());
+    .onFinishChange(() => {
+      updateParticleCount();
+      callbacks.onReset();
+    });
+
+  // Particle count display (read-only)
+  const particleCountController: Controller = particlesFolder
+    .add(display, 'particleCount')
+    .name('Particle Count')
+    .disable();
 
   particlesFolder.add(config, 'gravity', -30, 30, 1).name('Gravity');
 
