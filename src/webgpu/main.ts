@@ -150,6 +150,8 @@ async function initWebGPU(): Promise<void> {
   let bindGroup: GPUBindGroup | null = null;
   let computeBindGroup: GPUBindGroup | null = null;
   let hashBindGroup: GPUBindGroup | null = null;
+  let clearOffsetsBindGroup: GPUBindGroup | null = null;
+  let countOffsetsBindGroup: GPUBindGroup | null = null;
 
   const getScale = (): number => canvas.width / config.boundsSize.x;
 
@@ -193,7 +195,12 @@ async function initWebGPU(): Promise<void> {
   });
 
   const hashUniformBuffer = device.createBuffer({
-    size: 16,
+    size: 32,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const sortUniformBuffer = device.createBuffer({
+    size: 32,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const lineVertexStride = 6 * 4;
@@ -443,6 +450,41 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 `,
   });
 
+  const sortShaderModule = device.createShaderModule({
+    code: `
+struct SortParams {
+  particleCount: u32,
+  pad0: vec3<u32>,
+};
+
+@group(0) @binding(0) var<storage, read_write> sortOffsets: array<atomic<u32>>;
+@group(0) @binding(1) var<uniform> params: SortParams;
+
+@compute @workgroup_size(128)
+fn clearOffsets(@builtin(global_invocation_id) id: vec3<u32>) {
+  let index = id.x;
+  if (index >= params.particleCount) {
+    return;
+  }
+  atomicStore(&sortOffsets[index], 0u);
+}
+
+@group(1) @binding(0) var<storage, read> keys: array<u32>;
+@group(1) @binding(1) var<storage, read_write> sortOffsetsCount: array<atomic<u32>>;
+@group(1) @binding(2) var<uniform> countParams: SortParams;
+
+@compute @workgroup_size(128)
+fn countOffsets(@builtin(global_invocation_id) id: vec3<u32>) {
+  let index = id.x;
+  if (index >= countParams.particleCount) {
+    return;
+  }
+  let key = keys[index];
+  atomicAdd(&sortOffsetsCount[key], 1u);
+}
+`,
+  });
+
   const lineShaderModule = device.createShaderModule({
     code: `
 struct SimUniforms {
@@ -512,6 +554,22 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     compute: {
       module: hashShaderModule,
       entryPoint: 'main',
+    },
+  });
+
+  const clearOffsetsPipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: sortShaderModule,
+      entryPoint: 'clearOffsets',
+    },
+  });
+
+  const countOffsetsPipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: sortShaderModule,
+      entryPoint: 'countOffsets',
     },
   });
 
@@ -664,6 +722,23 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         { binding: 3, resource: { buffer: hashUniformBuffer } },
       ],
     });
+
+    clearOffsetsBindGroup = device.createBindGroup({
+      layout: clearOffsetsPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: sortOffsetsBuffer } },
+        { binding: 1, resource: { buffer: sortUniformBuffer } },
+      ],
+    });
+
+    countOffsetsBindGroup = device.createBindGroup({
+      layout: countOffsetsPipeline.getBindGroupLayout(1),
+      entries: [
+        { binding: 0, resource: { buffer: keysBuffer } },
+        { binding: 1, resource: { buffer: sortOffsetsBuffer } },
+        { binding: 2, resource: { buffer: sortUniformBuffer } },
+      ],
+    });
   };
 
   resetSim = resetSimulation;
@@ -673,6 +748,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
   const uniformData = new Float32Array(8);
   const computeData = new Float32Array(8);
   const hashParamsData = new Float32Array(4);
+  const sortParamsData = new Uint32Array(4);
 
   const resize = (): void => {
     const rect = canvas.getBoundingClientRect();
@@ -715,7 +791,9 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       !velocityReadbackBuffer ||
       !bindGroup ||
       !computeBindGroup ||
-      !hashBindGroup
+      !hashBindGroup ||
+      !clearOffsetsBindGroup ||
+      !countOffsetsBindGroup
     ) {
       stats.end();
       stats.update();
@@ -798,6 +876,12 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       hashParamsData[2] = 0;
       hashParamsData[3] = 0;
       device.queue.writeBuffer(hashUniformBuffer, 0, hashParamsData);
+
+      sortParamsData[0] = particleCount;
+      sortParamsData[1] = 0;
+      sortParamsData[2] = 0;
+      sortParamsData[3] = 0;
+      device.queue.writeBuffer(sortUniformBuffer, 0, sortParamsData);
     }
 
     let lineVertexCount = 0;
@@ -896,6 +980,18 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       hashPass.setBindGroup(0, hashBindGroup);
       hashPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
       hashPass.end();
+
+      const clearPass = encoder.beginComputePass();
+      clearPass.setPipeline(clearOffsetsPipeline);
+      clearPass.setBindGroup(0, clearOffsetsBindGroup);
+      clearPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+      clearPass.end();
+
+      const countPass = encoder.beginComputePass();
+      countPass.setPipeline(countOffsetsPipeline);
+      countPass.setBindGroup(1, countOffsetsBindGroup);
+      countPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+      countPass.end();
     }
     const view = context.getCurrentTexture().createView();
     const pass = encoder.beginRenderPass({
