@@ -13,12 +13,12 @@
  * - Makes the API simple and explicit
  */
 
-import type { InputState, Sim, SimState, SpawnData, Vec2 } from './types.ts';
-import { createConfig } from './config.ts';
-import { buildGradientLut } from './kernels.ts';
-import { createPhysics } from './physics.ts';
+import type { InputState, Sim, SimState, SpawnData, Vec2 } from '../common/types.ts';
+import { createConfig } from '../common/config.ts';
+import { buildGradientLut } from '../common/kernels.ts';
+import { createPhysics } from '../common/physics.ts';
 import { createRenderer } from './renderer.ts';
-import { createSpawnData } from './spawn.ts';
+import { createSpawnData } from '../common/spawn.ts';
 
 /**
  * Creates the initial simulation state from spawn data.

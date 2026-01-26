@@ -1,11 +1,11 @@
 import './style.css';
 import GUI from 'lil-gui';
 import Stats from 'stats-gl';
-import { createConfig } from '../canvas2d/config.ts';
-import { createPhysics } from '../canvas2d/physics.ts';
-import { buildGradientLut } from '../canvas2d/kernels.ts';
-import { createSpawnData } from '../canvas2d/spawn.ts';
-import type { SimState, SpawnData } from '../canvas2d/types.ts';
+import { createConfig } from '../common/config.ts';
+import { createPhysics } from '../common/physics.ts';
+import { buildGradientLut } from '../common/kernels.ts';
+import { createSpawnData } from '../common/spawn.ts';
+import type { SimState, SpawnData } from '../common/types.ts';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
