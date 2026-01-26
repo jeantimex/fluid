@@ -2,6 +2,7 @@ import './style.css';
 import GUI from 'lil-gui';
 import Stats from 'stats-gl';
 import { createConfig } from '../canvas2d/config.ts';
+import { createSpawnData } from '../canvas2d/spawn.ts';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -102,6 +103,87 @@ async function initWebGPU(): Promise<void> {
   }
 
   const format = navigator.gpu.getPreferredCanvasFormat();
+
+  const spawn = createSpawnData(config);
+  const particleCount = spawn.count;
+
+  const createBufferFromArray = (
+    data: Float32Array | Uint32Array,
+    usage: GPUBufferUsageFlags
+  ): GPUBuffer => {
+    const buffer = device.createBuffer({
+      size: data.byteLength,
+      usage,
+      mappedAtCreation: true,
+    });
+    const mapping =
+      data instanceof Float32Array
+        ? new Float32Array(buffer.getMappedRange())
+        : new Uint32Array(buffer.getMappedRange());
+    mapping.set(data);
+    buffer.unmap();
+    return buffer;
+  };
+
+  const createEmptyBuffer = (
+    byteLength: number,
+    usage: GPUBufferUsageFlags
+  ): GPUBuffer =>
+    device.createBuffer({
+      size: byteLength,
+      usage,
+    });
+
+  const positionsBuffer = createBufferFromArray(
+    spawn.positions,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+  const predictedBuffer = createBufferFromArray(
+    new Float32Array(spawn.positions),
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+  const velocitiesBuffer = createBufferFromArray(
+    spawn.velocities,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+  const densitiesBuffer = createEmptyBuffer(
+    particleCount * 2 * 4,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+
+  const keysBuffer = createEmptyBuffer(
+    particleCount * 4,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+  const sortedKeysBuffer = createEmptyBuffer(
+    particleCount * 4,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+  const indicesBuffer = createEmptyBuffer(
+    particleCount * 4,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+  const sortOffsetsBuffer = createEmptyBuffer(
+    particleCount * 4,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+  const spatialOffsetsBuffer = createEmptyBuffer(
+    particleCount * 4,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+
+  const positionsSortedBuffer = createEmptyBuffer(
+    particleCount * 2 * 4,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+  const predictedSortedBuffer = createEmptyBuffer(
+    particleCount * 2 * 4,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
+  const velocitiesSortedBuffer = createEmptyBuffer(
+    particleCount * 2 * 4,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+  );
 
   const resize = (): void => {
     const rect = canvas.getBoundingClientRect();
