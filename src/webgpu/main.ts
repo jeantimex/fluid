@@ -51,6 +51,7 @@ const useGpuDensity = true;
 const useGpuDensityReadback = true;
 const useCpuSpatialDataForGpuDensity = true;
 const useGpuPressure = true;
+const useGpuViscosity = true;
 
 const particlesFolder = gui.addFolder('Particles');
 particlesFolder
@@ -161,6 +162,7 @@ async function initWebGPU(): Promise<void> {
   let spatialOffsetsBindGroup: GPUBindGroup | null = null;
   let densityBindGroup: GPUBindGroup | null = null;
   let pressureBindGroup: GPUBindGroup | null = null;
+  let viscosityBindGroup: GPUBindGroup | null = null;
 
   const getScale = (): number => canvas.width / config.boundsSize.x;
 
@@ -219,6 +221,11 @@ async function initWebGPU(): Promise<void> {
   });
 
   const pressureUniformBuffer = device.createBuffer({
+    size: 48,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const viscosityUniformBuffer = device.createBuffer({
     size: 48,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
@@ -819,6 +826,105 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 `,
   });
 
+  const viscosityShaderModule = device.createShaderModule({
+    code: `
+struct ViscosityParams {
+  dt: f32,
+  viscosityStrength: f32,
+  radius: f32,
+  poly6Scale: f32,
+  particleCountF: f32,
+  pad0: vec3<f32>,
+};
+
+@group(0) @binding(0) var<storage, read> predicted: array<vec2<f32>>;
+@group(0) @binding(1) var<storage, read_write> velocities: array<vec2<f32>>;
+@group(0) @binding(2) var<storage, read> sortedKeys: array<u32>;
+@group(0) @binding(3) var<storage, read> spatialOffsets: array<u32>;
+@group(0) @binding(4) var<uniform> params: ViscosityParams;
+
+const neighborOffsets = array<vec2<i32>, 9>(
+  vec2<i32>(-1, 1),
+  vec2<i32>(0, 1),
+  vec2<i32>(1, 1),
+  vec2<i32>(-1, 0),
+  vec2<i32>(0, 0),
+  vec2<i32>(1, 0),
+  vec2<i32>(-1, -1),
+  vec2<i32>(0, -1),
+  vec2<i32>(1, -1)
+);
+
+fn hashCell2D(cellX: i32, cellY: i32) -> u32 {
+  let ax = cellX * 15823;
+  let by = cellY * 9737333;
+  return u32(ax + by);
+}
+
+fn smoothingKernelPoly6(dst: f32, radius: f32, scale: f32) -> f32 {
+  if (dst < radius) {
+    let v = radius * radius - dst * dst;
+    return v * v * v * scale;
+  }
+  return 0.0;
+}
+
+@compute @workgroup_size(128)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  let i = id.x;
+  let count = u32(params.particleCountF + 0.5);
+  if (i >= count) {
+    return;
+  }
+
+  let pos = predicted[i];
+  let originCellX = i32(floor(pos.x / params.radius));
+  let originCellY = i32(floor(pos.y / params.radius));
+  let radiusSq = params.radius * params.radius;
+
+  var forceX = 0.0;
+  var forceY = 0.0;
+  let vel = velocities[i];
+
+  for (var n = 0u; n < 9u; n = n + 1u) {
+    let cellOffset = neighborOffsets[n];
+    let cellX = originCellX + cellOffset.x;
+    let cellY = originCellY + cellOffset.y;
+    let hash = hashCell2D(cellX, cellY);
+    let key = hash % count;
+    let start = spatialOffsets[key];
+    if (start == count) {
+      continue;
+    }
+
+    var j = start;
+    loop {
+      if (j >= count || sortedKeys[j] != key) {
+        break;
+      }
+      if (j != i) {
+        let neighborPos = predicted[j];
+        let dx = neighborPos.x - pos.x;
+        let dy = neighborPos.y - pos.y;
+        let dstSq = dx * dx + dy * dy;
+        if (dstSq <= radiusSq) {
+          let dst = sqrt(dstSq);
+          let weight = smoothingKernelPoly6(dst, params.radius, params.poly6Scale);
+          let neighborVel = velocities[j];
+          forceX = forceX + (neighborVel.x - vel.x) * weight;
+          forceY = forceY + (neighborVel.y - vel.y) * weight;
+        }
+      }
+      j = j + 1u;
+    }
+  }
+
+  velocities[i].x = velocities[i].x + forceX * params.viscosityStrength * params.dt;
+  velocities[i].y = velocities[i].y + forceY * params.viscosityStrength * params.dt;
+}
+`,
+  });
+
   const lineShaderModule = device.createShaderModule({
     code: `
 struct SimUniforms {
@@ -935,6 +1041,14 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     layout: 'auto',
     compute: {
       module: pressureShaderModule,
+      entryPoint: 'main',
+    },
+  });
+
+  const viscosityPipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: viscosityShaderModule,
       entryPoint: 'main',
     },
   });
@@ -1153,6 +1267,17 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         { binding: 5, resource: { buffer: pressureUniformBuffer } },
       ],
     });
+
+    viscosityBindGroup = device.createBindGroup({
+      layout: viscosityPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: predictedBuffer } },
+        { binding: 1, resource: { buffer: velocitiesBuffer } },
+        { binding: 2, resource: { buffer: sortedKeysBuffer } },
+        { binding: 3, resource: { buffer: spatialOffsetsBuffer } },
+        { binding: 4, resource: { buffer: viscosityUniformBuffer } },
+      ],
+    });
   };
 
   resetSim = resetSimulation;
@@ -1165,6 +1290,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
   const sortParamsData = new Uint32Array(4);
   const densityParamsData = new Float32Array(12);
   const pressureParamsData = new Float32Array(12);
+  const viscosityParamsData = new Float32Array(12);
 
   const resize = (): void => {
     const rect = canvas.getBoundingClientRect();
@@ -1214,7 +1340,8 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       !scatterBindGroup ||
       !spatialOffsetsBindGroup ||
       !densityBindGroup ||
-      !pressureBindGroup
+      !pressureBindGroup ||
+      !viscosityBindGroup
     ) {
       stats.end();
       stats.update();
@@ -1365,7 +1492,52 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
           physics.calculatePressure(timeStep);
         }
 
-        physics.calculateViscosity(timeStep);
+        if (useGpuViscosity) {
+          const radius = config.smoothingRadius;
+          const poly6Scale = 4 / (Math.PI * Math.pow(radius, 8));
+          viscosityParamsData[0] = timeStep;
+          viscosityParamsData[1] = config.viscosityStrength;
+          viscosityParamsData[2] = radius;
+          viscosityParamsData[3] = poly6Scale;
+          viscosityParamsData[4] = particleCount;
+          viscosityParamsData[5] = 0;
+          viscosityParamsData[6] = 0;
+          viscosityParamsData[7] = 0;
+          viscosityParamsData[8] = 0;
+          viscosityParamsData[9] = 0;
+          viscosityParamsData[10] = 0;
+          viscosityParamsData[11] = 0;
+          device.queue.writeBuffer(
+            viscosityUniformBuffer,
+            0,
+            viscosityParamsData
+          );
+
+          const viscosityEncoder = device.createCommandEncoder();
+          const viscosityPass = viscosityEncoder.beginComputePass();
+          viscosityPass.setPipeline(viscosityPipeline);
+          viscosityPass.setBindGroup(0, viscosityBindGroup);
+          viscosityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+          viscosityPass.end();
+          viscosityEncoder.copyBufferToBuffer(
+            velocitiesBuffer,
+            0,
+            velocityReadbackBuffer,
+            0,
+            particleCount * 2 * 4
+          );
+          device.queue.submit([viscosityEncoder.finish()]);
+
+          await velocityReadbackBuffer.mapAsync(GPUMapMode.READ);
+          const viscosityVelocities = new Float32Array(
+            velocityReadbackBuffer.getMappedRange()
+          );
+          state.velocities.set(viscosityVelocities);
+          velocityReadbackBuffer.unmap();
+        } else {
+          physics.calculateViscosity(timeStep);
+        }
+
         physics.updatePositions(timeStep);
       }
     } else {
