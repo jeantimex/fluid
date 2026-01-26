@@ -166,6 +166,7 @@ async function initWebGPU(): Promise<void> {
   let viscosityBindGroup: GPUBindGroup | null = null;
 
   const getScale = (): number => canvas.width / config.boundsSize.x;
+  const workgroupSize = 256;
 
   const updatePointer = (event: MouseEvent): void => {
     if (!state) return;
@@ -426,7 +427,7 @@ fn externalForces(pos: vec2<f32>, velocity: vec2<f32>) -> vec2<f32> {
   return gravityAccel;
 }
 
-@compute @workgroup_size(128)
+@compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let index = id.x;
   if (index >= arrayLength(&positions)) {
@@ -463,7 +464,7 @@ fn hashCell2D(cellX: i32, cellY: i32) -> u32 {
   return u32(ax + by);
 }
 
-@compute @workgroup_size(128)
+@compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let index = id.x;
   let count = u32(params.particleCount + 0.5);
@@ -492,7 +493,7 @@ struct SortParams {
 @group(0) @binding(0) var<storage, read_write> sortOffsets: array<atomic<u32>>;
 @group(0) @binding(1) var<uniform> params: SortParams;
 
-@compute @workgroup_size(128)
+@compute @workgroup_size(256)
 fn clearOffsets(@builtin(global_invocation_id) id: vec3<u32>) {
   let index = id.x;
   if (index >= params.particleCount) {
@@ -505,7 +506,7 @@ fn clearOffsets(@builtin(global_invocation_id) id: vec3<u32>) {
 @group(1) @binding(1) var<storage, read_write> sortOffsetsCount: array<atomic<u32>>;
 @group(1) @binding(2) var<uniform> countParams: SortParams;
 
-@compute @workgroup_size(128)
+@compute @workgroup_size(256)
 fn countOffsets(@builtin(global_invocation_id) id: vec3<u32>) {
   let index = id.x;
   if (index >= countParams.particleCount) {
@@ -637,7 +638,7 @@ fn spikyPow3(dst: f32, radius: f32, scale: f32) -> f32 {
   return 0.0;
 }
 
-@compute @workgroup_size(128)
+@compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let i = id.x;
   let count = u32(params.particleCountF + 0.5);
@@ -744,7 +745,7 @@ fn derivativeSpikyPow3(dst: f32, radius: f32, scale: f32) -> f32 {
   return 0.0;
 }
 
-@compute @workgroup_size(128)
+@compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let i = id.x;
   let count = u32(params.particleCountF + 0.5);
@@ -880,7 +881,7 @@ fn smoothingKernelPoly6(dst: f32, radius: f32, scale: f32) -> f32 {
   return 0.0;
 }
 
-@compute @workgroup_size(128)
+@compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let i = id.x;
   let count = u32(params.particleCountF + 0.5);
@@ -954,7 +955,7 @@ struct IntegrateParams {
 @group(0) @binding(1) var<storage, read_write> velocities: array<vec2<f32>>;
 @group(0) @binding(2) var<uniform> params: IntegrateParams;
 
-@compute @workgroup_size(128)
+@compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let index = id.x;
   if (index >= arrayLength(&positions)) {
@@ -1485,7 +1486,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         const computePass = encoder.beginComputePass();
         computePass.setPipeline(computePipeline);
         computePass.setBindGroup(0, computeBindGroup);
-        computePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+        computePass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
         computePass.end();
 
         if (!useGpuDensity || useCpuSpatialDataForGpuDensity) {
@@ -1506,19 +1507,19 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
             const hashPass = encoder.beginComputePass();
             hashPass.setPipeline(hashPipeline);
             hashPass.setBindGroup(0, hashBindGroup);
-            hashPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+            hashPass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
             hashPass.end();
 
             const clearPass = encoder.beginComputePass();
             clearPass.setPipeline(clearOffsetsPipeline);
             clearPass.setBindGroup(0, clearOffsetsBindGroup);
-            clearPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+            clearPass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
             clearPass.end();
 
             const countPass = encoder.beginComputePass();
             countPass.setPipeline(countOffsetsPipeline);
             countPass.setBindGroup(1, countOffsetsBindGroup);
-            countPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+            countPass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
             countPass.end();
 
             const scatterPass = encoder.beginComputePass();
@@ -1537,7 +1538,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
           const densityPass = encoder.beginComputePass();
           densityPass.setPipeline(densityPipeline);
           densityPass.setBindGroup(0, densityBindGroup);
-          densityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+          densityPass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
           densityPass.end();
 
           if (useGpuDensityReadback) {
@@ -1578,7 +1579,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
           const pressurePass = encoder.beginComputePass();
           pressurePass.setPipeline(pressurePipeline);
           pressurePass.setBindGroup(0, pressureBindGroup);
-          pressurePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+          pressurePass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
           pressurePass.end();
         } else {
           physics.calculatePressure(timeStep);
@@ -1608,7 +1609,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
           const viscosityPass = encoder.beginComputePass();
           viscosityPass.setPipeline(viscosityPipeline);
           viscosityPass.setBindGroup(0, viscosityBindGroup);
-          viscosityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+          viscosityPass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
           viscosityPass.end();
         } else {
           physics.calculateViscosity(timeStep);
@@ -1635,7 +1636,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         const integratePass = encoder.beginComputePass();
         integratePass.setPipeline(integratePipeline);
         integratePass.setBindGroup(0, integrateBindGroup);
-        integratePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+        integratePass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
         integratePass.end();
         device.queue.submit([encoder.finish()]);
 
@@ -1796,19 +1797,19 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       const hashPass = encoder.beginComputePass();
       hashPass.setPipeline(hashPipeline);
       hashPass.setBindGroup(0, hashBindGroup);
-      hashPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+      hashPass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
       hashPass.end();
 
       const clearPass = encoder.beginComputePass();
       clearPass.setPipeline(clearOffsetsPipeline);
       clearPass.setBindGroup(0, clearOffsetsBindGroup);
-      clearPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+      clearPass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
       clearPass.end();
 
       const countPass = encoder.beginComputePass();
       countPass.setPipeline(countOffsetsPipeline);
       countPass.setBindGroup(1, countOffsetsBindGroup);
-      countPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+      countPass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
       countPass.end();
 
       const scatterPass = encoder.beginComputePass();
@@ -1827,7 +1828,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       const densityPass = encoder.beginComputePass();
       densityPass.setPipeline(densityPipeline);
       densityPass.setBindGroup(0, densityBindGroup);
-      densityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+      densityPass.dispatchWorkgroups(Math.ceil(particleCount / workgroupSize));
       densityPass.end();
     }
     const view = context.getCurrentTexture().createView();
