@@ -21,8 +21,8 @@
  * These are large primes that provide good distribution of hash values
  * and minimize clustering/collisions in the hash table.
  */
-const hashK1 = 15823
-const hashK2 = 9737333
+const hashK1 = 15823;
+const hashK2 = 9737333;
 
 /**
  * Relative offsets to check all 9 neighboring cells (including self).
@@ -49,7 +49,7 @@ export const neighborOffsets: [number, number][] = [
   [-1, -1],
   [0, -1],
   [1, -1],
-]
+];
 
 /**
  * Computes a spatial hash for a 2D cell coordinate.
@@ -74,10 +74,10 @@ export const neighborOffsets: [number, number][] = [
  */
 export function hashCell2D(cellX: number, cellY: number): number {
   // Convert to 32-bit integers and multiply by prime constants
-  const ax = Math.imul(cellX | 0, hashK1)
-  const by = Math.imul(cellY | 0, hashK2)
+  const ax = Math.imul(cellX | 0, hashK1);
+  const by = Math.imul(cellY | 0, hashK2);
 
   // Combine and convert to unsigned 32-bit integer
   // The >>> 0 operation ensures the result is treated as unsigned
-  return (ax + by) >>> 0
+  return (ax + by) >>> 0;
 }

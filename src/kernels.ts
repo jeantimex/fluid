@@ -22,7 +22,7 @@
  * Applications" (2003)
  */
 
-import type { ColorKey, RGB } from '../types.ts'
+import type { ColorKey, RGB } from './types.ts';
 
 /**
  * Poly6 smoothing kernel for density estimation.
@@ -41,13 +41,17 @@ import type { ColorKey, RGB } from '../types.ts'
  * @param scale - Precomputed normalization: 4 / (π · h⁸)
  * @returns Kernel value at distance dst
  */
-export function smoothingKernelPoly6(dst: number, radius: number, scale: number): number {
+export function smoothingKernelPoly6(
+  dst: number,
+  radius: number,
+  scale: number
+): number {
   if (dst < radius) {
     // (h² - r²)³ · scale
-    const v = radius * radius - dst * dst
-    return v * v * v * scale
+    const v = radius * radius - dst * dst;
+    return v * v * v * scale;
   }
-  return 0
+  return 0;
 }
 
 /**
@@ -67,13 +71,17 @@ export function smoothingKernelPoly6(dst: number, radius: number, scale: number)
  * @param scale - Precomputed normalization: 10 / (π · h⁵)
  * @returns Kernel value at distance dst
  */
-export function spikyKernelPow3(dst: number, radius: number, scale: number): number {
+export function spikyKernelPow3(
+  dst: number,
+  radius: number,
+  scale: number
+): number {
   if (dst < radius) {
     // (h - r)³ · scale
-    const v = radius - dst
-    return v * v * v * scale
+    const v = radius - dst;
+    return v * v * v * scale;
   }
-  return 0
+  return 0;
 }
 
 /**
@@ -90,13 +98,17 @@ export function spikyKernelPow3(dst: number, radius: number, scale: number): num
  * @param scale - Precomputed normalization: 6 / (π · h⁴)
  * @returns Kernel value at distance dst
  */
-export function spikyKernelPow2(dst: number, radius: number, scale: number): number {
+export function spikyKernelPow2(
+  dst: number,
+  radius: number,
+  scale: number
+): number {
   if (dst < radius) {
     // (h - r)² · scale
-    const v = radius - dst
-    return v * v * scale
+    const v = radius - dst;
+    return v * v * scale;
   }
-  return 0
+  return 0;
 }
 
 /**
@@ -116,13 +128,17 @@ export function spikyKernelPow2(dst: number, radius: number, scale: number): num
  * @param scale - Precomputed normalization: 30 / (π · h⁵)
  * @returns Gradient magnitude (negative, pointing toward particle)
  */
-export function derivativeSpikyPow3(dst: number, radius: number, scale: number): number {
+export function derivativeSpikyPow3(
+  dst: number,
+  radius: number,
+  scale: number
+): number {
   if (dst <= radius) {
     // -(h - r)² · scale
-    const v = radius - dst
-    return -v * v * scale
+    const v = radius - dst;
+    return -v * v * scale;
   }
-  return 0
+  return 0;
 }
 
 /**
@@ -138,13 +154,17 @@ export function derivativeSpikyPow3(dst: number, radius: number, scale: number):
  * @param scale - Precomputed normalization: 12 / (π · h⁴)
  * @returns Gradient magnitude (negative)
  */
-export function derivativeSpikyPow2(dst: number, radius: number, scale: number): number {
+export function derivativeSpikyPow2(
+  dst: number,
+  radius: number,
+  scale: number
+): number {
   if (dst <= radius) {
     // -(h - r) · scale
-    const v = radius - dst
-    return -v * scale
+    const v = radius - dst;
+    return -v * scale;
   }
-  return 0
+  return 0;
 }
 
 /**
@@ -171,37 +191,37 @@ export function derivativeSpikyPow2(dst: number, radius: number, scale: number):
  */
 export function buildGradientLut(keys: ColorKey[], resolution: number): RGB[] {
   // Sort keyframes by position for correct interpolation
-  const sorted = [...keys].sort((a, b) => a.t - b.t)
-  const lut: RGB[] = new Array(resolution)
+  const sorted = [...keys].sort((a, b) => a.t - b.t);
+  const lut: RGB[] = new Array(resolution);
 
   for (let i = 0; i < resolution; i += 1) {
     // Map array index to [0, 1] range
-    const t = resolution === 1 ? 0 : i / (resolution - 1)
+    const t = resolution === 1 ? 0 : i / (resolution - 1);
 
     // Find the two keyframes that bracket this position
-    let left = sorted[0]
-    let right = sorted[sorted.length - 1]
+    let left = sorted[0];
+    let right = sorted[sorted.length - 1];
 
     for (let k = 0; k < sorted.length - 1; k += 1) {
-      const a = sorted[k]
-      const b = sorted[k + 1]
+      const a = sorted[k];
+      const b = sorted[k + 1];
       if (t >= a.t && t <= b.t) {
-        left = a
-        right = b
-        break
+        left = a;
+        right = b;
+        break;
       }
     }
 
     // Linear interpolation between bracketing keyframes
-    const span = right.t - left.t || 1  // Avoid division by zero
-    const localT = (t - left.t) / span
+    const span = right.t - left.t || 1; // Avoid division by zero
+    const localT = (t - left.t) / span;
 
-    const r = left.r + (right.r - left.r) * localT
-    const g = left.g + (right.g - left.g) * localT
-    const b = left.b + (right.b - left.b) * localT
+    const r = left.r + (right.r - left.r) * localT;
+    const g = left.g + (right.g - left.g) * localT;
+    const b = left.b + (right.b - left.b) * localT;
 
-    lut[i] = { r, g, b }
+    lut[i] = { r, g, b };
   }
 
-  return lut
+  return lut;
 }

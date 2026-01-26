@@ -16,7 +16,7 @@
  * - Scale factor converts between them, maintaining aspect ratio
  */
 
-import type { RGB, Renderer, SimConfig, SimState, Vec2 } from '../types.ts'
+import type { RGB, Renderer, SimConfig, SimState, Vec2 } from './types.ts';
 
 /**
  * Creates a renderer for the fluid simulation.
@@ -42,21 +42,21 @@ export function createRenderer(
   gradientLut: RGB[]
 ): Renderer {
   // Get 2D rendering context (non-null assertion - we know canvas supports 2D)
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d')!;
 
   // Image data for direct pixel manipulation
-  let imageData = ctx.createImageData(canvas.width, canvas.height)
-  let pixelBuffer = imageData.data
+  let imageData = ctx.createImageData(canvas.width, canvas.height);
+  let pixelBuffer = imageData.data;
 
   // Coordinate transformation state
-  let baseUnitsPerPixel: number | null = null  // Set on first resize
-  let scale = canvas.width / config.boundsSize.x
-  let originX = canvas.width * 0.5   // Canvas center X
-  let originY = canvas.height * 0.5  // Canvas center Y
+  let baseUnitsPerPixel: number | null = null; // Set on first resize
+  let scale = canvas.width / config.boundsSize.x;
+  let originX = canvas.width * 0.5; // Canvas center X
+  let originY = canvas.height * 0.5; // Canvas center Y
 
   // Particle stamp (circular pattern of pixel offsets)
-  let stampRadius = -1
-  let stampOffsets: [number, number][] = []
+  let stampRadius = -1;
+  let stampOffsets: [number, number][] = [];
 
   /**
    * Handles canvas resize events.
@@ -72,22 +72,22 @@ export function createRenderer(
    * slower because the viewport changed.
    */
   function resizeCanvas(): void {
-    const rect = canvas.getBoundingClientRect()
-    const nextWidth = Math.max(1, Math.round(rect.width))
-    const nextHeight = Math.max(1, Math.round(rect.height))
+    const rect = canvas.getBoundingClientRect();
+    const nextWidth = Math.max(1, Math.round(rect.width));
+    const nextHeight = Math.max(1, Math.round(rect.height));
 
     // Capture initial scale on first resize
     if (baseUnitsPerPixel === null) {
-      const refWidth = Math.max(1, rect.width)
-      baseUnitsPerPixel = config.boundsSize.x / refWidth
+      const refWidth = Math.max(1, rect.width);
+      baseUnitsPerPixel = config.boundsSize.x / refWidth;
     }
 
     // Resize canvas buffer if dimensions changed
     if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
-      canvas.width = nextWidth
-      canvas.height = nextHeight
-      imageData = ctx.createImageData(canvas.width, canvas.height)
-      pixelBuffer = imageData.data
+      canvas.width = nextWidth;
+      canvas.height = nextHeight;
+      imageData = ctx.createImageData(canvas.width, canvas.height);
+      pixelBuffer = imageData.data;
     }
 
     // Update world bounds to maintain consistent scale
@@ -95,12 +95,12 @@ export function createRenderer(
     config.boundsSize = {
       x: canvas.width * baseUnitsPerPixel,
       y: canvas.height * baseUnitsPerPixel,
-    }
+    };
 
     // Recalculate transformation parameters
-    scale = canvas.width / config.boundsSize.x
-    originX = canvas.width * 0.5
-    originY = canvas.height * 0.5
+    scale = canvas.width / config.boundsSize.x;
+    originX = canvas.width * 0.5;
+    originY = canvas.height * 0.5;
   }
 
   /**
@@ -118,8 +118,8 @@ export function createRenderer(
   function worldToCanvas(x: number, y: number): Vec2 {
     return {
       x: originX + x * scale,
-      y: originY - y * scale,  // Flip Y axis
-    }
+      y: originY - y * scale, // Flip Y axis
+    };
   }
 
   /**
@@ -134,8 +134,8 @@ export function createRenderer(
   function canvasToWorld(x: number, y: number): Vec2 {
     return {
       x: (x - originX) / scale,
-      y: (originY - y) / scale,  // Flip Y axis
-    }
+      y: (originY - y) / scale, // Flip Y axis
+    };
   }
 
   /**
@@ -150,24 +150,24 @@ export function createRenderer(
    * The stamp is rebuilt only when particleRadius changes.
    */
   function rebuildStamp(): void {
-    const nextRadius = Math.max(1, Math.round(config.particleRadius))
-    if (nextRadius === stampRadius) return
+    const nextRadius = Math.max(1, Math.round(config.particleRadius));
+    if (nextRadius === stampRadius) return;
 
-    stampRadius = nextRadius
-    const offsets: [number, number][] = []
-    const r2 = stampRadius * stampRadius
+    stampRadius = nextRadius;
+    const offsets: [number, number][] = [];
+    const r2 = stampRadius * stampRadius;
 
     // Generate all pixel offsets within the circle
     for (let oy = -stampRadius; oy <= stampRadius; oy += 1) {
       for (let ox = -stampRadius; ox <= stampRadius; ox += 1) {
         // Check if offset is within circle (using squared distance)
         if (ox * ox + oy * oy <= r2) {
-          offsets.push([ox, oy])
+          offsets.push([ox, oy]);
         }
       }
     }
 
-    stampOffsets = offsets
+    stampOffsets = offsets;
   }
 
   /**
@@ -188,91 +188,91 @@ export function createRenderer(
    * @param state - Current simulation state with particle data
    */
   function draw(state: SimState): void {
-    const width = canvas.width
-    const height = canvas.height
+    const width = canvas.width;
+    const height = canvas.height;
 
     // Clear buffer and fill with dark background
-    pixelBuffer.fill(0)
-    const bg = [5, 7, 11]  // Dark blue-gray background
+    pixelBuffer.fill(0);
+    const bg = [5, 7, 11]; // Dark blue-gray background
     for (let i = 0; i < pixelBuffer.length; i += 4) {
-      pixelBuffer[i] = bg[0]      // R
-      pixelBuffer[i + 1] = bg[1]  // G
-      pixelBuffer[i + 2] = bg[2]  // B
-      pixelBuffer[i + 3] = 255    // A (fully opaque)
+      pixelBuffer[i] = bg[0]; // R
+      pixelBuffer[i + 1] = bg[1]; // G
+      pixelBuffer[i + 2] = bg[2]; // B
+      pixelBuffer[i + 3] = 255; // A (fully opaque)
     }
 
-    const maxSpeed = config.velocityDisplayMax
-    rebuildStamp()
+    const maxSpeed = config.velocityDisplayMax;
+    rebuildStamp();
 
     // Draw each particle
     for (let i = 0; i < state.count; i += 1) {
       // Get particle position and velocity from interleaved arrays
-      const x = state.positions[i * 2]
-      const y = state.positions[i * 2 + 1]
-      const p = worldToCanvas(x, y)
+      const x = state.positions[i * 2];
+      const y = state.positions[i * 2 + 1];
+      const p = worldToCanvas(x, y);
 
-      const vx = state.velocities[i * 2]
-      const vy = state.velocities[i * 2 + 1]
+      const vx = state.velocities[i * 2];
+      const vy = state.velocities[i * 2 + 1];
 
       // Calculate speed and map to color gradient
-      const speed = Math.sqrt(vx * vx + vy * vy)
-      const t = Math.max(0, Math.min(1, speed / maxSpeed))
+      const speed = Math.sqrt(vx * vx + vy * vy);
+      const t = Math.max(0, Math.min(1, speed / maxSpeed));
 
       // Look up color in precomputed gradient
       const idx = Math.min(
         gradientLut.length - 1,
         Math.floor(t * (gradientLut.length - 1))
-      )
-      const col = gradientLut[idx]
+      );
+      const col = gradientLut[idx];
 
       // Convert normalized color to 8-bit
-      const r = Math.round(col.r * 255)
-      const g = Math.round(col.g * 255)
-      const b = Math.round(col.b * 255)
+      const r = Math.round(col.r * 255);
+      const g = Math.round(col.g * 255);
+      const b = Math.round(col.b * 255);
 
       // Particle center in pixels
-      const px = Math.round(p.x)
-      const py = Math.round(p.y)
+      const px = Math.round(p.x);
+      const py = Math.round(p.y);
 
       // Draw the stamp (filled circle)
       for (let j = 0; j < stampOffsets.length; j += 1) {
-        const offset = stampOffsets[j]
-        const yy = py + offset[1]
-        if (yy < 0 || yy >= height) continue
+        const offset = stampOffsets[j];
+        const yy = py + offset[1];
+        if (yy < 0 || yy >= height) continue;
 
-        const xx = px + offset[0]
-        if (xx < 0 || xx >= width) continue
+        const xx = px + offset[0];
+        if (xx < 0 || xx >= width) continue;
 
         // Calculate pixel buffer index (RGBA format)
-        const pixelIndex = (yy * width + xx) * 4
-        pixelBuffer[pixelIndex] = r
-        pixelBuffer[pixelIndex + 1] = g
-        pixelBuffer[pixelIndex + 2] = b
-        pixelBuffer[pixelIndex + 3] = 255
+        const pixelIndex = (yy * width + xx) * 4;
+        pixelBuffer[pixelIndex] = r;
+        pixelBuffer[pixelIndex + 1] = g;
+        pixelBuffer[pixelIndex + 2] = b;
+        pixelBuffer[pixelIndex + 3] = 255;
       }
     }
 
     // Copy pixel buffer to canvas
-    ctx.putImageData(imageData, 0, 0)
+    ctx.putImageData(imageData, 0, 0);
 
     // Draw boundary rectangle
-    const halfW = (config.boundsSize.x * scale) / 2
-    const halfH = (config.boundsSize.y * scale) / 2
-    ctx.strokeStyle = '#1b2432'  // Dark border color
-    ctx.lineWidth = 1
-    ctx.strokeRect(originX - halfW, originY - halfH, halfW * 2, halfH * 2)
+    const halfW = (config.boundsSize.x * scale) / 2;
+    const halfH = (config.boundsSize.y * scale) / 2;
+    ctx.strokeStyle = '#1b2432'; // Dark border color
+    ctx.lineWidth = 1;
+    ctx.strokeRect(originX - halfW, originY - halfH, halfW * 2, halfH * 2);
   }
 
   // Initialize canvas size
-  resizeCanvas()
+  resizeCanvas();
 
   // Handle window resize
-  window.addEventListener('resize', resizeCanvas)
+  window.addEventListener('resize', resizeCanvas);
 
   return {
     draw,
     worldToCanvas,
     canvasToWorld,
     getScale: () => scale,
-  }
+  };
 }

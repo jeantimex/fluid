@@ -42,15 +42,15 @@
  * - Clavet et al., "Particle-based Viscoelastic Fluid Simulation" (2005)
  */
 
-import type { Physics, SimConfig, SimState } from '../types.ts'
+import type { Physics, SimConfig, SimState } from './types.ts';
 import {
   derivativeSpikyPow2,
   derivativeSpikyPow3,
   smoothingKernelPoly6,
   spikyKernelPow2,
   spikyKernelPow3,
-} from './kernels.ts'
-import { hashCell2D, neighborOffsets } from './spatial.ts'
+} from './kernels.ts';
+import { hashCell2D, neighborOffsets } from './spatial.ts';
 
 /**
  * Creates the physics simulation engine.
@@ -79,29 +79,29 @@ export function createPhysics(
     pressureMultiplier: config.pressureMultiplier,
     nearPressureMultiplier: config.nearPressureMultiplier,
     viscosityStrength: config.viscosityStrength,
-  }
+  };
 
   // === Precomputed Kernel Scaling Factors ===
   // These are normalization constants that depend only on the smoothing radius.
   // Precomputing them avoids repeated Math.pow() calls during simulation.
 
-  let radius = config.smoothingRadius
-  let radiusSq = radius * radius
+  let radius = config.smoothingRadius;
+  let radiusSq = radius * radius;
 
   // Poly6 kernel: W(r,h) = (4/πh⁸)(h²-r²)³
-  let poly6Scale = 4 / (Math.PI * Math.pow(radius, 8))
+  let poly6Scale = 4 / (Math.PI * Math.pow(radius, 8));
 
   // Spiky kernel (cubic): W(r,h) = (10/πh⁵)(h-r)³
-  let spikyPow3Scale = 10 / (Math.PI * Math.pow(radius, 5))
+  let spikyPow3Scale = 10 / (Math.PI * Math.pow(radius, 5));
 
   // Spiky kernel (quadratic): W(r,h) = (6/πh⁴)(h-r)²
-  let spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4))
+  let spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4));
 
   // Spiky gradient (cubic): ∇W = (30/πh⁵)(h-r)²
-  let spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5))
+  let spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5));
 
   // Spiky gradient (quadratic): ∇W = (12/πh⁴)(h-r)
-  let spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4))
+  let spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4));
 
   /**
    * Recalculates kernel scaling factors after smoothing radius changes.
@@ -110,13 +110,13 @@ export function createPhysics(
    * the precomputed values in sync.
    */
   function refreshSettings(): void {
-    radius = config.smoothingRadius
-    radiusSq = radius * radius
-    poly6Scale = 4 / (Math.PI * Math.pow(radius, 8))
-    spikyPow3Scale = 10 / (Math.PI * Math.pow(radius, 5))
-    spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4))
-    spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5))
-    spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4))
+    radius = config.smoothingRadius;
+    radiusSq = radius * radius;
+    poly6Scale = 4 / (Math.PI * Math.pow(radius, 8));
+    spikyPow3Scale = 10 / (Math.PI * Math.pow(radius, 5));
+    spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4));
+    spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5));
+    spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4));
   }
 
   /**
@@ -134,17 +134,17 @@ export function createPhysics(
    * These relationships are empirical and produce visually consistent behavior.
    */
   function applyParticleScale(): void {
-    const baseRadius = Math.max(0.0001, baseParams.particleRadius)
-    const scaleFactor = config.particleRadius / baseRadius
-    const scaleSq = scaleFactor * scaleFactor
+    const baseRadius = Math.max(0.0001, baseParams.particleRadius);
+    const scaleFactor = config.particleRadius / baseRadius;
+    const scaleSq = scaleFactor * scaleFactor;
 
-    config.smoothingRadius = baseParams.smoothingRadius * scaleFactor
-    config.targetDensity = baseParams.targetDensity * scaleSq
-    config.pressureMultiplier = baseParams.pressureMultiplier / scaleSq
-    config.nearPressureMultiplier = baseParams.nearPressureMultiplier / scaleSq
-    config.viscosityStrength = baseParams.viscosityStrength / scaleFactor
+    config.smoothingRadius = baseParams.smoothingRadius * scaleFactor;
+    config.targetDensity = baseParams.targetDensity * scaleSq;
+    config.pressureMultiplier = baseParams.pressureMultiplier / scaleSq;
+    config.nearPressureMultiplier = baseParams.nearPressureMultiplier / scaleSq;
+    config.viscosityStrength = baseParams.viscosityStrength / scaleFactor;
 
-    refreshSettings()
+    refreshSettings();
   }
 
   /**
@@ -168,79 +168,80 @@ export function createPhysics(
    * @param dt - Time step in seconds
    */
   function externalForcesStep(dt: number): void {
-    const positions = state.positions
-    const predicted = state.predicted
-    const velocities = state.velocities
+    const positions = state.positions;
+    const predicted = state.predicted;
+    const velocities = state.velocities;
 
     // Determine interaction mode
-    const pull = state.input.pull
-    const push = state.input.push
+    const pull = state.input.pull;
+    const push = state.input.push;
     const interactionStrength = push
-      ? -config.interactionStrength  // Negative for push (repel)
+      ? -config.interactionStrength // Negative for push (repel)
       : pull
-        ? config.interactionStrength   // Positive for pull (attract)
-        : 0                            // No interaction
+        ? config.interactionStrength // Positive for pull (attract)
+        : 0; // No interaction
 
-    const inputX = state.input.worldX
-    const inputY = state.input.worldY
-    const inputRadius = config.interactionRadius
-    const inputRadiusSq = inputRadius * inputRadius
+    const inputX = state.input.worldX;
+    const inputY = state.input.worldY;
+    const inputRadius = config.interactionRadius;
+    const inputRadiusSq = inputRadius * inputRadius;
 
     for (let i = 0; i < state.count; i += 1) {
-      const idx = i * 2
-      let vx = velocities[idx]
-      let vy = velocities[idx + 1]
+      const idx = i * 2;
+      let vx = velocities[idx];
+      let vy = velocities[idx + 1];
 
       // Start with gravity (constant downward acceleration)
-      let ax = 0
-      let ay = config.gravity
+      let ax = 0;
+      let ay = config.gravity;
 
       // Apply mouse interaction force if active
       if (interactionStrength !== 0) {
-        const dx = inputX - positions[idx]
-        const dy = inputY - positions[idx + 1]
-        const sqrDst = dx * dx + dy * dy
+        const dx = inputX - positions[idx];
+        const dy = inputY - positions[idx + 1];
+        const sqrDst = dx * dx + dy * dy;
 
         // Only affect particles within interaction radius
         if (sqrDst < inputRadiusSq) {
-          const dst = Math.sqrt(sqrDst)
+          const dst = Math.sqrt(sqrDst);
 
           // Edge-to-center interpolation factors
-          const edgeT = dst / inputRadius      // 0 at center, 1 at edge
-          const centreT = 1 - edgeT            // 1 at center, 0 at edge
+          const edgeT = dst / inputRadius; // 0 at center, 1 at edge
+          const centreT = 1 - edgeT; // 1 at center, 0 at edge
 
           // Direction from particle to cursor
-          const invDst = dst > 0 ? 1 / dst : 0
-          const dirX = dx * invDst
-          const dirY = dy * invDst
+          const invDst = dst > 0 ? 1 / dst : 0;
+          const dirX = dx * invDst;
+          const dirY = dy * invDst;
 
           // Reduce gravity influence near cursor center
-          const gravityWeight = 1 - centreT * Math.min(1, interactionStrength / 10)
+          const gravityWeight =
+            1 - centreT * Math.min(1, interactionStrength / 10);
 
           // Combined acceleration: scaled gravity + directional force + velocity damping
           ax =
             ax * gravityWeight +
             dirX * centreT * interactionStrength -
-            vx * centreT  // Damping term
+            vx * centreT; // Damping term
           ay =
             ay * gravityWeight +
             dirY * centreT * interactionStrength -
-            vy * centreT
+            vy * centreT;
         }
       }
 
       // Euler integration: v += a * dt
-      vx += ax * dt
-      vy += ay * dt
+      vx += ax * dt;
+      vy += ay * dt;
 
-      velocities[idx] = vx
-      velocities[idx + 1] = vy
+      velocities[idx] = vx;
+      velocities[idx + 1] = vy;
 
       // Predict position for density calculation
       // Using a fixed prediction factor (1/120s) for stability
-      const predictionFactor = 1 / 120
-      predicted[idx] = positions[idx] + vx * predictionFactor
-      predicted[idx + 1] = positions[idx + 1] + vy * predictionFactor
+      const predictionFactor = 1 / 120;
+      predicted[idx] = positions[idx] + vx * predictionFactor;
+      predicted[idx + 1] = positions[idx + 1] + vy * predictionFactor;
     }
   }
 
@@ -273,83 +274,83 @@ export function createPhysics(
    * in memory, enabling efficient iteration during density/force calculation.
    */
   function runSpatialHash(): void {
-    const count = state.count
-    const predicted = state.predicted
-    const keys = state.keys
-    const sortedKeys = state.sortedKeys
-    const indices = state.indices
-    const sortOffsets = state.sortOffsets
+    const count = state.count;
+    const predicted = state.predicted;
+    const keys = state.keys;
+    const sortedKeys = state.sortedKeys;
+    const indices = state.indices;
+    const sortOffsets = state.sortOffsets;
 
     // === Step 1: Compute hash keys and count bucket sizes ===
-    sortOffsets.fill(0)
+    sortOffsets.fill(0);
     for (let i = 0; i < count; i += 1) {
-      const idx = i * 2
+      const idx = i * 2;
       // Convert position to grid cell coordinates
-      const cellX = Math.floor(predicted[idx] / radius)
-      const cellY = Math.floor(predicted[idx + 1] / radius)
+      const cellX = Math.floor(predicted[idx] / radius);
+      const cellY = Math.floor(predicted[idx + 1] / radius);
 
       // Hash cell to key and reduce to table size
-      const hash = hashCell2D(cellX, cellY)
-      const key = hash % count
-      keys[i] = key
-      sortOffsets[key] += 1  // Count particles in this bucket
+      const hash = hashCell2D(cellX, cellY);
+      const key = hash % count;
+      keys[i] = key;
+      sortOffsets[key] += 1; // Count particles in this bucket
     }
 
     // === Step 2: Compute prefix sum (exclusive scan) ===
     // Transforms counts into starting indices
-    let sum = 0
+    let sum = 0;
     for (let k = 0; k < count; k += 1) {
-      const c = sortOffsets[k]
-      sortOffsets[k] = sum
-      sum += c
+      const c = sortOffsets[k];
+      sortOffsets[k] = sum;
+      sum += c;
     }
 
     // === Step 3: Scatter particles to sorted positions ===
     for (let i = 0; i < count; i += 1) {
-      const key = keys[i]
-      const dest = sortOffsets[key]
-      sortOffsets[key] = dest + 1  // Increment for next particle with same key
-      indices[dest] = i            // Record original index
-      sortedKeys[dest] = key       // Record key at sorted position
+      const key = keys[i];
+      const dest = sortOffsets[key];
+      sortOffsets[key] = dest + 1; // Increment for next particle with same key
+      indices[dest] = i; // Record original index
+      sortedKeys[dest] = key; // Record key at sorted position
     }
 
     // === Step 4: Reorder particle data to sorted order ===
-    const positions = state.positions
-    const velocities = state.velocities
-    const positionsSorted = state.positionsSorted
-    const predictedSorted = state.predictedSorted
-    const velocitiesSorted = state.velocitiesSorted
+    const positions = state.positions;
+    const velocities = state.velocities;
+    const positionsSorted = state.positionsSorted;
+    const predictedSorted = state.predictedSorted;
+    const velocitiesSorted = state.velocitiesSorted;
 
     for (let i = 0; i < count; i += 1) {
-      const src = indices[i] * 2
-      const dst = i * 2
+      const src = indices[i] * 2;
+      const dst = i * 2;
 
       // Copy from original to sorted position
-      positionsSorted[dst] = positions[src]
-      positionsSorted[dst + 1] = positions[src + 1]
-      predictedSorted[dst] = predicted[src]
-      predictedSorted[dst + 1] = predicted[src + 1]
-      velocitiesSorted[dst] = velocities[src]
-      velocitiesSorted[dst + 1] = velocities[src + 1]
+      positionsSorted[dst] = positions[src];
+      positionsSorted[dst + 1] = positions[src + 1];
+      predictedSorted[dst] = predicted[src];
+      predictedSorted[dst + 1] = predicted[src + 1];
+      velocitiesSorted[dst] = velocities[src];
+      velocitiesSorted[dst + 1] = velocities[src + 1];
     }
 
     // Swap buffer pointers (double-buffering to avoid allocation)
-    state.positions = positionsSorted
-    state.predicted = predictedSorted
-    state.velocities = velocitiesSorted
-    state.positionsSorted = positions
-    state.predictedSorted = predicted
-    state.velocitiesSorted = velocities
+    state.positions = positionsSorted;
+    state.predicted = predictedSorted;
+    state.velocities = velocitiesSorted;
+    state.positionsSorted = positions;
+    state.predictedSorted = predicted;
+    state.velocitiesSorted = velocities;
 
     // === Step 5: Build spatial offset lookup table ===
     // spatialOffsets[key] = first sorted index with that key
-    const spatialOffsets = state.spatialOffsets
-    spatialOffsets.fill(count)  // Initialize to "no particles" sentinel
+    const spatialOffsets = state.spatialOffsets;
+    spatialOffsets.fill(count); // Initialize to "no particles" sentinel
 
     for (let i = 0; i < count; i += 1) {
       // Record offset at first occurrence of each key
       if (i === 0 || sortedKeys[i] !== sortedKeys[i - 1]) {
-        spatialOffsets[sortedKeys[i]] = i
+        spatialOffsets[sortedKeys[i]] = i;
       }
     }
   }
@@ -379,60 +380,60 @@ export function createPhysics(
    *    c. Check distance and accumulate kernel contribution
    */
   function calculateDensities(): void {
-    const count = state.count
-    const predicted = state.predicted
-    const densities = state.densities
-    const sortedKeys = state.sortedKeys
-    const spatialOffsets = state.spatialOffsets
+    const count = state.count;
+    const predicted = state.predicted;
+    const densities = state.densities;
+    const sortedKeys = state.sortedKeys;
+    const spatialOffsets = state.spatialOffsets;
 
     for (let i = 0; i < count; i += 1) {
-      const idx = i * 2
-      const posX = predicted[idx]
-      const posY = predicted[idx + 1]
+      const idx = i * 2;
+      const posX = predicted[idx];
+      const posY = predicted[idx + 1];
 
       // Grid cell containing this particle
-      const originCellX = Math.floor(posX / radius)
-      const originCellY = Math.floor(posY / radius)
+      const originCellX = Math.floor(posX / radius);
+      const originCellY = Math.floor(posY / radius);
 
-      let density = 0
-      let nearDensity = 0
+      let density = 0;
+      let nearDensity = 0;
 
       // Iterate over all 9 neighboring cells
       for (let n = 0; n < neighborOffsets.length; n += 1) {
-        const offset = neighborOffsets[n]
-        const cellX = originCellX + offset[0]
-        const cellY = originCellY + offset[1]
+        const offset = neighborOffsets[n];
+        const cellX = originCellX + offset[0];
+        const cellY = originCellY + offset[1];
 
         // Get starting index for this cell in sorted array
-        const key = hashCell2D(cellX, cellY) % count
-        let currIndex = spatialOffsets[key]
+        const key = hashCell2D(cellX, cellY) % count;
+        let currIndex = spatialOffsets[key];
 
         // Iterate through particles with matching key
         while (currIndex < count) {
-          const neighbourKey = sortedKeys[currIndex]
-          if (neighbourKey !== key) break  // Moved to different bucket
+          const neighbourKey = sortedKeys[currIndex];
+          if (neighbourKey !== key) break; // Moved to different bucket
 
-          const nIdx = currIndex * 2
-          const dx = predicted[nIdx] - posX
-          const dy = predicted[nIdx + 1] - posY
-          const sqrDst = dx * dx + dy * dy
+          const nIdx = currIndex * 2;
+          const dx = predicted[nIdx] - posX;
+          const dy = predicted[nIdx + 1] - posY;
+          const sqrDst = dx * dx + dy * dy;
 
           // Only include neighbors within smoothing radius
           if (sqrDst <= radiusSq) {
-            const dst = Math.sqrt(sqrDst)
+            const dst = Math.sqrt(sqrDst);
 
             // Accumulate kernel contributions
-            density += spikyKernelPow2(dst, radius, spikyPow2Scale)
-            nearDensity += spikyKernelPow3(dst, radius, spikyPow3Scale)
+            density += spikyKernelPow2(dst, radius, spikyPow2Scale);
+            nearDensity += spikyKernelPow3(dst, radius, spikyPow3Scale);
           }
 
-          currIndex += 1
+          currIndex += 1;
         }
       }
 
       // Store both densities (interleaved)
-      densities[idx] = density
-      densities[idx + 1] = nearDensity
+      densities[idx] = density;
+      densities[idx + 1] = nearDensity;
     }
   }
 
@@ -461,102 +462,103 @@ export function createPhysics(
    * @param dt - Time step in seconds
    */
   function calculatePressure(dt: number): void {
-    const count = state.count
-    const predicted = state.predicted
-    const velocities = state.velocities
-    const densities = state.densities
-    const sortedKeys = state.sortedKeys
-    const spatialOffsets = state.spatialOffsets
+    const count = state.count;
+    const predicted = state.predicted;
+    const velocities = state.velocities;
+    const densities = state.densities;
+    const sortedKeys = state.sortedKeys;
+    const spatialOffsets = state.spatialOffsets;
 
     for (let i = 0; i < count; i += 1) {
-      const idx = i * 2
-      const density = densities[idx]
-      const nearDensity = densities[idx + 1]
+      const idx = i * 2;
+      const density = densities[idx];
+      const nearDensity = densities[idx + 1];
 
       // Skip particles with zero density (shouldn't happen, but safety check)
-      if (density <= 0) continue
+      if (density <= 0) continue;
 
       // Compute pressure from density deviation
       // Positive when compressed (ρ > ρ₀), negative when expanded
-      const pressure = (density - config.targetDensity) * config.pressureMultiplier
-      const nearPressure = config.nearPressureMultiplier * nearDensity
+      const pressure =
+        (density - config.targetDensity) * config.pressureMultiplier;
+      const nearPressure = config.nearPressureMultiplier * nearDensity;
 
-      const posX = predicted[idx]
-      const posY = predicted[idx + 1]
-      const originCellX = Math.floor(posX / radius)
-      const originCellY = Math.floor(posY / radius)
+      const posX = predicted[idx];
+      const posY = predicted[idx + 1];
+      const originCellX = Math.floor(posX / radius);
+      const originCellY = Math.floor(posY / radius);
 
-      let forceX = 0
-      let forceY = 0
+      let forceX = 0;
+      let forceY = 0;
 
       // Iterate over neighboring particles
       for (let n = 0; n < neighborOffsets.length; n += 1) {
-        const offset = neighborOffsets[n]
-        const cellX = originCellX + offset[0]
-        const cellY = originCellY + offset[1]
-        const key = hashCell2D(cellX, cellY) % count
-        let currIndex = spatialOffsets[key]
+        const offset = neighborOffsets[n];
+        const cellX = originCellX + offset[0];
+        const cellY = originCellY + offset[1];
+        const key = hashCell2D(cellX, cellY) % count;
+        let currIndex = spatialOffsets[key];
 
         while (currIndex < count) {
-          const neighbourKey = sortedKeys[currIndex]
-          if (neighbourKey !== key) break
+          const neighbourKey = sortedKeys[currIndex];
+          if (neighbourKey !== key) break;
 
           // Skip self-interaction
           if (currIndex !== i) {
-            const nIdx = currIndex * 2
-            const dx = predicted[nIdx] - posX
-            const dy = predicted[nIdx + 1] - posY
-            const sqrDst = dx * dx + dy * dy
+            const nIdx = currIndex * 2;
+            const dx = predicted[nIdx] - posX;
+            const dy = predicted[nIdx + 1] - posY;
+            const sqrDst = dx * dx + dy * dy;
 
             if (sqrDst <= radiusSq) {
-              const dst = Math.sqrt(sqrDst)
+              const dst = Math.sqrt(sqrDst);
 
               // Direction from particle i to neighbor j
-              const invDst = dst > 0 ? 1 / dst : 0
-              const dirX = dx * invDst
-              const dirY = dy * invDst
+              const invDst = dst > 0 ? 1 / dst : 0;
+              const dirX = dx * invDst;
+              const dirY = dy * invDst;
 
               // Neighbor's pressure values
-              const neighbourDensity = densities[nIdx]
-              const neighbourNearDensity = densities[nIdx + 1]
+              const neighbourDensity = densities[nIdx];
+              const neighbourNearDensity = densities[nIdx + 1];
               const neighbourPressure =
                 (neighbourDensity - config.targetDensity) *
-                config.pressureMultiplier
+                config.pressureMultiplier;
               const neighbourNearPressure =
-                config.nearPressureMultiplier * neighbourNearDensity
+                config.nearPressureMultiplier * neighbourNearDensity;
 
               // Symmetric pressure (average of both particles)
-              const sharedPressure = (pressure + neighbourPressure) * 0.5
+              const sharedPressure = (pressure + neighbourPressure) * 0.5;
               const sharedNearPressure =
-                (nearPressure + neighbourNearPressure) * 0.5
+                (nearPressure + neighbourNearPressure) * 0.5;
 
               // Accumulate pressure force (using kernel gradient)
               if (neighbourDensity > 0) {
                 const scale =
                   derivativeSpikyPow2(dst, radius, spikyPow2DerivScale) *
-                  (sharedPressure / neighbourDensity)
-                forceX += dirX * scale
-                forceY += dirY * scale
+                  (sharedPressure / neighbourDensity);
+                forceX += dirX * scale;
+                forceY += dirY * scale;
               }
 
               // Accumulate near-pressure force (stronger at close range)
               if (neighbourNearDensity > 0) {
                 const scale =
                   derivativeSpikyPow3(dst, radius, spikyPow3DerivScale) *
-                  (sharedNearPressure / neighbourNearDensity)
-                forceX += dirX * scale
-                forceY += dirY * scale
+                  (sharedNearPressure / neighbourNearDensity);
+                forceX += dirX * scale;
+                forceY += dirY * scale;
               }
             }
           }
 
-          currIndex += 1
+          currIndex += 1;
         }
       }
 
       // Apply acceleration: a = F/ρ (F = ma, so a = F/m, with ρ ~ m here)
-      velocities[idx] += (forceX / density) * dt
-      velocities[idx + 1] += (forceY / density) * dt
+      velocities[idx] += (forceX / density) * dt;
+      velocities[idx + 1] += (forceY / density) * dt;
     }
   }
 
@@ -582,62 +584,62 @@ export function createPhysics(
    * @param dt - Time step in seconds
    */
   function calculateViscosity(dt: number): void {
-    const count = state.count
-    const predicted = state.predicted
-    const velocities = state.velocities
-    const sortedKeys = state.sortedKeys
-    const spatialOffsets = state.spatialOffsets
+    const count = state.count;
+    const predicted = state.predicted;
+    const velocities = state.velocities;
+    const sortedKeys = state.sortedKeys;
+    const spatialOffsets = state.spatialOffsets;
 
     for (let i = 0; i < count; i += 1) {
-      const idx = i * 2
-      const posX = predicted[idx]
-      const posY = predicted[idx + 1]
-      const originCellX = Math.floor(posX / radius)
-      const originCellY = Math.floor(posY / radius)
+      const idx = i * 2;
+      const posX = predicted[idx];
+      const posY = predicted[idx + 1];
+      const originCellX = Math.floor(posX / radius);
+      const originCellY = Math.floor(posY / radius);
 
-      let forceX = 0
-      let forceY = 0
-      const velX = velocities[idx]
-      const velY = velocities[idx + 1]
+      let forceX = 0;
+      let forceY = 0;
+      const velX = velocities[idx];
+      const velY = velocities[idx + 1];
 
       // Iterate over neighboring particles
       for (let n = 0; n < neighborOffsets.length; n += 1) {
-        const offset = neighborOffsets[n]
-        const cellX = originCellX + offset[0]
-        const cellY = originCellY + offset[1]
-        const key = hashCell2D(cellX, cellY) % count
-        let currIndex = spatialOffsets[key]
+        const offset = neighborOffsets[n];
+        const cellX = originCellX + offset[0];
+        const cellY = originCellY + offset[1];
+        const key = hashCell2D(cellX, cellY) % count;
+        let currIndex = spatialOffsets[key];
 
         while (currIndex < count) {
-          const neighbourKey = sortedKeys[currIndex]
-          if (neighbourKey !== key) break
+          const neighbourKey = sortedKeys[currIndex];
+          if (neighbourKey !== key) break;
 
           // Skip self-interaction
           if (currIndex !== i) {
-            const nIdx = currIndex * 2
-            const dx = predicted[nIdx] - posX
-            const dy = predicted[nIdx + 1] - posY
-            const sqrDst = dx * dx + dy * dy
+            const nIdx = currIndex * 2;
+            const dx = predicted[nIdx] - posX;
+            const dy = predicted[nIdx + 1] - posY;
+            const sqrDst = dx * dx + dy * dy;
 
             if (sqrDst <= radiusSq) {
-              const dst = Math.sqrt(sqrDst)
+              const dst = Math.sqrt(sqrDst);
 
               // Weight by Poly6 kernel (smooth, good for viscosity)
-              const weight = smoothingKernelPoly6(dst, radius, poly6Scale)
+              const weight = smoothingKernelPoly6(dst, radius, poly6Scale);
 
               // Accumulate velocity difference (pulls toward neighbor's velocity)
-              forceX += (velocities[nIdx] - velX) * weight
-              forceY += (velocities[nIdx + 1] - velY) * weight
+              forceX += (velocities[nIdx] - velX) * weight;
+              forceY += (velocities[nIdx + 1] - velY) * weight;
             }
           }
 
-          currIndex += 1
+          currIndex += 1;
         }
       }
 
       // Apply viscosity force
-      velocities[idx] += forceX * config.viscosityStrength * dt
-      velocities[idx + 1] += forceY * config.viscosityStrength * dt
+      velocities[idx] += forceX * config.viscosityStrength * dt;
+      velocities[idx + 1] += forceY * config.viscosityStrength * dt;
     }
   }
 
@@ -661,76 +663,75 @@ export function createPhysics(
    * - Configurable padding for aesthetics
    */
   function handleCollisions(): void {
-    const positions = state.positions
-    const velocities = state.velocities
+    const positions = state.positions;
+    const velocities = state.velocities;
 
     // Calculate boundary padding in world units
     const paddingPx =
-      Math.max(1, Math.round(config.particleRadius)) + config.boundsPaddingPx
-    const padding = paddingPx / getScale()
+      Math.max(1, Math.round(config.particleRadius)) + config.boundsPaddingPx;
+    const padding = paddingPx / getScale();
 
     // Half-extents of the collision boundary (centered at origin)
-    const halfX = Math.max(0, config.boundsSize.x * 0.5 - padding)
-    const halfY = Math.max(0, config.boundsSize.y * 0.5 - padding)
+    const halfX = Math.max(0, config.boundsSize.x * 0.5 - padding);
+    const halfY = Math.max(0, config.boundsSize.y * 0.5 - padding);
 
     // Obstacle parameters
-    const obstacleHalfX = config.obstacleSize.x * 0.5
-    const obstacleHalfY = config.obstacleSize.y * 0.5
-    const hasObstacle =
-      config.obstacleSize.x > 0 && config.obstacleSize.y > 0
+    const obstacleHalfX = config.obstacleSize.x * 0.5;
+    const obstacleHalfY = config.obstacleSize.y * 0.5;
+    const hasObstacle = config.obstacleSize.x > 0 && config.obstacleSize.y > 0;
 
     for (let i = 0; i < state.count; i += 1) {
-      const idx = i * 2
-      let px = positions[idx]
-      let py = positions[idx + 1]
-      let vx = velocities[idx]
-      let vy = velocities[idx + 1]
+      const idx = i * 2;
+      let px = positions[idx];
+      let py = positions[idx + 1];
+      let vx = velocities[idx];
+      let vy = velocities[idx + 1];
 
       // === Outer boundary collision ===
       // Distance from center to boundary edge
-      const edgeDstX = halfX - Math.abs(px)
-      const edgeDstY = halfY - Math.abs(py)
+      const edgeDstX = halfX - Math.abs(px);
+      const edgeDstY = halfY - Math.abs(py);
 
       // X boundary collision
       if (edgeDstX <= 0) {
-        px = halfX * Math.sign(px)  // Clamp to boundary
-        vx *= -config.collisionDamping  // Reflect and damp
+        px = halfX * Math.sign(px); // Clamp to boundary
+        vx *= -config.collisionDamping; // Reflect and damp
       }
 
       // Y boundary collision
       if (edgeDstY <= 0) {
-        py = halfY * Math.sign(py)
-        vy *= -config.collisionDamping
+        py = halfY * Math.sign(py);
+        vy *= -config.collisionDamping;
       }
 
       // === Inner obstacle collision ===
       if (hasObstacle) {
         // Position relative to obstacle center
-        const ox = px - config.obstacleCentre.x
-        const oy = py - config.obstacleCentre.y
+        const ox = px - config.obstacleCentre.x;
+        const oy = py - config.obstacleCentre.y;
 
         // Distance from obstacle center to edge
-        const obstacleEdgeX = obstacleHalfX - Math.abs(ox)
-        const obstacleEdgeY = obstacleHalfY - Math.abs(oy)
+        const obstacleEdgeX = obstacleHalfX - Math.abs(ox);
+        const obstacleEdgeY = obstacleHalfY - Math.abs(oy);
 
         // If inside obstacle, push out along shortest axis
         if (obstacleEdgeX >= 0 && obstacleEdgeY >= 0) {
           if (obstacleEdgeX < obstacleEdgeY) {
             // Closer to X edge, push out horizontally
-            px = obstacleHalfX * Math.sign(ox) + config.obstacleCentre.x
-            vx *= -config.collisionDamping
+            px = obstacleHalfX * Math.sign(ox) + config.obstacleCentre.x;
+            vx *= -config.collisionDamping;
           } else {
             // Closer to Y edge, push out vertically
-            py = obstacleHalfY * Math.sign(oy) + config.obstacleCentre.y
-            vy *= -config.collisionDamping
+            py = obstacleHalfY * Math.sign(oy) + config.obstacleCentre.y;
+            vy *= -config.collisionDamping;
           }
         }
       }
 
-      positions[idx] = px
-      positions[idx + 1] = py
-      velocities[idx] = vx
-      velocities[idx + 1] = vy
+      positions[idx] = px;
+      positions[idx + 1] = py;
+      velocities[idx] = vx;
+      velocities[idx + 1] = vy;
     }
   }
 
@@ -746,16 +747,16 @@ export function createPhysics(
    * @param dt - Time step in seconds
    */
   function updatePositions(dt: number): void {
-    const positions = state.positions
-    const velocities = state.velocities
+    const positions = state.positions;
+    const velocities = state.velocities;
 
     for (let i = 0; i < state.count; i += 1) {
-      const idx = i * 2
-      positions[idx] += velocities[idx] * dt
-      positions[idx + 1] += velocities[idx + 1] * dt
+      const idx = i * 2;
+      positions[idx] += velocities[idx] * dt;
+      positions[idx + 1] += velocities[idx + 1] * dt;
     }
 
-    handleCollisions()
+    handleCollisions();
   }
 
   /**
@@ -782,24 +783,24 @@ export function createPhysics(
     // Limit timestep for stability (avoid simulation explosion)
     const maxDeltaTime = config.maxTimestepFPS
       ? 1 / config.maxTimestepFPS
-      : Number.POSITIVE_INFINITY
+      : Number.POSITIVE_INFINITY;
 
     // Apply time scale and cap
-    const frameTime = Math.min(dt * config.timeScale, maxDeltaTime)
+    const frameTime = Math.min(dt * config.timeScale, maxDeltaTime);
 
     // Divide into substeps
-    const timeStep = frameTime / config.iterationsPerFrame
+    const timeStep = frameTime / config.iterationsPerFrame;
 
     // Run multiple iterations per frame for stability
     for (let i = 0; i < config.iterationsPerFrame; i += 1) {
-      externalForcesStep(timeStep)
-      runSpatialHash()
-      calculateDensities()
-      calculatePressure(timeStep)
-      calculateViscosity(timeStep)
-      updatePositions(timeStep)
+      externalForcesStep(timeStep);
+      runSpatialHash();
+      calculateDensities();
+      calculatePressure(timeStep);
+      calculateViscosity(timeStep);
+      updatePositions(timeStep);
     }
   }
 
-  return { step, refreshSettings, applyParticleScale }
+  return { step, refreshSettings, applyParticleScale };
 }

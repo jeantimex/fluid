@@ -12,8 +12,8 @@
  * Used for positions, velocities, sizes, and other 2D quantities.
  */
 export interface Vec2 {
-  x: number
-  y: number
+  x: number;
+  y: number;
 }
 
 /**
@@ -26,19 +26,19 @@ export interface Vec2 {
  * @property b - Blue component [0, 1]
  */
 export interface ColorKey {
-  t: number
-  r: number
-  g: number
-  b: number
+  t: number;
+  r: number;
+  g: number;
+  b: number;
 }
 
 /**
  * RGB color representation with normalized components [0, 1].
  */
 export interface RGB {
-  r: number
-  g: number
-  b: number
+  r: number;
+  g: number;
+  b: number;
 }
 
 /**
@@ -48,8 +48,8 @@ export interface RGB {
  * @property size - Width and height of the spawn region
  */
 export interface SpawnRegion {
-  position: Vec2
-  size: Vec2
+  position: Vec2;
+  size: Vec2;
 }
 
 /**
@@ -58,92 +58,92 @@ export interface SpawnRegion {
  */
 export interface SimConfig {
   /** Simulation speed multiplier (1.0 = real-time) */
-  timeScale: number
+  timeScale: number;
 
   /** Maximum timestep expressed as FPS (e.g., 60 = max 1/60s per step) */
-  maxTimestepFPS: number
+  maxTimestepFPS: number;
 
   /** Number of physics substeps per frame for stability */
-  iterationsPerFrame: number
+  iterationsPerFrame: number;
 
   /** Gravitational acceleration (negative = downward) */
-  gravity: number
+  gravity: number;
 
   /** Velocity retention on collision [0, 1] (1 = perfectly elastic) */
-  collisionDamping: number
+  collisionDamping: number;
 
   /**
    * SPH smoothing radius (h).
    * Defines the range of particle-particle interactions.
    * Larger values = smoother but slower simulation.
    */
-  smoothingRadius: number
+  smoothingRadius: number;
 
   /**
    * Rest density (ρ₀) the fluid tries to maintain.
    * Particles compress/expand to reach this density.
    */
-  targetDensity: number
+  targetDensity: number;
 
   /**
    * Pressure stiffness coefficient (k).
    * Higher values = less compressible fluid.
    */
-  pressureMultiplier: number
+  pressureMultiplier: number;
 
   /**
    * Near-pressure coefficient for surface tension effects.
    * Prevents particle clumping at close range.
    */
-  nearPressureMultiplier: number
+  nearPressureMultiplier: number;
 
   /**
    * Viscosity coefficient (μ).
    * Higher values = thicker fluid (honey vs water).
    */
-  viscosityStrength: number
+  viscosityStrength: number;
 
   /** Simulation boundary dimensions in world units */
-  boundsSize: Vec2
+  boundsSize: Vec2;
 
   /** Optional obstacle dimensions (0 = no obstacle) */
-  obstacleSize: Vec2
+  obstacleSize: Vec2;
 
   /** Obstacle center position in world coordinates */
-  obstacleCentre: Vec2
+  obstacleCentre: Vec2;
 
   /** Radius of mouse interaction force */
-  interactionRadius: number
+  interactionRadius: number;
 
   /** Strength of mouse push/pull force */
-  interactionStrength: number
+  interactionStrength: number;
 
   /** Maximum velocity for color gradient mapping */
-  velocityDisplayMax: number
+  velocityDisplayMax: number;
 
   /** Visual radius of particles in pixels */
-  particleRadius: number
+  particleRadius: number;
 
   /** Padding from boundary edges in pixels */
-  boundsPaddingPx: number
+  boundsPaddingPx: number;
 
   /** Number of entries in the color gradient lookup table */
-  gradientResolution: number
+  gradientResolution: number;
 
   /** Color gradient keyframes for velocity visualization */
-  colorKeys: ColorKey[]
+  colorKeys: ColorKey[];
 
   /** Particle density for spawning (particles per unit area) */
-  spawnDensity: number
+  spawnDensity: number;
 
   /** Initial velocity assigned to spawned particles */
-  initialVelocity: Vec2
+  initialVelocity: Vec2;
 
   /** Random position jitter applied to spawned particles */
-  jitterStr: number
+  jitterStr: number;
 
   /** Regions where particles are initially spawned */
-  spawnRegions: SpawnRegion[]
+  spawnRegions: SpawnRegion[];
 }
 
 /**
@@ -151,16 +151,16 @@ export interface SimConfig {
  */
 export interface InputState {
   /** Pointer X position in world coordinates */
-  worldX: number
+  worldX: number;
 
   /** Pointer Y position in world coordinates */
-  worldY: number
+  worldY: number;
 
   /** True when left mouse button is pressed (attract particles) */
-  pull: boolean
+  pull: boolean;
 
   /** True when right mouse button is pressed (repel particles) */
-  push: boolean
+  push: boolean;
 }
 
 /**
@@ -174,55 +174,55 @@ export interface InputState {
  */
 export interface SimState {
   /** Current particle positions [x0, y0, x1, y1, ...] */
-  positions: Float32Array
+  positions: Float32Array;
 
   /**
    * Predicted positions for density calculation.
    * Particles are moved slightly forward in time to improve stability.
    */
-  predicted: Float32Array
+  predicted: Float32Array;
 
   /** Current particle velocities [vx0, vy0, vx1, vy1, ...] */
-  velocities: Float32Array
+  velocities: Float32Array;
 
   /**
    * Particle densities [density0, nearDensity0, density1, nearDensity1, ...].
    * Near density is used for surface tension simulation.
    */
-  densities: Float32Array
+  densities: Float32Array;
 
   /** Spatial hash keys for each particle (unsorted) */
-  keys: Uint32Array
+  keys: Uint32Array;
 
   /** Spatial hash keys after sorting */
-  sortedKeys: Uint32Array
+  sortedKeys: Uint32Array;
 
   /** Original particle indices after spatial sorting */
-  indices: Uint32Array
+  indices: Uint32Array;
 
   /** Temporary array for counting sort offsets */
-  sortOffsets: Uint32Array
+  sortOffsets: Uint32Array;
 
   /**
    * Start index for each spatial hash bucket.
    * Used for O(1) neighbor lookup during SPH calculations.
    */
-  spatialOffsets: Uint32Array
+  spatialOffsets: Uint32Array;
 
   /** Double-buffer for positions during sorting */
-  positionsSorted: Float32Array
+  positionsSorted: Float32Array;
 
   /** Double-buffer for predicted positions during sorting */
-  predictedSorted: Float32Array
+  predictedSorted: Float32Array;
 
   /** Double-buffer for velocities during sorting */
-  velocitiesSorted: Float32Array
+  velocitiesSorted: Float32Array;
 
   /** Current number of active particles */
-  count: number
+  count: number;
 
   /** User input state */
-  input: InputState
+  input: InputState;
 }
 
 /**
@@ -230,13 +230,13 @@ export interface SimState {
  */
 export interface SpawnData {
   /** Initial particle positions */
-  positions: Float32Array
+  positions: Float32Array;
 
   /** Initial particle velocities */
-  velocities: Float32Array
+  velocities: Float32Array;
 
   /** Number of spawned particles */
-  count: number
+  count: number;
 }
 
 /**
@@ -244,16 +244,16 @@ export interface SpawnData {
  */
 export interface Renderer {
   /** Render current simulation state to canvas */
-  draw: (state: SimState) => void
+  draw: (state: SimState) => void;
 
   /** Convert world coordinates to canvas pixels */
-  worldToCanvas: (x: number, y: number) => Vec2
+  worldToCanvas: (x: number, y: number) => Vec2;
 
   /** Convert canvas pixels to world coordinates */
-  canvasToWorld: (x: number, y: number) => Vec2
+  canvasToWorld: (x: number, y: number) => Vec2;
 
   /** Get current world-to-canvas scale factor */
-  getScale: () => number
+  getScale: () => number;
 }
 
 /**
@@ -261,13 +261,13 @@ export interface Renderer {
  */
 export interface Physics {
   /** Advance simulation by dt seconds */
-  step: (dt: number) => void
+  step: (dt: number) => void;
 
   /** Recalculate derived values after config changes */
-  refreshSettings: () => void
+  refreshSettings: () => void;
 
   /** Apply scaling heuristics when particle radius changes */
-  applyParticleScale: () => void
+  applyParticleScale: () => void;
 }
 
 /**
@@ -275,23 +275,23 @@ export interface Physics {
  */
 export interface Sim {
   /** Advance simulation by dt seconds */
-  step: (dt: number) => void
+  step: (dt: number) => void;
 
   /** Render current state */
-  draw: () => void
+  draw: () => void;
 
   /** Direct access to simulation state */
-  state: SimState
+  state: SimState;
 
   /** Direct access to configuration */
-  config: SimConfig
+  config: SimConfig;
 
   /** Recalculate physics constants */
-  refreshSettings: () => void
+  refreshSettings: () => void;
 
   /** Apply particle radius scaling */
-  applyParticleScale: () => void
+  applyParticleScale: () => void;
 
   /** Reset simulation with new particles */
-  reset: () => void
+  reset: () => void;
 }

@@ -11,7 +11,7 @@
  * - Grid density determines the effective resolution of the fluid
  */
 
-import type { SimConfig, SpawnData, Vec2 } from '../types.ts'
+import type { SimConfig, SpawnData, Vec2 } from './types.ts';
 
 /**
  * Creates a deterministic pseudo-random number generator.
@@ -32,15 +32,15 @@ import type { SimConfig, SpawnData, Vec2 } from '../types.ts'
  * @returns Function that returns next random number in [0, 1)
  */
 function createRng(seed: number): () => number {
-  let state = seed >>> 0  // Convert to unsigned 32-bit integer
+  let state = seed >>> 0; // Convert to unsigned 32-bit integer
 
   return () => {
     // LCG iteration with well-known constants
-    state = (1664525 * state + 1013904223) >>> 0
+    state = (1664525 * state + 1013904223) >>> 0;
 
     // Normalize to [0, 1) range
-    return state / 4294967296  // 2^32
-  }
+    return state / 4294967296; // 2^32
+  };
 }
 
 /**
@@ -63,28 +63,28 @@ function createRng(seed: number): () => number {
  * @returns Number of particles along X and Y axes
  */
 function calculateSpawnCountPerAxis(size: Vec2, spawnDensity: number): Vec2 {
-  const area = size.x * size.y
-  const targetTotal = Math.ceil(area * spawnDensity)
+  const area = size.x * size.y;
+  const targetTotal = Math.ceil(area * spawnDensity);
 
   // Calculate proportional distribution
-  const lenSum = size.x + size.y
-  const tx = size.x / lenSum  // X proportion
-  const ty = size.y / lenSum  // Y proportion
+  const lenSum = size.x + size.y;
+  const tx = size.x / lenSum; // X proportion
+  const ty = size.y / lenSum; // Y proportion
 
   // Solve for grid dimensions: nx * ny ≈ targetTotal, nx/ny ≈ tx/ty
-  const m = Math.sqrt(targetTotal / (tx * ty))
-  const nx = Math.ceil(tx * m)
-  const ny = Math.ceil(ty * m)
+  const m = Math.sqrt(targetTotal / (tx * ty));
+  const nx = Math.ceil(tx * m);
+  const ny = Math.ceil(ty * m);
 
-  return { x: nx, y: ny }
+  return { x: nx, y: ny };
 }
 
 /**
  * Internal interface for spawn region definition.
  */
 interface Region {
-  position: Vec2
-  size: Vec2
+  position: Vec2;
+  size: Vec2;
 }
 
 /**
@@ -102,29 +102,29 @@ interface Region {
  * @returns Array of 2D positions on a regular grid
  */
 function spawnInRegion(region: Region, spawnDensity: number): Vec2[] {
-  const size = region.size
-  const center = region.position
-  const count = calculateSpawnCountPerAxis(size, spawnDensity)
-  const points: Vec2[] = new Array(count.x * count.y)
-  let i = 0
+  const size = region.size;
+  const center = region.position;
+  const count = calculateSpawnCountPerAxis(size, spawnDensity);
+  const points: Vec2[] = new Array(count.x * count.y);
+  let i = 0;
 
   for (let y = 0; y < count.y; y += 1) {
     for (let x = 0; x < count.x; x += 1) {
       // Normalize grid coordinates to [0, 1] range
       // Handle edge case where count is 1 (single particle centered)
-      const tx = count.x === 1 ? 0.5 : x / (count.x - 1)
-      const ty = count.y === 1 ? 0.5 : y / (count.y - 1)
+      const tx = count.x === 1 ? 0.5 : x / (count.x - 1);
+      const ty = count.y === 1 ? 0.5 : y / (count.y - 1);
 
       // Map to world coordinates centered on region
-      const px = (tx - 0.5) * size.x + center.x
-      const py = (ty - 0.5) * size.y + center.y
+      const px = (tx - 0.5) * size.x + center.x;
+      const py = (ty - 0.5) * size.y + center.y;
 
-      points[i] = { x: px, y: py }
-      i += 1
+      points[i] = { x: px, y: py };
+      i += 1;
     }
   }
 
-  return points
+  return points;
 }
 
 /**
@@ -152,41 +152,41 @@ function spawnInRegion(region: Region, spawnDensity: number): Vec2[] {
  */
 export function createSpawnData(config: SimConfig): SpawnData {
   // Create deterministic RNG for reproducible results
-  const rng = createRng(42)
-  const allPoints: Vec2[] = []
+  const rng = createRng(42);
+  const allPoints: Vec2[] = [];
 
   // Generate particles for each spawn region
   for (const region of config.spawnRegions) {
-    const points = spawnInRegion(region, config.spawnDensity)
+    const points = spawnInRegion(region, config.spawnDensity);
 
     // Apply random jitter to each point
     for (const p of points) {
       // Random direction (0 to 2π)
-      const angle = rng() * Math.PI * 2
-      const dirX = Math.cos(angle)
-      const dirY = Math.sin(angle)
+      const angle = rng() * Math.PI * 2;
+      const dirX = Math.cos(angle);
+      const dirY = Math.sin(angle);
 
       // Random magnitude centered at zero (-jitterStr/2 to +jitterStr/2)
-      const jitter = (rng() - 0.5) * config.jitterStr
+      const jitter = (rng() - 0.5) * config.jitterStr;
 
       allPoints.push({
         x: p.x + dirX * jitter,
         y: p.y + dirY * jitter,
-      })
+      });
     }
   }
 
   // Pack into typed arrays for efficient memory access
-  const count = allPoints.length
-  const positions = new Float32Array(count * 2)   // Interleaved [x0, y0, x1, y1, ...]
-  const velocities = new Float32Array(count * 2)
+  const count = allPoints.length;
+  const positions = new Float32Array(count * 2); // Interleaved [x0, y0, x1, y1, ...]
+  const velocities = new Float32Array(count * 2);
 
   for (let i = 0; i < count; i += 1) {
-    positions[i * 2] = allPoints[i].x
-    positions[i * 2 + 1] = allPoints[i].y
-    velocities[i * 2] = config.initialVelocity.x
-    velocities[i * 2 + 1] = config.initialVelocity.y
+    positions[i * 2] = allPoints[i].x;
+    positions[i * 2 + 1] = allPoints[i].y;
+    velocities[i * 2] = config.initialVelocity.x;
+    velocities[i * 2 + 1] = config.initialVelocity.y;
   }
 
-  return { positions, velocities, count }
+  return { positions, velocities, count };
 }
