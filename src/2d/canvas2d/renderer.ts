@@ -135,15 +135,21 @@ export function createRenderer(
    * Converts canvas pixel coordinates to world coordinates.
    *
    * This is the inverse of worldToCanvas, used for mouse interaction.
+   * Input coordinates are in CSS pixels (from mouse events), which are
+   * scaled by DPR to match the device pixel canvas coordinates.
    *
-   * @param x - Canvas X coordinate (pixels)
-   * @param y - Canvas Y coordinate (pixels)
+   * @param x - Canvas X coordinate (CSS pixels)
+   * @param y - Canvas Y coordinate (CSS pixels)
    * @returns World coordinates
    */
   function canvasToWorld(x: number, y: number): Vec2 {
+    // Scale CSS pixels to device pixels to match canvas coordinate system
+    const dpr = window.devicePixelRatio || 1;
+    const deviceX = x * dpr;
+    const deviceY = y * dpr;
     return {
-      x: (x - originX) / scale,
-      y: (originY - y) / scale, // Flip Y axis
+      x: (deviceX - originX) / scale,
+      y: (originY - deviceY) / scale, // Flip Y axis
     };
   }
 
