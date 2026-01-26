@@ -193,7 +193,7 @@ export function createPhysics(
 
       // Start with gravity (constant downward acceleration)
       let ax = 0;
-      let ay = config.gravity;
+      let ay = -config.gravity;
 
       // Apply mouse interaction force if active
       if (interactionStrength !== 0) {

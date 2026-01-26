@@ -34,10 +34,11 @@ const gui = new GUI({ title: 'Simulation Settings' });
 
 // stats-gl provides FPS and performance monitoring
 const stats = new Stats({ trackGPU: false, horizontal: true });
+stats.dom.style.display = 'none';
 document.body.appendChild(stats.dom);
 
 // UI state for controlling stats visibility
-const uiState = { showStats: true };
+const uiState = { showStats: false };
 
 // === Parameter Controls ===
 // Each control binds to a config property and optionally triggers callbacks
@@ -51,7 +52,7 @@ particlesFolder
   .onFinishChange(() => sim.reset()); // Reset when slider is released
 
 // Gravity control - affects simulation immediately
-particlesFolder.add(sim.config, 'gravity', -30, 30, 0.1).name('Gravity');
+particlesFolder.add(sim.config, 'gravity', -30, 30, 1).name('Gravity');
 
 // Collision damping - how much energy is lost on boundary collision
 particlesFolder
@@ -103,6 +104,7 @@ particleRadiusCtrl.onChange(() => {
 
 // Obstacle controls
 const obstacleFolder = gui.addFolder('Obstacle');
+obstacleFolder.close();
 
 obstacleFolder.add(sim.config.obstacleSize, 'x', 0, 20, 0.01).name('Size X');
 obstacleFolder.add(sim.config.obstacleSize, 'y', 0, 20, 0.01).name('Size Y');
@@ -114,6 +116,7 @@ obstacleFolder
   .name('Center Y');
 
 const performanceFolder = gui.addFolder('Performance');
+performanceFolder.close();
 
 // Time scale - slow motion or speed up
 performanceFolder.add(sim.config, 'timeScale', 0, 2, 0.01).name('Time Scale');

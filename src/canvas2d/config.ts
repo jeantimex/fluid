@@ -26,7 +26,7 @@ export function createConfig(): SimConfig {
     iterationsPerFrame: 2, // 2 substeps balances accuracy vs performance
 
     // === Forces ===
-    gravity: -12, // Moderate downward gravity
+    gravity: 12, // Positive values pull downward
 
     // === Collision Response ===
     collisionDamping: 0.95, // Slight energy loss on boundary collision
