@@ -182,6 +182,14 @@ async function initWebGPU(): Promise<void> {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
+  const lineVertexStride = 6 * 4;
+  const lineVertexCapacity = 16;
+  const lineVertexData = new Float32Array(lineVertexCapacity * 6);
+  const lineVertexBuffer = device.createBuffer({
+    size: lineVertexData.byteLength,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+  });
+
   const gradientLut = buildGradientLut(
     config.colorKeys,
     config.gradientResolution
@@ -364,6 +372,46 @@ fn fs_main(
 `,
   });
 
+  const lineShaderModule = device.createShaderModule({
+    code: `
+struct SimUniforms {
+  boundsSize: vec2<f32>,
+  canvasSize: vec2<f32>,
+  particleRadius: f32,
+  velocityDisplayMax: f32,
+  gradientResolution: f32,
+  pad0: f32,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: SimUniforms;
+
+struct VertexIn {
+  @location(0) pos: vec2<f32>,
+  @location(1) color: vec4<f32>,
+};
+
+struct VertexOut {
+  @builtin(position) position: vec4<f32>,
+  @location(0) color: vec4<f32>,
+};
+
+@vertex
+fn vs_main(input: VertexIn) -> VertexOut {
+  let halfBounds = uniforms.boundsSize * 0.5;
+  let ndc = vec2<f32>(input.pos.x / halfBounds.x, input.pos.y / halfBounds.y);
+  var out: VertexOut;
+  out.position = vec4<f32>(ndc, 0.0, 1.0);
+  out.color = input.color;
+  return out;
+}
+
+@fragment
+fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
+  return color;
+}
+`,
+  });
+
   const pipeline = device.createRenderPipeline({
     layout: 'auto',
     vertex: {
@@ -380,6 +428,31 @@ fn fs_main(
     },
   });
 
+  const linePipeline = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: {
+      module: lineShaderModule,
+      entryPoint: 'vs_main',
+      buffers: [
+        {
+          arrayStride: lineVertexStride,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x2' },
+            { shaderLocation: 1, offset: 2 * 4, format: 'float32x4' },
+          ],
+        },
+      ],
+    },
+    fragment: {
+      module: lineShaderModule,
+      entryPoint: 'fs_main',
+      targets: [{ format }],
+    },
+    primitive: {
+      topology: 'line-list',
+    },
+  });
+
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
     entries: [
@@ -388,6 +461,11 @@ fn fs_main(
       { binding: 2, resource: { buffer: gradientBuffer } },
       { binding: 3, resource: { buffer: uniformBuffer } },
     ],
+  });
+
+  const lineBindGroup = device.createBindGroup({
+    layout: linePipeline.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
   });
 
   let baseUnitsPerPixel: number | null = null;
@@ -439,6 +517,95 @@ fn fs_main(
     uniformData[6] = config.gradientResolution;
     uniformData[7] = 0;
     device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+    let lineVertexCount = 0;
+    const pushLine = (
+      x0: number,
+      y0: number,
+      x1: number,
+      y1: number,
+      r: number,
+      g: number,
+      b: number,
+      a: number
+    ): void => {
+      const base = lineVertexCount * 6;
+      lineVertexData[base] = x0;
+      lineVertexData[base + 1] = y0;
+      lineVertexData[base + 2] = r;
+      lineVertexData[base + 3] = g;
+      lineVertexData[base + 4] = b;
+      lineVertexData[base + 5] = a;
+      lineVertexData[base + 6] = x1;
+      lineVertexData[base + 7] = y1;
+      lineVertexData[base + 8] = r;
+      lineVertexData[base + 9] = g;
+      lineVertexData[base + 10] = b;
+      lineVertexData[base + 11] = a;
+      lineVertexCount += 2;
+    };
+
+    const halfX = config.boundsSize.x * 0.5;
+    const halfY = config.boundsSize.y * 0.5;
+    const boundsCol = { r: 0x1b / 255, g: 0x24 / 255, b: 0x32 / 255, a: 1 };
+    pushLine(-halfX, -halfY, halfX, -halfY, boundsCol.r, boundsCol.g, boundsCol.b, boundsCol.a);
+    pushLine(halfX, -halfY, halfX, halfY, boundsCol.r, boundsCol.g, boundsCol.b, boundsCol.a);
+    pushLine(halfX, halfY, -halfX, halfY, boundsCol.r, boundsCol.g, boundsCol.b, boundsCol.a);
+    pushLine(-halfX, halfY, -halfX, -halfY, boundsCol.r, boundsCol.g, boundsCol.b, boundsCol.a);
+
+    if (config.obstacleSize.x > 0 && config.obstacleSize.y > 0) {
+      const obsHalfX = config.obstacleSize.x * 0.5;
+      const obsHalfY = config.obstacleSize.y * 0.5;
+      const cx = config.obstacleCentre.x;
+      const cy = config.obstacleCentre.y;
+      const obstacleCol = { r: 0x36 / 255, g: 0x51 / 255, b: 0x6d / 255, a: 1 };
+      pushLine(
+        cx - obsHalfX,
+        cy - obsHalfY,
+        cx + obsHalfX,
+        cy - obsHalfY,
+        obstacleCol.r,
+        obstacleCol.g,
+        obstacleCol.b,
+        obstacleCol.a
+      );
+      pushLine(
+        cx + obsHalfX,
+        cy - obsHalfY,
+        cx + obsHalfX,
+        cy + obsHalfY,
+        obstacleCol.r,
+        obstacleCol.g,
+        obstacleCol.b,
+        obstacleCol.a
+      );
+      pushLine(
+        cx + obsHalfX,
+        cy + obsHalfY,
+        cx - obsHalfX,
+        cy + obsHalfY,
+        obstacleCol.r,
+        obstacleCol.g,
+        obstacleCol.b,
+        obstacleCol.a
+      );
+      pushLine(
+        cx - obsHalfX,
+        cy + obsHalfY,
+        cx - obsHalfX,
+        cy - obsHalfY,
+        obstacleCol.r,
+        obstacleCol.g,
+        obstacleCol.b,
+        obstacleCol.a
+      );
+    }
+
+    device.queue.writeBuffer(
+      lineVertexBuffer,
+      0,
+      lineVertexData.subarray(0, lineVertexCount * 6)
+    );
+
     const encoder = device.createCommandEncoder();
     const view = context.getCurrentTexture().createView();
     const pass = encoder.beginRenderPass({
@@ -454,6 +621,12 @@ fn fs_main(
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.draw(6, particleCount);
+    if (lineVertexCount > 0) {
+      pass.setPipeline(linePipeline);
+      pass.setBindGroup(0, lineBindGroup);
+      pass.setVertexBuffer(0, lineVertexBuffer);
+      pass.draw(lineVertexCount);
+    }
     pass.end();
     device.queue.submit([encoder.finish()]);
     stats.end();
