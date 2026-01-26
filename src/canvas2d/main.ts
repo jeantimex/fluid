@@ -34,7 +34,11 @@ const { stats } = setupGui(
     onReset: () => sim.reset(),
     onSmoothingRadiusChange: () => sim.refreshSettings(),
   },
-  { trackGPU: false }
+  {
+    trackGPU: false,
+    title: 'Canvas 2D Fluid',
+    githubUrl: 'https://github.com/jeantimex/fluid',
+  }
 );
 
 // === Animation Loop ===

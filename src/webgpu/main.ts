@@ -272,7 +272,11 @@ const { stats } = setupGui(
     // Callback when smoothing radius changes (requires physics refresh)
     onSmoothingRadiusChange: () => simulation?.refreshSettings(),
   },
-  { trackGPU: true }
+  {
+    trackGPU: true,
+    title: 'WebGPU 2D Fluid',
+    githubUrl: 'https://github.com/jeantimex/fluid',
+  }
 );
 
 /**
