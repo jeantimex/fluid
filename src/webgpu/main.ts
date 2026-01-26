@@ -19,6 +19,23 @@ if (!canvas) {
   throw new Error('Missing canvas element');
 }
 
+const canvasToWorld = (
+  x: number,
+  y: number,
+  scale: number
+): { x: number; y: number } => {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const px = (x - rect.left) * dpr;
+  const py = (y - rect.top) * dpr;
+  const originX = canvas.width * 0.5;
+  const originY = canvas.height * 0.5;
+  return {
+    x: (px - originX) / scale,
+    y: (originY - py) / scale,
+  };
+};
+
 const gui = new GUI({ title: 'Simulation Settings' });
 const stats = new Stats({ trackGPU: false, horizontal: true });
 stats.dom.style.display = 'none';
@@ -134,6 +151,31 @@ async function initWebGPU(): Promise<void> {
 
   const getScale = (): number => canvas.width / config.boundsSize.x;
   const physics = createPhysics(state, config, getScale);
+
+  const updatePointer = (event: MouseEvent): void => {
+    const scale = getScale();
+    const world = canvasToWorld(event.clientX, event.clientY, scale);
+    state.input.worldX = world.x;
+    state.input.worldY = world.y;
+  };
+
+  canvas.addEventListener('mousemove', updatePointer);
+  canvas.addEventListener('mousedown', (event) => {
+    updatePointer(event);
+    if (event.button === 0) state.input.pull = true;
+    if (event.button === 2) state.input.push = true;
+  });
+  canvas.addEventListener('mouseup', (event) => {
+    if (event.button === 0) state.input.pull = false;
+    if (event.button === 2) state.input.push = false;
+  });
+  canvas.addEventListener('mouseleave', () => {
+    state.input.pull = false;
+    state.input.push = false;
+  });
+  canvas.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+  });
 
   const uniformBuffer = device.createBuffer({
     size: 32,
