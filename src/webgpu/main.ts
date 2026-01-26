@@ -50,6 +50,7 @@ const useGpuSpatialHash = true;
 const useGpuDensity = true;
 const useGpuDensityReadback = true;
 const useCpuSpatialDataForGpuDensity = true;
+const useGpuPressure = true;
 
 const particlesFolder = gui.addFolder('Particles');
 particlesFolder
@@ -159,6 +160,7 @@ async function initWebGPU(): Promise<void> {
   let scatterBindGroup: GPUBindGroup | null = null;
   let spatialOffsetsBindGroup: GPUBindGroup | null = null;
   let densityBindGroup: GPUBindGroup | null = null;
+  let pressureBindGroup: GPUBindGroup | null = null;
 
   const getScale = (): number => canvas.width / config.boundsSize.x;
 
@@ -212,6 +214,11 @@ async function initWebGPU(): Promise<void> {
   });
 
   const densityUniformBuffer = device.createBuffer({
+    size: 48,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const pressureUniformBuffer = device.createBuffer({
     size: 48,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
@@ -666,6 +673,152 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 `,
   });
 
+  const pressureShaderModule = device.createShaderModule({
+    code: `
+struct PressureParams {
+  dt: f32,
+  targetDensity: f32,
+  pressureMultiplier: f32,
+  nearPressureMultiplier: f32,
+  radius: f32,
+  spikyPow2DerivScale: f32,
+  spikyPow3DerivScale: f32,
+  particleCountF: f32,
+  pad0: vec4<f32>,
+};
+
+@group(0) @binding(0) var<storage, read> predicted: array<vec2<f32>>;
+@group(0) @binding(1) var<storage, read_write> velocities: array<vec2<f32>>;
+@group(0) @binding(2) var<storage, read> densities: array<vec2<f32>>;
+@group(0) @binding(3) var<storage, read> sortedKeys: array<u32>;
+@group(0) @binding(4) var<storage, read> spatialOffsets: array<u32>;
+@group(0) @binding(5) var<uniform> params: PressureParams;
+
+const neighborOffsets = array<vec2<i32>, 9>(
+  vec2<i32>(-1, 1),
+  vec2<i32>(0, 1),
+  vec2<i32>(1, 1),
+  vec2<i32>(-1, 0),
+  vec2<i32>(0, 0),
+  vec2<i32>(1, 0),
+  vec2<i32>(-1, -1),
+  vec2<i32>(0, -1),
+  vec2<i32>(1, -1)
+);
+
+fn hashCell2D(cellX: i32, cellY: i32) -> u32 {
+  let ax = cellX * 15823;
+  let by = cellY * 9737333;
+  return u32(ax + by);
+}
+
+fn derivativeSpikyPow2(dst: f32, radius: f32, scale: f32) -> f32 {
+  if (dst <= radius) {
+    let v = radius - dst;
+    return -v * scale;
+  }
+  return 0.0;
+}
+
+fn derivativeSpikyPow3(dst: f32, radius: f32, scale: f32) -> f32 {
+  if (dst <= radius) {
+    let v = radius - dst;
+    return -v * v * scale;
+  }
+  return 0.0;
+}
+
+@compute @workgroup_size(128)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  let i = id.x;
+  let count = u32(params.particleCountF + 0.5);
+  if (i >= count) {
+    return;
+  }
+
+  let densityPair = densities[i];
+  let density = densityPair.x;
+  let nearDensity = densityPair.y;
+  if (density <= 0.0) {
+    return;
+  }
+
+  let pressure = (density - params.targetDensity) * params.pressureMultiplier;
+  let nearPressure = params.nearPressureMultiplier * nearDensity;
+
+  let pos = predicted[i];
+  let originCellX = i32(floor(pos.x / params.radius));
+  let originCellY = i32(floor(pos.y / params.radius));
+  let radiusSq = params.radius * params.radius;
+
+  var forceX = 0.0;
+  var forceY = 0.0;
+
+  for (var n = 0u; n < 9u; n = n + 1u) {
+    let cellOffset = neighborOffsets[n];
+    let cellX = originCellX + cellOffset.x;
+    let cellY = originCellY + cellOffset.y;
+    let hash = hashCell2D(cellX, cellY);
+    let key = hash % count;
+    let start = spatialOffsets[key];
+    if (start == count) {
+      continue;
+    }
+
+    var j = start;
+    loop {
+      if (j >= count || sortedKeys[j] != key) {
+        break;
+      }
+      if (j != i) {
+        let neighborPos = predicted[j];
+        let dx = neighborPos.x - pos.x;
+        let dy = neighborPos.y - pos.y;
+        let dstSq = dx * dx + dy * dy;
+        if (dstSq <= radiusSq) {
+          let dst = sqrt(dstSq);
+          let invDst = select(0.0, 1.0 / dst, dst > 0.0);
+          let dirX = dx * invDst;
+          let dirY = dy * invDst;
+
+          let neighborDensityPair = densities[j];
+          let neighborDensity = neighborDensityPair.x;
+          let neighborNearDensity = neighborDensityPair.y;
+          let neighborPressure =
+            (neighborDensity - params.targetDensity) * params.pressureMultiplier;
+          let neighborNearPressure =
+            params.nearPressureMultiplier * neighborNearDensity;
+
+          let sharedPressure = (pressure + neighborPressure) * 0.5;
+          let sharedNearPressure = (nearPressure + neighborNearPressure) * 0.5;
+
+          if (neighborDensity > 0.0) {
+            let scale =
+              derivativeSpikyPow2(dst, params.radius, params.spikyPow2DerivScale) *
+              (sharedPressure / neighborDensity);
+            forceX = forceX + dirX * scale;
+            forceY = forceY + dirY * scale;
+          }
+
+          if (neighborNearDensity > 0.0) {
+            let scale =
+              derivativeSpikyPow3(dst, params.radius, params.spikyPow3DerivScale) *
+              (sharedNearPressure / neighborNearDensity);
+            forceX = forceX + dirX * scale;
+            forceY = forceY + dirY * scale;
+          }
+        }
+      }
+      j = j + 1u;
+    }
+  }
+
+  velocities[i].x = velocities[i].x + (forceX / density) * params.dt;
+  velocities[i].y = velocities[i].y + (forceY / density) * params.dt;
+}
+`,
+  });
+
   const lineShaderModule = device.createShaderModule({
     code: `
 struct SimUniforms {
@@ -774,6 +927,14 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     layout: 'auto',
     compute: {
       module: densityShaderModule,
+      entryPoint: 'main',
+    },
+  });
+
+  const pressurePipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: pressureShaderModule,
       entryPoint: 'main',
     },
   });
@@ -980,6 +1141,18 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         { binding: 4, resource: { buffer: densityUniformBuffer } },
       ],
     });
+
+    pressureBindGroup = device.createBindGroup({
+      layout: pressurePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: predictedBuffer } },
+        { binding: 1, resource: { buffer: velocitiesBuffer } },
+        { binding: 2, resource: { buffer: densitiesBuffer } },
+        { binding: 3, resource: { buffer: sortedKeysBuffer } },
+        { binding: 4, resource: { buffer: spatialOffsetsBuffer } },
+        { binding: 5, resource: { buffer: pressureUniformBuffer } },
+      ],
+    });
   };
 
   resetSim = resetSimulation;
@@ -991,6 +1164,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
   const hashParamsData = new Float32Array(4);
   const sortParamsData = new Uint32Array(4);
   const densityParamsData = new Float32Array(12);
+  const pressureParamsData = new Float32Array(12);
 
   const resize = (): void => {
     const rect = canvas.getBoundingClientRect();
@@ -1039,7 +1213,8 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       !countOffsetsBindGroup ||
       !scatterBindGroup ||
       !spatialOffsetsBindGroup ||
-      !densityBindGroup
+      !densityBindGroup ||
+      !pressureBindGroup
     ) {
       stats.end();
       stats.update();
@@ -1103,6 +1278,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
 
         if (useGpuDensity) {
           device.queue.writeBuffer(predictedBuffer, 0, state.predicted);
+          device.queue.writeBuffer(velocitiesBuffer, 0, state.velocities);
           if (useCpuSpatialDataForGpuDensity) {
             device.queue.writeBuffer(sortedKeysBuffer, 0, state.sortedKeys);
             device.queue.writeBuffer(
@@ -1141,9 +1317,54 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
           }
         } else {
           physics.calculateDensities();
+          if (useGpuPressure) {
+            device.queue.writeBuffer(densitiesBuffer, 0, state.densities);
+          }
         }
 
-        physics.calculatePressure(timeStep);
+        if (useGpuPressure) {
+          const radius = config.smoothingRadius;
+          const spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4));
+          const spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5));
+          pressureParamsData[0] = timeStep;
+          pressureParamsData[1] = config.targetDensity;
+          pressureParamsData[2] = config.pressureMultiplier;
+          pressureParamsData[3] = config.nearPressureMultiplier;
+          pressureParamsData[4] = radius;
+          pressureParamsData[5] = spikyPow2DerivScale;
+          pressureParamsData[6] = spikyPow3DerivScale;
+          pressureParamsData[7] = particleCount;
+          pressureParamsData[8] = 0;
+          pressureParamsData[9] = 0;
+          pressureParamsData[10] = 0;
+          pressureParamsData[11] = 0;
+          device.queue.writeBuffer(pressureUniformBuffer, 0, pressureParamsData);
+
+          const pressureEncoder = device.createCommandEncoder();
+          const pressurePass = pressureEncoder.beginComputePass();
+          pressurePass.setPipeline(pressurePipeline);
+          pressurePass.setBindGroup(0, pressureBindGroup);
+          pressurePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+          pressurePass.end();
+          pressureEncoder.copyBufferToBuffer(
+            velocitiesBuffer,
+            0,
+            velocityReadbackBuffer,
+            0,
+            particleCount * 2 * 4
+          );
+          device.queue.submit([pressureEncoder.finish()]);
+
+          await velocityReadbackBuffer.mapAsync(GPUMapMode.READ);
+          const pressureVelocities = new Float32Array(
+            velocityReadbackBuffer.getMappedRange()
+          );
+          state.velocities.set(pressureVelocities);
+          velocityReadbackBuffer.unmap();
+        } else {
+          physics.calculatePressure(timeStep);
+        }
+
         physics.calculateViscosity(timeStep);
         physics.updatePositions(timeStep);
       }
