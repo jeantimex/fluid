@@ -1463,6 +1463,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       const hasObstacle = config.obstacleSize.x > 0 && config.obstacleSize.y > 0;
 
       for (let i = 0; i < config.iterationsPerFrame; i += 1) {
+        let shouldReadbackDensities = false;
         const pull = state.input.pull;
         const push = state.input.push;
         const interactionStrength = push
@@ -1480,13 +1481,12 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         computeData[7] = 0;
         device.queue.writeBuffer(computeUniformBuffer, 0, computeData);
 
-        const computeEncoder = device.createCommandEncoder();
-        const computePass = computeEncoder.beginComputePass();
+        const encoder = device.createCommandEncoder();
+        const computePass = encoder.beginComputePass();
         computePass.setPipeline(computePipeline);
         computePass.setBindGroup(0, computeBindGroup);
         computePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
         computePass.end();
-        device.queue.submit([computeEncoder.finish()]);
 
         if (!useGpuDensity || useCpuSpatialDataForGpuDensity) {
           physics.predictPositions();
@@ -1503,66 +1503,52 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
               state.spatialOffsets
             );
           } else if (useGpuSpatialHash) {
-            const hashEncoder = device.createCommandEncoder();
-            const hashPass = hashEncoder.beginComputePass();
+            const hashPass = encoder.beginComputePass();
             hashPass.setPipeline(hashPipeline);
             hashPass.setBindGroup(0, hashBindGroup);
             hashPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
             hashPass.end();
 
-            const clearPass = hashEncoder.beginComputePass();
+            const clearPass = encoder.beginComputePass();
             clearPass.setPipeline(clearOffsetsPipeline);
             clearPass.setBindGroup(0, clearOffsetsBindGroup);
             clearPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
             clearPass.end();
 
-            const countPass = hashEncoder.beginComputePass();
+            const countPass = encoder.beginComputePass();
             countPass.setPipeline(countOffsetsPipeline);
             countPass.setBindGroup(1, countOffsetsBindGroup);
             countPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
             countPass.end();
 
-            const scatterPass = hashEncoder.beginComputePass();
+            const scatterPass = encoder.beginComputePass();
             scatterPass.setPipeline(scatterPipeline);
             scatterPass.setBindGroup(0, scatterBindGroup);
             scatterPass.dispatchWorkgroups(1);
             scatterPass.end();
 
-            const spatialPass = hashEncoder.beginComputePass();
+            const spatialPass = encoder.beginComputePass();
             spatialPass.setPipeline(spatialOffsetsPipeline);
             spatialPass.setBindGroup(0, spatialOffsetsBindGroup);
             spatialPass.dispatchWorkgroups(1);
             spatialPass.end();
-
-            device.queue.submit([hashEncoder.finish()]);
           }
 
-          const densityEncoder = device.createCommandEncoder();
-          const densityPass = densityEncoder.beginComputePass();
+          const densityPass = encoder.beginComputePass();
           densityPass.setPipeline(densityPipeline);
           densityPass.setBindGroup(0, densityBindGroup);
           densityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
           densityPass.end();
 
           if (useGpuDensityReadback) {
-            densityEncoder.copyBufferToBuffer(
+            encoder.copyBufferToBuffer(
               densitiesBuffer,
               0,
               densityReadbackBuffer,
               0,
               particleCount * 2 * 4
             );
-          }
-
-          device.queue.submit([densityEncoder.finish()]);
-
-          if (useGpuDensityReadback) {
-            await densityReadbackBuffer.mapAsync(GPUMapMode.READ);
-            const mappedDensities = new Float32Array(
-              densityReadbackBuffer.getMappedRange()
-            );
-            state.densities.set(mappedDensities);
-            densityReadbackBuffer.unmap();
+            shouldReadbackDensities = true;
           }
         } else {
           physics.calculateDensities();
@@ -1589,13 +1575,11 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
           pressureParamsData[11] = 0;
           device.queue.writeBuffer(pressureUniformBuffer, 0, pressureParamsData);
 
-          const pressureEncoder = device.createCommandEncoder();
-          const pressurePass = pressureEncoder.beginComputePass();
+          const pressurePass = encoder.beginComputePass();
           pressurePass.setPipeline(pressurePipeline);
           pressurePass.setBindGroup(0, pressureBindGroup);
           pressurePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
           pressurePass.end();
-          device.queue.submit([pressureEncoder.finish()]);
         } else {
           physics.calculatePressure(timeStep);
         }
@@ -1621,13 +1605,11 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
             viscosityParamsData
           );
 
-          const viscosityEncoder = device.createCommandEncoder();
-          const viscosityPass = viscosityEncoder.beginComputePass();
+          const viscosityPass = encoder.beginComputePass();
           viscosityPass.setPipeline(viscosityPipeline);
           viscosityPass.setBindGroup(0, viscosityBindGroup);
           viscosityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
           viscosityPass.end();
-          device.queue.submit([viscosityEncoder.finish()]);
         } else {
           physics.calculateViscosity(timeStep);
         }
@@ -1650,13 +1632,21 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         integrateParamsData[15] = 0;
         device.queue.writeBuffer(integrateUniformBuffer, 0, integrateParamsData);
 
-        const integrateEncoder = device.createCommandEncoder();
-        const integratePass = integrateEncoder.beginComputePass();
+        const integratePass = encoder.beginComputePass();
         integratePass.setPipeline(integratePipeline);
         integratePass.setBindGroup(0, integrateBindGroup);
         integratePass.dispatchWorkgroups(Math.ceil(particleCount / 128));
         integratePass.end();
-        device.queue.submit([integrateEncoder.finish()]);
+        device.queue.submit([encoder.finish()]);
+
+        if (shouldReadbackDensities) {
+          await densityReadbackBuffer.mapAsync(GPUMapMode.READ);
+          const mappedDensities = new Float32Array(
+            densityReadbackBuffer.getMappedRange()
+          );
+          state.densities.set(mappedDensities);
+          densityReadbackBuffer.unmap();
+        }
       }
     } else {
       physics.step(dt);
