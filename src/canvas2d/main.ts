@@ -115,6 +115,16 @@ obstacleFolder
   .add(sim.config.obstacleCentre, 'y', -10, 10, 0.01)
   .name('Center Y');
 
+const interactionFolder = gui.addFolder('Interaction');
+interactionFolder.close();
+
+interactionFolder
+  .add(sim.config, 'interactionRadius', 0, 10, 0.01)
+  .name('Radius');
+interactionFolder
+  .add(sim.config, 'interactionStrength', 0, 200, 1)
+  .name('Strength');
+
 const performanceFolder = gui.addFolder('Performance');
 performanceFolder.close();
 
