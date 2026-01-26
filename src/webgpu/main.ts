@@ -45,6 +45,7 @@ const uiState = { showStats: false };
 const config = createConfig();
 let resetSim: (() => void) | null = null;
 let physics: ReturnType<typeof createPhysics> | null = null;
+const useGpuExternalForces = false;
 
 const particlesFolder = gui.addFolder('Particles');
 particlesFolder
@@ -145,6 +146,7 @@ async function initWebGPU(): Promise<void> {
   let predictedSortedBuffer: GPUBuffer | null = null;
   let velocitiesSortedBuffer: GPUBuffer | null = null;
   let bindGroup: GPUBindGroup | null = null;
+  let computeBindGroup: GPUBindGroup | null = null;
 
   const getScale = (): number => canvas.width / config.boundsSize.x;
 
@@ -182,6 +184,10 @@ async function initWebGPU(): Promise<void> {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
+  const computeUniformBuffer = device.createBuffer({
+    size: 32,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
   const lineVertexStride = 6 * 4;
   const lineVertexCapacity = 16;
   const lineVertexData = new Float32Array(lineVertexCapacity * 6);
@@ -334,6 +340,63 @@ fn fs_main(
 `,
   });
 
+  const computeShaderModule = device.createShaderModule({
+    code: `
+struct SimParams {
+  deltaTime: f32,
+  gravity: f32,
+  interactionRadius: f32,
+  interactionStrength: f32,
+  inputPoint: vec2<f32>,
+  pad0: vec2<f32>,
+};
+
+@group(0) @binding(0) var<storage, read> positions: array<vec2<f32>>;
+@group(0) @binding(1) var<storage, read_write> velocities: array<vec2<f32>>;
+@group(0) @binding(2) var<storage, read_write> predicted: array<vec2<f32>>;
+@group(0) @binding(3) var<uniform> params: SimParams;
+
+fn externalForces(pos: vec2<f32>, velocity: vec2<f32>) -> vec2<f32> {
+  let gravityAccel = vec2<f32>(0.0, -params.gravity);
+  if (params.interactionStrength == 0.0) {
+    return gravityAccel;
+  }
+
+  let offset = params.inputPoint - pos;
+  let sqrDst = dot(offset, offset);
+  let radius = params.interactionRadius;
+  if (sqrDst < radius * radius && sqrDst > 0.000001) {
+    let dst = sqrt(sqrDst);
+    let edgeT = dst / radius;
+    let centreT = 1.0 - edgeT;
+    let dirToCentre = offset / dst;
+    let gravityWeight = 1.0 - (centreT * saturate(params.interactionStrength / 10.0));
+    var accel = gravityAccel * gravityWeight + dirToCentre * centreT * params.interactionStrength;
+    accel -= velocity * centreT;
+    return accel;
+  }
+
+  return gravityAccel;
+}
+
+@compute @workgroup_size(128)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  let index = id.x;
+  if (index >= arrayLength(&positions)) {
+    return;
+  }
+
+  let pos = positions[index];
+  let vel = velocities[index];
+  vel = vel + externalForces(pos, vel) * params.deltaTime;
+  velocities[index] = vel;
+
+  let predictionFactor = 1.0 / 120.0;
+  predicted[index] = pos + vel * predictionFactor;
+}
+`,
+  });
+
   const lineShaderModule = device.createShaderModule({
     code: `
 struct SimUniforms {
@@ -387,6 +450,14 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     },
     primitive: {
       topology: 'triangle-list',
+    },
+  });
+
+  const computePipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: computeShaderModule,
+      entryPoint: 'main',
     },
   });
 
@@ -514,6 +585,16 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         { binding: 3, resource: { buffer: uniformBuffer } },
       ],
     });
+
+    computeBindGroup = device.createBindGroup({
+      layout: computePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: positionsBuffer } },
+        { binding: 1, resource: { buffer: velocitiesBuffer } },
+        { binding: 2, resource: { buffer: predictedBuffer } },
+        { binding: 3, resource: { buffer: computeUniformBuffer } },
+      ],
+    });
   };
 
   resetSim = resetSimulation;
@@ -559,7 +640,9 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       !physics ||
       !positionsBuffer ||
       !velocitiesBuffer ||
-      !bindGroup
+      !predictedBuffer ||
+      !bindGroup ||
+      !computeBindGroup
     ) {
       stats.end();
       stats.update();
@@ -571,6 +654,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     physics.step(dt);
     device.queue.writeBuffer(positionsBuffer, 0, state.positions);
     device.queue.writeBuffer(velocitiesBuffer, 0, state.velocities);
+    device.queue.writeBuffer(predictedBuffer, 0, state.predicted);
     uniformData[0] = config.boundsSize.x;
     uniformData[1] = config.boundsSize.y;
     uniformData[2] = canvas.width;
@@ -580,6 +664,32 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     uniformData[6] = config.gradientResolution;
     uniformData[7] = 0;
     device.queue.writeBuffer(uniformBuffer, 0, uniformData);
+
+    if (useGpuExternalForces) {
+      const pull = state.input.pull;
+      const push = state.input.push;
+      const interactionStrength = push
+        ? -config.interactionStrength
+        : pull
+          ? config.interactionStrength
+          : 0;
+      const computeData = new Float32Array(8);
+      computeData[0] = dt;
+      computeData[1] = config.gravity;
+      computeData[2] = config.interactionRadius;
+      computeData[3] = interactionStrength;
+      computeData[4] = state.input.worldX;
+      computeData[5] = state.input.worldY;
+      device.queue.writeBuffer(computeUniformBuffer, 0, computeData);
+
+      const computeEncoder = device.createCommandEncoder();
+      const pass = computeEncoder.beginComputePass();
+      pass.setPipeline(computePipeline);
+      pass.setBindGroup(0, computeBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+      pass.end();
+      device.queue.submit([computeEncoder.finish()]);
+    }
     let lineVertexCount = 0;
     const pushLine = (
       x0: number,
