@@ -5,7 +5,7 @@ import { createConfig } from '../canvas2d/config.ts';
 import { createPhysics } from '../canvas2d/physics.ts';
 import { buildGradientLut } from '../canvas2d/kernels.ts';
 import { createSpawnData } from '../canvas2d/spawn.ts';
-import type { SimState } from '../canvas2d/types.ts';
+import type { SimState, SpawnData } from '../canvas2d/types.ts';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -43,26 +43,32 @@ document.body.appendChild(stats.dom);
 
 const uiState = { showStats: false };
 const config = createConfig();
+let resetSim: (() => void) | null = null;
+let physics: ReturnType<typeof createPhysics> | null = null;
 
 const particlesFolder = gui.addFolder('Particles');
 particlesFolder
   .add(config, 'spawnDensity', 10, 300, 1)
-  .name('Spawn Density');
+  .name('Spawn Density')
+  .onFinishChange(() => resetSim?.());
 particlesFolder.add(config, 'gravity', -30, 30, 0.1).name('Gravity');
 particlesFolder
   .add(config, 'collisionDamping', 0, 1, 0.01)
   .name('Collision Damping');
-particlesFolder
+const smoothingCtrl = particlesFolder
   .add(config, 'smoothingRadius', 0.05, 3, 0.01)
-  .name('Smoothing Radius');
-particlesFolder.add(config, 'targetDensity', 0, 3000, 1).name('Target Density');
-particlesFolder
+  .name('Smoothing Radius')
+  .onChange(() => physics?.refreshSettings());
+const targetDensityCtrl = particlesFolder
+  .add(config, 'targetDensity', 0, 3000, 1)
+  .name('Target Density');
+const pressureCtrl = particlesFolder
   .add(config, 'pressureMultiplier', 0, 2000, 1)
   .name('Pressure Multiplier');
-particlesFolder
+const nearPressureCtrl = particlesFolder
   .add(config, 'nearPressureMultiplier', 0, 40, 0.1)
   .name('Near Pressure Multiplier');
-particlesFolder
+const viscosityCtrl = particlesFolder
   .add(config, 'viscosityStrength', 0, 0.2, 0.001)
   .name('Viscosity Strength');
 particlesFolder.add(config, 'particleRadius', 1, 6, 1).name('Particle Radius');
@@ -124,35 +130,26 @@ async function initWebGPU(): Promise<void> {
 
   const format = navigator.gpu.getPreferredCanvasFormat();
 
-  const spawn = createSpawnData(config);
-  const particleCount = spawn.count;
-
-  const state: SimState = {
-    positions: spawn.positions,
-    predicted: new Float32Array(spawn.positions),
-    velocities: spawn.velocities,
-    densities: new Float32Array(particleCount * 2),
-    keys: new Uint32Array(particleCount),
-    sortedKeys: new Uint32Array(particleCount),
-    indices: new Uint32Array(particleCount),
-    sortOffsets: new Uint32Array(particleCount),
-    spatialOffsets: new Uint32Array(particleCount),
-    positionsSorted: new Float32Array(particleCount * 2),
-    predictedSorted: new Float32Array(particleCount * 2),
-    velocitiesSorted: new Float32Array(particleCount * 2),
-    count: particleCount,
-    input: {
-      worldX: 0,
-      worldY: 0,
-      pull: false,
-      push: false,
-    },
-  };
+  let particleCount = 0;
+  let state: SimState | null = null;
+  let positionsBuffer: GPUBuffer | null = null;
+  let predictedBuffer: GPUBuffer | null = null;
+  let velocitiesBuffer: GPUBuffer | null = null;
+  let densitiesBuffer: GPUBuffer | null = null;
+  let keysBuffer: GPUBuffer | null = null;
+  let sortedKeysBuffer: GPUBuffer | null = null;
+  let indicesBuffer: GPUBuffer | null = null;
+  let sortOffsetsBuffer: GPUBuffer | null = null;
+  let spatialOffsetsBuffer: GPUBuffer | null = null;
+  let positionsSortedBuffer: GPUBuffer | null = null;
+  let predictedSortedBuffer: GPUBuffer | null = null;
+  let velocitiesSortedBuffer: GPUBuffer | null = null;
+  let bindGroup: GPUBindGroup | null = null;
 
   const getScale = (): number => canvas.width / config.boundsSize.x;
-  const physics = createPhysics(state, config, getScale);
 
   const updatePointer = (event: MouseEvent): void => {
+    if (!state) return;
     const scale = getScale();
     const world = canvasToWorld(event.clientX, event.clientY, scale);
     state.input.worldX = world.x;
@@ -161,15 +158,18 @@ async function initWebGPU(): Promise<void> {
 
   canvas.addEventListener('mousemove', updatePointer);
   canvas.addEventListener('mousedown', (event) => {
+    if (!state) return;
     updatePointer(event);
     if (event.button === 0) state.input.pull = true;
     if (event.button === 2) state.input.push = true;
   });
   canvas.addEventListener('mouseup', (event) => {
+    if (!state) return;
     if (event.button === 0) state.input.pull = false;
     if (event.button === 2) state.input.push = false;
   });
   canvas.addEventListener('mouseleave', () => {
+    if (!state) return;
     state.input.pull = false;
     state.input.push = false;
   });
@@ -211,6 +211,28 @@ async function initWebGPU(): Promise<void> {
   new Float32Array(gradientBuffer.getMappedRange()).set(gradientData);
   gradientBuffer.unmap();
 
+  const createStateFromSpawn = (spawn: SpawnData): SimState => ({
+    positions: spawn.positions,
+    predicted: new Float32Array(spawn.positions),
+    velocities: spawn.velocities,
+    densities: new Float32Array(spawn.count * 2),
+    keys: new Uint32Array(spawn.count),
+    sortedKeys: new Uint32Array(spawn.count),
+    indices: new Uint32Array(spawn.count),
+    sortOffsets: new Uint32Array(spawn.count),
+    spatialOffsets: new Uint32Array(spawn.count),
+    positionsSorted: new Float32Array(spawn.count * 2),
+    predictedSorted: new Float32Array(spawn.count * 2),
+    velocitiesSorted: new Float32Array(spawn.count * 2),
+    count: spawn.count,
+    input: {
+      worldX: 0,
+      worldY: 0,
+      pull: false,
+      push: false,
+    },
+  });
+
   const createBufferFromArray = (
     data: Float32Array | Uint32Array,
     usage: GPUBufferUsageFlags
@@ -238,71 +260,11 @@ async function initWebGPU(): Promise<void> {
       usage,
     });
 
-  const positionsBuffer = createBufferFromArray(
-    spawn.positions,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-  const predictedBuffer = createBufferFromArray(
-    new Float32Array(spawn.positions),
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-  const velocitiesBuffer = createBufferFromArray(
-    spawn.velocities,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-  const densitiesBuffer = createEmptyBuffer(
-    particleCount * 2 * 4,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-
-  const keysBuffer = createEmptyBuffer(
-    particleCount * 4,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-  const sortedKeysBuffer = createEmptyBuffer(
-    particleCount * 4,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-  const indicesBuffer = createEmptyBuffer(
-    particleCount * 4,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-  const sortOffsetsBuffer = createEmptyBuffer(
-    particleCount * 4,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-  const spatialOffsetsBuffer = createEmptyBuffer(
-    particleCount * 4,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-
-  const positionsSortedBuffer = createEmptyBuffer(
-    particleCount * 2 * 4,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-  const predictedSortedBuffer = createEmptyBuffer(
-    particleCount * 2 * 4,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-  const velocitiesSortedBuffer = createEmptyBuffer(
-    particleCount * 2 * 4,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-  );
-
-  const gpuBuffers = {
-    predictedBuffer,
-    velocitiesBuffer,
-    densitiesBuffer,
-    keysBuffer,
-    sortedKeysBuffer,
-    indicesBuffer,
-    sortOffsetsBuffer,
-    spatialOffsetsBuffer,
-    positionsSortedBuffer,
-    predictedSortedBuffer,
-    velocitiesSortedBuffer,
+  const destroyBuffers = (buffers: (GPUBuffer | null)[]): void => {
+    for (const buffer of buffers) {
+      buffer?.destroy();
+    }
   };
-  void gpuBuffers;
 
   const shaderModule = device.createShaderModule({
     code: `
@@ -453,20 +415,109 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     },
   });
 
-  const bindGroup = device.createBindGroup({
-    layout: pipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: { buffer: positionsBuffer } },
-      { binding: 1, resource: { buffer: velocitiesBuffer } },
-      { binding: 2, resource: { buffer: gradientBuffer } },
-      { binding: 3, resource: { buffer: uniformBuffer } },
-    ],
-  });
-
   const lineBindGroup = device.createBindGroup({
     layout: linePipeline.getBindGroupLayout(0),
     entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
   });
+
+  const resetSimulation = (): void => {
+    destroyBuffers([
+      positionsBuffer,
+      predictedBuffer,
+      velocitiesBuffer,
+      densitiesBuffer,
+      keysBuffer,
+      sortedKeysBuffer,
+      indicesBuffer,
+      sortOffsetsBuffer,
+      spatialOffsetsBuffer,
+      positionsSortedBuffer,
+      predictedSortedBuffer,
+      velocitiesSortedBuffer,
+    ]);
+
+    const spawn = createSpawnData(config);
+    particleCount = spawn.count;
+    state = createStateFromSpawn(spawn);
+    physics = createPhysics(state, config, getScale);
+
+    positionsBuffer = createBufferFromArray(
+      spawn.positions,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    predictedBuffer = createBufferFromArray(
+      new Float32Array(spawn.positions),
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    velocitiesBuffer = createBufferFromArray(
+      spawn.velocities,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    densitiesBuffer = createEmptyBuffer(
+      particleCount * 2 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    keysBuffer = createEmptyBuffer(
+      particleCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    sortedKeysBuffer = createEmptyBuffer(
+      particleCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    indicesBuffer = createEmptyBuffer(
+      particleCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    sortOffsetsBuffer = createEmptyBuffer(
+      particleCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    spatialOffsetsBuffer = createEmptyBuffer(
+      particleCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    positionsSortedBuffer = createEmptyBuffer(
+      particleCount * 2 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    predictedSortedBuffer = createEmptyBuffer(
+      particleCount * 2 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    velocitiesSortedBuffer = createEmptyBuffer(
+      particleCount * 2 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+
+    const simBuffers = {
+      predictedBuffer,
+      velocitiesBuffer,
+      densitiesBuffer,
+      keysBuffer,
+      sortedKeysBuffer,
+      indicesBuffer,
+      sortOffsetsBuffer,
+      spatialOffsetsBuffer,
+      positionsSortedBuffer,
+      predictedSortedBuffer,
+      velocitiesSortedBuffer,
+    };
+    void simBuffers;
+
+    bindGroup = device.createBindGroup({
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: positionsBuffer } },
+        { binding: 1, resource: { buffer: velocitiesBuffer } },
+        { binding: 2, resource: { buffer: gradientBuffer } },
+        { binding: 3, resource: { buffer: uniformBuffer } },
+      ],
+    });
+  };
+
+  resetSim = resetSimulation;
+  resetSimulation();
 
   let baseUnitsPerPixel: number | null = null;
   const uniformData = new Float32Array(8);
@@ -503,6 +554,18 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
   let lastTime = performance.now();
   const frame = (now: number): void => {
     stats.begin();
+    if (
+      !state ||
+      !physics ||
+      !positionsBuffer ||
+      !velocitiesBuffer ||
+      !bindGroup
+    ) {
+      stats.end();
+      stats.update();
+      requestAnimationFrame(frame);
+      return;
+    }
     const dt = Math.min(0.033, (now - lastTime) / 1000);
     lastTime = now;
     physics.step(dt);
