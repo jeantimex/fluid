@@ -2,6 +2,7 @@ import './style.css';
 import GUI from 'lil-gui';
 import Stats from 'stats-gl';
 import { createConfig } from '../canvas2d/config.ts';
+import { buildGradientLut } from '../canvas2d/kernels.ts';
 import { createSpawnData } from '../canvas2d/spawn.ts';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -112,6 +113,27 @@ async function initWebGPU(): Promise<void> {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
+  const gradientLut = buildGradientLut(
+    config.colorKeys,
+    config.gradientResolution
+  );
+  const gradientData = new Float32Array(config.gradientResolution * 4);
+  for (let i = 0; i < gradientLut.length; i += 1) {
+    const col = gradientLut[i];
+    gradientData[i * 4] = col.r;
+    gradientData[i * 4 + 1] = col.g;
+    gradientData[i * 4 + 2] = col.b;
+    gradientData[i * 4 + 3] = 1;
+  }
+
+  const gradientBuffer = device.createBuffer({
+    size: gradientData.byteLength,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    mappedAtCreation: true,
+  });
+  new Float32Array(gradientBuffer.getMappedRange()).set(gradientData);
+  gradientBuffer.unmap();
+
   const createBufferFromArray = (
     data: Float32Array | Uint32Array,
     usage: GPUBufferUsageFlags
@@ -211,15 +233,20 @@ struct SimUniforms {
   boundsSize: vec2<f32>,
   canvasSize: vec2<f32>,
   particleRadius: f32,
+  velocityDisplayMax: f32,
+  gradientResolution: f32,
   pad0: f32,
-  pad1: vec2<f32>,
 };
 
 @group(0) @binding(0) var<storage, read> positions: array<vec2<f32>>;
-@group(0) @binding(1) var<uniform> uniforms: SimUniforms;
+@group(0) @binding(1) var<storage, read> velocities: array<vec2<f32>>;
+@group(0) @binding(2) var<storage, read> gradient: array<vec4<f32>>;
+@group(0) @binding(3) var<uniform> uniforms: SimUniforms;
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
+  @location(0) localPos: vec2<f32>,
+  @location(1) speed: f32,
 };
 
 @vertex
@@ -247,12 +274,23 @@ fn vs_main(
 
   var out: VertexOut;
   out.position = vec4<f32>(ndc + offset, 0.0, 1.0);
+  out.localPos = quad[vertexIndex];
+  let vel = velocities[instanceIndex];
+  out.speed = length(vel);
   return out;
 }
 
 @fragment
-fn fs_main() -> @location(0) vec4<f32> {
-  return vec4<f32>(0.2, 0.7, 1.0, 1.0);
+fn fs_main(
+  @location(0) localPos: vec2<f32>,
+  @location(1) speed: f32
+) -> @location(0) vec4<f32> {
+  if (dot(localPos, localPos) > 1.0) {
+    discard;
+  }
+  let t = clamp(speed / uniforms.velocityDisplayMax, 0.0, 1.0);
+  let idx = u32(t * (uniforms.gradientResolution - 1.0));
+  return gradient[idx];
 }
 `,
   });
@@ -277,7 +315,9 @@ fn fs_main() -> @location(0) vec4<f32> {
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: { buffer: positionsBuffer } },
-      { binding: 1, resource: { buffer: uniformBuffer } },
+      { binding: 1, resource: { buffer: velocitiesBuffer } },
+      { binding: 2, resource: { buffer: gradientBuffer } },
+      { binding: 3, resource: { buffer: uniformBuffer } },
     ],
   });
 
@@ -320,8 +360,8 @@ fn fs_main() -> @location(0) vec4<f32> {
     uniformData[2] = canvas.width;
     uniformData[3] = canvas.height;
     uniformData[4] = config.particleRadius;
-    uniformData[5] = 0;
-    uniformData[6] = 0;
+    uniformData[5] = config.velocityDisplayMax;
+    uniformData[6] = config.gradientResolution;
     uniformData[7] = 0;
     device.queue.writeBuffer(uniformBuffer, 0, uniformData);
     const encoder = device.createCommandEncoder();
