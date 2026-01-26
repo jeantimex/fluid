@@ -261,6 +261,22 @@ export function createRenderer(
     ctx.strokeStyle = '#1b2432'; // Dark border color
     ctx.lineWidth = 1;
     ctx.strokeRect(originX - halfW, originY - halfH, halfW * 2, halfH * 2);
+
+    if (config.obstacleSize.x > 0 && config.obstacleSize.y > 0) {
+      const obstacleHalfW = (config.obstacleSize.x * scale) / 2;
+      const obstacleHalfH = (config.obstacleSize.y * scale) / 2;
+      const obstacleCenter = worldToCanvas(
+        config.obstacleCentre.x,
+        config.obstacleCentre.y
+      );
+      ctx.strokeStyle = '#36516d';
+      ctx.strokeRect(
+        obstacleCenter.x - obstacleHalfW,
+        obstacleCenter.y - obstacleHalfH,
+        obstacleHalfW * 2,
+        obstacleHalfH * 2
+      );
+    }
   }
 
   // Initialize canvas size

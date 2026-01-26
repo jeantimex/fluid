@@ -42,46 +42,50 @@ const uiState = { showStats: true };
 // === Parameter Controls ===
 // Each control binds to a config property and optionally triggers callbacks
 
+const particlesFolder = gui.addFolder('Particles');
+
 // Spawn density control - requires simulation reset to take effect
-gui
+particlesFolder
   .add(sim.config, 'spawnDensity', 10, 300, 1)
   .name('Spawn Density')
   .onFinishChange(() => sim.reset()); // Reset when slider is released
 
 // Gravity control - affects simulation immediately
-gui.add(sim.config, 'gravity', -30, 30, 0.1).name('Gravity');
+particlesFolder.add(sim.config, 'gravity', -30, 30, 0.1).name('Gravity');
 
 // Collision damping - how much energy is lost on boundary collision
-gui.add(sim.config, 'collisionDamping', 0, 1, 0.01).name('Collision Damping');
+particlesFolder
+  .add(sim.config, 'collisionDamping', 0, 1, 0.01)
+  .name('Collision Damping');
 
 // Smoothing radius - requires kernel recalculation
-const smoothingCtrl = gui
+const smoothingCtrl = particlesFolder
   .add(sim.config, 'smoothingRadius', 0.05, 3, 0.01)
   .name('Smoothing Radius')
   .onChange(sim.refreshSettings); // Recalculate kernel constants
 
 // Target density - rest density the fluid tries to maintain
-const targetDensityCtrl = gui
+const targetDensityCtrl = particlesFolder
   .add(sim.config, 'targetDensity', 0, 3000, 1)
   .name('Target Density');
 
 // Pressure multiplier - stiffness of the fluid
-const pressureCtrl = gui
+const pressureCtrl = particlesFolder
   .add(sim.config, 'pressureMultiplier', 0, 2000, 1)
   .name('Pressure Multiplier');
 
 // Near pressure - close-range repulsion for surface tension
-const nearPressureCtrl = gui
+const nearPressureCtrl = particlesFolder
   .add(sim.config, 'nearPressureMultiplier', 0, 40, 0.1)
   .name('Near Pressure Multiplier');
 
 // Viscosity - internal friction (higher = thicker fluid)
-const viscosityCtrl = gui
+const viscosityCtrl = particlesFolder
   .add(sim.config, 'viscosityStrength', 0, 0.2, 0.001)
   .name('Viscosity Strength');
 
 // Particle radius - visual size, also triggers parameter scaling
-const particleRadiusCtrl = gui
+const particleRadiusCtrl = particlesFolder
   .add(sim.config, 'particleRadius', 1, 6, 1)
   .name('Particle Radius');
 
@@ -97,17 +101,35 @@ particleRadiusCtrl.onChange(() => {
   viscosityCtrl.updateDisplay();
 });
 
+// Obstacle controls
+const obstacleFolder = gui.addFolder('Obstacle');
+
+obstacleFolder.add(sim.config.obstacleSize, 'x', 0, 20, 0.01).name('Size X');
+obstacleFolder.add(sim.config.obstacleSize, 'y', 0, 20, 0.01).name('Size Y');
+obstacleFolder
+  .add(sim.config.obstacleCentre, 'x', -10, 10, 0.01)
+  .name('Center X');
+obstacleFolder
+  .add(sim.config.obstacleCentre, 'y', -10, 10, 0.01)
+  .name('Center Y');
+
+const performanceFolder = gui.addFolder('Performance');
+
 // Time scale - slow motion or speed up
-gui.add(sim.config, 'timeScale', 0, 2, 0.01).name('Time Scale');
+performanceFolder.add(sim.config, 'timeScale', 0, 2, 0.01).name('Time Scale');
 
 // Maximum timestep - prevents instability on frame drops
-gui.add(sim.config, 'maxTimestepFPS', 0, 120, 1).name('Max Timestep FPS');
+performanceFolder
+  .add(sim.config, 'maxTimestepFPS', 0, 120, 1)
+  .name('Max Timestep FPS');
 
 // Iterations per frame - more = more accurate but slower
-gui.add(sim.config, 'iterationsPerFrame', 1, 8, 1).name('Iterations Per Frame');
+performanceFolder
+  .add(sim.config, 'iterationsPerFrame', 1, 8, 1)
+  .name('Iterations Per Frame');
 
 // Toggle FPS display
-gui
+performanceFolder
   .add(uiState, 'showStats')
   .name('Show FPS')
   .onChange((value: boolean) => {
