@@ -49,7 +49,7 @@ const useGpuExternalForces = true;
 const useGpuSpatialHash = true;
 const useGpuDensity = true;
 const useGpuDensityReadback = true;
-const useCpuSpatialDataForGpuDensity = true;
+const useCpuSpatialDataForGpuDensity = false;
 const useGpuPressure = true;
 const useGpuViscosity = true;
 
@@ -592,9 +592,10 @@ struct DensityParams {
 
 @group(0) @binding(0) var<storage, read> predicted: array<vec2<f32>>;
 @group(0) @binding(1) var<storage, read> sortedKeys: array<u32>;
-@group(0) @binding(2) var<storage, read> spatialOffsets: array<u32>;
-@group(0) @binding(3) var<storage, read_write> densities: array<vec2<f32>>;
-@group(0) @binding(4) var<uniform> params: DensityParams;
+@group(0) @binding(2) var<storage, read> indices: array<u32>;
+@group(0) @binding(3) var<storage, read> spatialOffsets: array<u32>;
+@group(0) @binding(4) var<storage, read_write> densities: array<vec2<f32>>;
+@group(0) @binding(5) var<uniform> params: DensityParams;
 
 const neighborOffsets = array<vec2<i32>, 9>(
   vec2<i32>(-1, 1),
@@ -662,7 +663,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
       if (j >= count || sortedKeys[j] != key) {
         break;
       }
-      let neighborPos = predicted[j];
+      let neighborIndex = indices[j];
+      let neighborPos = predicted[neighborIndex];
       let dx = neighborPos.x - pos.x;
       let dy = neighborPos.y - pos.y;
       let dstSq = dx * dx + dy * dy;
@@ -698,8 +700,9 @@ struct PressureParams {
 @group(0) @binding(1) var<storage, read_write> velocities: array<vec2<f32>>;
 @group(0) @binding(2) var<storage, read> densities: array<vec2<f32>>;
 @group(0) @binding(3) var<storage, read> sortedKeys: array<u32>;
-@group(0) @binding(4) var<storage, read> spatialOffsets: array<u32>;
-@group(0) @binding(5) var<uniform> params: PressureParams;
+@group(0) @binding(4) var<storage, read> indices: array<u32>;
+@group(0) @binding(5) var<storage, read> spatialOffsets: array<u32>;
+@group(0) @binding(6) var<uniform> params: PressureParams;
 
 const neighborOffsets = array<vec2<i32>, 9>(
   vec2<i32>(-1, 1),
@@ -777,8 +780,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
       if (j >= count || sortedKeys[j] != key) {
         break;
       }
-      if (j != i) {
-        let neighborPos = predicted[j];
+      let neighborIndex = indices[j];
+      if (neighborIndex != i) {
+        let neighborPos = predicted[neighborIndex];
         let dx = neighborPos.x - pos.x;
         let dy = neighborPos.y - pos.y;
         let dstSq = dx * dx + dy * dy;
@@ -788,7 +792,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
           let dirX = dx * invDst;
           let dirY = dy * invDst;
 
-          let neighborDensityPair = densities[j];
+          let neighborDensityPair = densities[neighborIndex];
           let neighborDensity = neighborDensityPair.x;
           let neighborNearDensity = neighborDensityPair.y;
           let neighborPressure =
@@ -840,8 +844,9 @@ struct ViscosityParams {
 @group(0) @binding(0) var<storage, read> predicted: array<vec2<f32>>;
 @group(0) @binding(1) var<storage, read_write> velocities: array<vec2<f32>>;
 @group(0) @binding(2) var<storage, read> sortedKeys: array<u32>;
-@group(0) @binding(3) var<storage, read> spatialOffsets: array<u32>;
-@group(0) @binding(4) var<uniform> params: ViscosityParams;
+@group(0) @binding(3) var<storage, read> indices: array<u32>;
+@group(0) @binding(4) var<storage, read> spatialOffsets: array<u32>;
+@group(0) @binding(5) var<uniform> params: ViscosityParams;
 
 const neighborOffsets = array<vec2<i32>, 9>(
   vec2<i32>(-1, 1),
@@ -902,15 +907,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
       if (j >= count || sortedKeys[j] != key) {
         break;
       }
-      if (j != i) {
-        let neighborPos = predicted[j];
+      let neighborIndex = indices[j];
+      if (neighborIndex != i) {
+        let neighborPos = predicted[neighborIndex];
         let dx = neighborPos.x - pos.x;
         let dy = neighborPos.y - pos.y;
         let dstSq = dx * dx + dy * dy;
         if (dstSq <= radiusSq) {
           let dst = sqrt(dstSq);
           let weight = smoothingKernelPoly6(dst, params.radius, params.poly6Scale);
-          let neighborVel = velocities[j];
+          let neighborVel = velocities[neighborIndex];
           forceX = forceX + (neighborVel.x - vel.x) * weight;
           forceY = forceY + (neighborVel.y - vel.y) * weight;
         }
@@ -1250,9 +1256,10 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       entries: [
         { binding: 0, resource: { buffer: predictedBuffer } },
         { binding: 1, resource: { buffer: sortedKeysBuffer } },
-        { binding: 2, resource: { buffer: spatialOffsetsBuffer } },
-        { binding: 3, resource: { buffer: densitiesBuffer } },
-        { binding: 4, resource: { buffer: densityUniformBuffer } },
+        { binding: 2, resource: { buffer: indicesBuffer } },
+        { binding: 3, resource: { buffer: spatialOffsetsBuffer } },
+        { binding: 4, resource: { buffer: densitiesBuffer } },
+        { binding: 5, resource: { buffer: densityUniformBuffer } },
       ],
     });
 
@@ -1263,8 +1270,9 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         { binding: 1, resource: { buffer: velocitiesBuffer } },
         { binding: 2, resource: { buffer: densitiesBuffer } },
         { binding: 3, resource: { buffer: sortedKeysBuffer } },
-        { binding: 4, resource: { buffer: spatialOffsetsBuffer } },
-        { binding: 5, resource: { buffer: pressureUniformBuffer } },
+        { binding: 4, resource: { buffer: indicesBuffer } },
+        { binding: 5, resource: { buffer: spatialOffsetsBuffer } },
+        { binding: 6, resource: { buffer: pressureUniformBuffer } },
       ],
     });
 
@@ -1274,8 +1282,9 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         { binding: 0, resource: { buffer: predictedBuffer } },
         { binding: 1, resource: { buffer: velocitiesBuffer } },
         { binding: 2, resource: { buffer: sortedKeysBuffer } },
-        { binding: 3, resource: { buffer: spatialOffsetsBuffer } },
-        { binding: 4, resource: { buffer: viscosityUniformBuffer } },
+        { binding: 3, resource: { buffer: indicesBuffer } },
+        { binding: 4, resource: { buffer: spatialOffsetsBuffer } },
+        { binding: 5, resource: { buffer: viscosityUniformBuffer } },
       ],
     });
   };
@@ -1401,7 +1410,9 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         velocityReadbackBuffer.unmap();
 
         physics.predictPositions();
-        physics.runSpatialHash();
+        if (!useGpuDensity || useCpuSpatialDataForGpuDensity) {
+          physics.runSpatialHash();
+        }
 
         if (useGpuDensity) {
           device.queue.writeBuffer(predictedBuffer, 0, state.predicted);
@@ -1413,6 +1424,39 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
               0,
               state.spatialOffsets
             );
+          } else if (useGpuSpatialHash) {
+            const hashEncoder = device.createCommandEncoder();
+            const hashPass = hashEncoder.beginComputePass();
+            hashPass.setPipeline(hashPipeline);
+            hashPass.setBindGroup(0, hashBindGroup);
+            hashPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+            hashPass.end();
+
+            const clearPass = hashEncoder.beginComputePass();
+            clearPass.setPipeline(clearOffsetsPipeline);
+            clearPass.setBindGroup(0, clearOffsetsBindGroup);
+            clearPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+            clearPass.end();
+
+            const countPass = hashEncoder.beginComputePass();
+            countPass.setPipeline(countOffsetsPipeline);
+            countPass.setBindGroup(1, countOffsetsBindGroup);
+            countPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+            countPass.end();
+
+            const scatterPass = hashEncoder.beginComputePass();
+            scatterPass.setPipeline(scatterPipeline);
+            scatterPass.setBindGroup(0, scatterBindGroup);
+            scatterPass.dispatchWorkgroups(1);
+            scatterPass.end();
+
+            const spatialPass = hashEncoder.beginComputePass();
+            spatialPass.setPipeline(spatialOffsetsPipeline);
+            spatialPass.setBindGroup(0, spatialOffsetsBindGroup);
+            spatialPass.dispatchWorkgroups(1);
+            spatialPass.end();
+
+            device.queue.submit([hashEncoder.finish()]);
           }
 
           const densityEncoder = device.createCommandEncoder();
