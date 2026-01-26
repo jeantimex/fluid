@@ -6,6 +6,7 @@ import './style.css';
 import { createConfig } from '../common/config.ts';
 import { setupGui } from '../common/gui.ts';
 import { FluidSimulation } from './fluid_simulation.ts';
+import { initWebGPU, configureContext, WebGPUInitError } from './webgpu_utils.ts';
 
 // DOM Setup
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -40,45 +41,40 @@ function canvasToWorld(
   y: number,
   scale: number
 ): { x: number; y: number } {
-  const rect = canvas!.getBoundingClientRect();
+  const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const px = (x - rect.left) * dpr;
   const py = (y - rect.top) * dpr;
-  const originX = canvas!.width * 0.5;
-  const originY = canvas!.height * 0.5;
+  const originX = canvas.width * 0.5;
+  const originY = canvas.height * 0.5;
   return {
     x: (px - originX) / scale,
     y: (originY - py) / scale,
   };
 }
 
-// Initialize WebGPU
-async function initWebGPU(): Promise<void> {
-  if (!navigator.gpu) {
-    app!.innerHTML = '<p>WebGPU is not supported in this browser.</p>';
-    return;
-  }
+// Main application
+async function main(): Promise<void> {
+  // Initialize WebGPU
+  let device: GPUDevice;
+  let context: GPUCanvasContext;
+  let format: GPUTextureFormat;
 
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) {
-    app!.innerHTML = '<p>Unable to acquire a WebGPU adapter.</p>';
-    return;
+  try {
+    ({ device, context, format } = await initWebGPU(canvas));
+  } catch (error) {
+    if (error instanceof WebGPUInitError) {
+      app.innerHTML = `<p>${error.message}</p>`;
+      return;
+    }
+    throw error;
   }
-
-  const device = await adapter.requestDevice();
-  const context = canvas!.getContext('webgpu');
-  if (!context) {
-    app!.innerHTML = '<p>Unable to create a WebGPU context.</p>';
-    return;
-  }
-
-  const format = navigator.gpu.getPreferredCanvasFormat();
 
   // Create simulation
-  simulation = new FluidSimulation(device, context, canvas!, config, format);
+  simulation = new FluidSimulation(device, context, canvas, config, format);
 
   // Input handling
-  const getScale = (): number => canvas!.width / config.boundsSize.x;
+  const getScale = (): number => canvas.width / config.boundsSize.x;
 
   const updatePointer = (event: MouseEvent): void => {
     const state = simulation?.simulationState;
@@ -89,27 +85,27 @@ async function initWebGPU(): Promise<void> {
     state.input.worldY = world.y;
   };
 
-  canvas!.addEventListener('mousemove', updatePointer);
-  canvas!.addEventListener('mousedown', (event) => {
+  canvas.addEventListener('mousemove', updatePointer);
+  canvas.addEventListener('mousedown', (event) => {
     const state = simulation?.simulationState;
     if (!state) return;
     updatePointer(event);
     if (event.button === 0) state.input.pull = true;
     if (event.button === 2) state.input.push = true;
   });
-  canvas!.addEventListener('mouseup', (event) => {
+  canvas.addEventListener('mouseup', (event) => {
     const state = simulation?.simulationState;
     if (!state) return;
     if (event.button === 0) state.input.pull = false;
     if (event.button === 2) state.input.push = false;
   });
-  canvas!.addEventListener('mouseleave', () => {
+  canvas.addEventListener('mouseleave', () => {
     const state = simulation?.simulationState;
     if (!state) return;
     state.input.pull = false;
     state.input.push = false;
   });
-  canvas!.addEventListener('contextmenu', (event) => {
+  canvas.addEventListener('contextmenu', (event) => {
     event.preventDefault();
   });
 
@@ -117,7 +113,7 @@ async function initWebGPU(): Promise<void> {
   let baseUnitsPerPixel: number | null = null;
 
   const resize = (): void => {
-    const rect = canvas!.getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();
     if (baseUnitsPerPixel === null) {
       baseUnitsPerPixel = config.boundsSize.x / Math.max(1, rect.width);
     }
@@ -125,18 +121,14 @@ async function initWebGPU(): Promise<void> {
     const nextWidth = Math.max(1, Math.round(rect.width * dpr));
     const nextHeight = Math.max(1, Math.round(rect.height * dpr));
 
-    if (canvas!.width !== nextWidth || canvas!.height !== nextHeight) {
-      canvas!.width = nextWidth;
-      canvas!.height = nextHeight;
+    if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+      canvas.width = nextWidth;
+      canvas.height = nextHeight;
       config.boundsSize = {
-        x: (canvas!.width / dpr) * baseUnitsPerPixel,
-        y: (canvas!.height / dpr) * baseUnitsPerPixel,
+        x: (canvas.width / dpr) * baseUnitsPerPixel,
+        y: (canvas.height / dpr) * baseUnitsPerPixel,
       };
-      context.configure({
-        device,
-        format,
-        alphaMode: 'opaque',
-      });
+      configureContext(context, device, format);
     }
   };
 
@@ -163,4 +155,4 @@ async function initWebGPU(): Promise<void> {
   requestAnimationFrame(frame);
 }
 
-void initWebGPU();
+void main();
