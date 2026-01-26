@@ -48,6 +48,7 @@ let physics: ReturnType<typeof createPhysics> | null = null;
 const useGpuExternalForces = true;
 const useGpuSpatialHash = true;
 const useGpuDensity = true;
+const useGpuDensityReadback = true;
 
 const particlesFolder = gui.addFolder('Particles');
 particlesFolder
@@ -148,6 +149,7 @@ async function initWebGPU(): Promise<void> {
   let predictedSortedBuffer: GPUBuffer | null = null;
   let velocitiesSortedBuffer: GPUBuffer | null = null;
   let velocityReadbackBuffer: GPUBuffer | null = null;
+  let densityReadbackBuffer: GPUBuffer | null = null;
   let bindGroup: GPUBindGroup | null = null;
   let computeBindGroup: GPUBindGroup | null = null;
   let hashBindGroup: GPUBindGroup | null = null;
@@ -824,6 +826,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       predictedSortedBuffer,
       velocitiesSortedBuffer,
       velocityReadbackBuffer,
+      densityReadbackBuffer,
     ]);
 
     const spawn = createSpawnData(config);
@@ -845,7 +848,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     );
     densitiesBuffer = createEmptyBuffer(
       particleCount * 2 * 4,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
     );
     keysBuffer = createEmptyBuffer(
       particleCount * 4,
@@ -880,6 +883,10 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     );
     velocityReadbackBuffer = device.createBuffer({
+      size: particleCount * 2 * 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+    densityReadbackBuffer = device.createBuffer({
       size: particleCount * 2 * 4,
       usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
@@ -1028,6 +1035,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       !velocitiesBuffer ||
       !predictedBuffer ||
       !velocityReadbackBuffer ||
+      !densityReadbackBuffer ||
       !bindGroup ||
       !computeBindGroup ||
       !hashBindGroup ||
@@ -1271,6 +1279,15 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       densityPass.setBindGroup(0, densityBindGroup);
       densityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
       densityPass.end();
+      if (useGpuDensityReadback) {
+        encoder.copyBufferToBuffer(
+          densitiesBuffer,
+          0,
+          densityReadbackBuffer,
+          0,
+          particleCount * 2 * 4
+        );
+      }
     }
     const view = context.getCurrentTexture().createView();
     const pass = encoder.beginRenderPass({
@@ -1294,6 +1311,14 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     }
     pass.end();
     device.queue.submit([encoder.finish()]);
+    if (useGpuDensity && useGpuDensityReadback) {
+      await densityReadbackBuffer.mapAsync(GPUMapMode.READ);
+      const mappedDensities = new Float32Array(
+        densityReadbackBuffer.getMappedRange()
+      );
+      state.densities.set(mappedDensities);
+      densityReadbackBuffer.unmap();
+    }
     stats.end();
     stats.update();
     requestAnimationFrame(frame);
