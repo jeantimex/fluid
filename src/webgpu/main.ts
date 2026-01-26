@@ -2,8 +2,10 @@ import './style.css';
 import GUI from 'lil-gui';
 import Stats from 'stats-gl';
 import { createConfig } from '../canvas2d/config.ts';
+import { createPhysics } from '../canvas2d/physics.ts';
 import { buildGradientLut } from '../canvas2d/kernels.ts';
 import { createSpawnData } from '../canvas2d/spawn.ts';
+import type { SimState } from '../canvas2d/types.ts';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
@@ -107,6 +109,31 @@ async function initWebGPU(): Promise<void> {
 
   const spawn = createSpawnData(config);
   const particleCount = spawn.count;
+
+  const state: SimState = {
+    positions: spawn.positions,
+    predicted: new Float32Array(spawn.positions),
+    velocities: spawn.velocities,
+    densities: new Float32Array(particleCount * 2),
+    keys: new Uint32Array(particleCount),
+    sortedKeys: new Uint32Array(particleCount),
+    indices: new Uint32Array(particleCount),
+    sortOffsets: new Uint32Array(particleCount),
+    spatialOffsets: new Uint32Array(particleCount),
+    positionsSorted: new Float32Array(particleCount * 2),
+    predictedSorted: new Float32Array(particleCount * 2),
+    velocitiesSorted: new Float32Array(particleCount * 2),
+    count: particleCount,
+    input: {
+      worldX: 0,
+      worldY: 0,
+      pull: false,
+      push: false,
+    },
+  };
+
+  const getScale = (): number => canvas.width / config.boundsSize.x;
+  const physics = createPhysics(state, config, getScale);
 
   const uniformBuffer = device.createBuffer({
     size: 32,
@@ -353,8 +380,14 @@ fn fs_main(
 
   const clearColor = { r: 5 / 255, g: 7 / 255, b: 11 / 255, a: 1 };
 
-  const frame = (): void => {
+  let lastTime = performance.now();
+  const frame = (now: number): void => {
     stats.begin();
+    const dt = Math.min(0.033, (now - lastTime) / 1000);
+    lastTime = now;
+    physics.step(dt);
+    device.queue.writeBuffer(positionsBuffer, 0, state.positions);
+    device.queue.writeBuffer(velocitiesBuffer, 0, state.velocities);
     uniformData[0] = config.boundsSize.x;
     uniformData[1] = config.boundsSize.y;
     uniformData[2] = canvas.width;
