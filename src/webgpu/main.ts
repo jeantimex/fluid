@@ -47,6 +47,7 @@ let resetSim: (() => void) | null = null;
 let physics: ReturnType<typeof createPhysics> | null = null;
 const useGpuExternalForces = true;
 const useGpuSpatialHash = true;
+const useGpuDensity = true;
 
 const particlesFolder = gui.addFolder('Particles');
 particlesFolder
@@ -153,6 +154,8 @@ async function initWebGPU(): Promise<void> {
   let clearOffsetsBindGroup: GPUBindGroup | null = null;
   let countOffsetsBindGroup: GPUBindGroup | null = null;
   let scatterBindGroup: GPUBindGroup | null = null;
+  let spatialOffsetsBindGroup: GPUBindGroup | null = null;
+  let densityBindGroup: GPUBindGroup | null = null;
 
   const getScale = (): number => canvas.width / config.boundsSize.x;
 
@@ -202,6 +205,11 @@ async function initWebGPU(): Promise<void> {
 
   const sortUniformBuffer = device.createBuffer({
     size: 32,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const densityUniformBuffer = device.createBuffer({
+    size: 48,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const lineVertexStride = 6 * 4;
@@ -524,6 +532,141 @@ fn prefixAndScatter(@builtin(global_invocation_id) id: vec3<u32>) {
 `,
   });
 
+  const spatialOffsetsShaderModule = device.createShaderModule({
+    code: `
+struct SortParams {
+  particleCount: u32,
+  pad0: vec3<u32>,
+};
+
+@group(0) @binding(0) var<storage, read> sortedKeys: array<u32>;
+@group(0) @binding(1) var<storage, read_write> spatialOffsets: array<u32>;
+@group(0) @binding(2) var<uniform> params: SortParams;
+
+@compute @workgroup_size(1)
+fn buildOffsets(@builtin(global_invocation_id) id: vec3<u32>) {
+  if (id.x != 0u) {
+    return;
+  }
+
+  let count = params.particleCount;
+  for (var i = 0u; i < count; i = i + 1u) {
+    spatialOffsets[i] = count;
+  }
+
+  for (var i = 0u; i < count; i = i + 1u) {
+    if (i == 0u || sortedKeys[i] != sortedKeys[i - 1u]) {
+      spatialOffsets[sortedKeys[i]] = i;
+    }
+  }
+}
+`,
+  });
+
+  const densityShaderModule = device.createShaderModule({
+    code: `
+struct DensityParams {
+  radius: f32,
+  spikyPow2Scale: f32,
+  spikyPow3Scale: f32,
+  pad0: f32,
+  particleCount: u32,
+  pad1: vec3<u32>,
+};
+
+@group(0) @binding(0) var<storage, read> predicted: array<vec2<f32>>;
+@group(0) @binding(1) var<storage, read> indices: array<u32>;
+@group(0) @binding(2) var<storage, read> sortedKeys: array<u32>;
+@group(0) @binding(3) var<storage, read> spatialOffsets: array<u32>;
+@group(0) @binding(4) var<storage, read_write> densities: array<vec2<f32>>;
+@group(0) @binding(5) var<uniform> params: DensityParams;
+
+const neighborOffsets = array<vec2<i32>, 9>(
+  vec2<i32>(-1, 1),
+  vec2<i32>(0, 1),
+  vec2<i32>(1, 1),
+  vec2<i32>(-1, 0),
+  vec2<i32>(0, 0),
+  vec2<i32>(1, 0),
+  vec2<i32>(-1, -1),
+  vec2<i32>(0, -1),
+  vec2<i32>(1, -1)
+);
+
+fn hashCell2D(cellX: i32, cellY: i32) -> u32 {
+  let ax = cellX * 15823;
+  let by = cellY * 9737333;
+  return u32(ax + by);
+}
+
+fn spikyPow2(dst: f32, radius: f32, scale: f32) -> f32 {
+  if (dst < radius) {
+    let v = radius - dst;
+    return v * v * scale;
+  }
+  return 0.0;
+}
+
+fn spikyPow3(dst: f32, radius: f32, scale: f32) -> f32 {
+  if (dst < radius) {
+    let v = radius - dst;
+    return v * v * v * scale;
+  }
+  return 0.0;
+}
+
+@compute @workgroup_size(128)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  let i = id.x;
+  let count = params.particleCount;
+  if (i >= count) {
+    return;
+  }
+
+  let particleIndex = indices[i];
+  let pos = predicted[particleIndex];
+  let originCellX = i32(floor(pos.x / params.radius));
+  let originCellY = i32(floor(pos.y / params.radius));
+
+  var density = 0.0;
+  var nearDensity = 0.0;
+  let radiusSq = params.radius * params.radius;
+
+  for (var n = 0u; n < 9u; n = n + 1u) {
+    let cellOffset = neighborOffsets[n];
+    let cellX = originCellX + cellOffset.x;
+    let cellY = originCellY + cellOffset.y;
+    let hash = hashCell2D(cellX, cellY);
+    let key = hash % count;
+    let start = spatialOffsets[key];
+    if (start == count) {
+      continue;
+    }
+
+    var j = start;
+    loop {
+      if (j >= count || sortedKeys[j] != key) {
+        break;
+      }
+      let neighborIndex = indices[j];
+      let neighborPos = predicted[neighborIndex];
+      let dx = neighborPos.x - pos.x;
+      let dy = neighborPos.y - pos.y;
+      let dstSq = dx * dx + dy * dy;
+      if (dstSq < radiusSq) {
+        let dst = sqrt(dstSq);
+        density = density + spikyPow2(dst, params.radius, params.spikyPow2Scale);
+        nearDensity = nearDensity + spikyPow3(dst, params.radius, params.spikyPow3Scale);
+      }
+      j = j + 1u;
+    }
+  }
+
+  densities[i] = vec2<f32>(density, nearDensity);
+}
+`,
+  });
+
   const lineShaderModule = device.createShaderModule({
     code: `
 struct SimUniforms {
@@ -617,6 +760,22 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     compute: {
       module: scatterShaderModule,
       entryPoint: 'prefixAndScatter',
+    },
+  });
+
+  const spatialOffsetsPipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: spatialOffsetsShaderModule,
+      entryPoint: 'buildOffsets',
+    },
+  });
+
+  const densityPipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: densityShaderModule,
+      entryPoint: 'main',
     },
   });
 
@@ -797,6 +956,27 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         { binding: 4, resource: { buffer: sortUniformBuffer } },
       ],
     });
+
+    spatialOffsetsBindGroup = device.createBindGroup({
+      layout: spatialOffsetsPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: sortedKeysBuffer } },
+        { binding: 1, resource: { buffer: spatialOffsetsBuffer } },
+        { binding: 2, resource: { buffer: sortUniformBuffer } },
+      ],
+    });
+
+    densityBindGroup = device.createBindGroup({
+      layout: densityPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: predictedBuffer } },
+        { binding: 1, resource: { buffer: indicesBuffer } },
+        { binding: 2, resource: { buffer: sortedKeysBuffer } },
+        { binding: 3, resource: { buffer: spatialOffsetsBuffer } },
+        { binding: 4, resource: { buffer: densitiesBuffer } },
+        { binding: 5, resource: { buffer: densityUniformBuffer } },
+      ],
+    });
   };
 
   resetSim = resetSimulation;
@@ -807,6 +987,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
   const computeData = new Float32Array(8);
   const hashParamsData = new Float32Array(4);
   const sortParamsData = new Uint32Array(4);
+  const densityParamsData = new Float32Array(12);
 
   const resize = (): void => {
     const rect = canvas.getBoundingClientRect();
@@ -852,7 +1033,9 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       !hashBindGroup ||
       !clearOffsetsBindGroup ||
       !countOffsetsBindGroup ||
-      !scatterBindGroup
+      !scatterBindGroup ||
+      !spatialOffsetsBindGroup ||
+      !densityBindGroup
     ) {
       stats.end();
       stats.update();
@@ -941,6 +1124,24 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       sortParamsData[2] = 0;
       sortParamsData[3] = 0;
       device.queue.writeBuffer(sortUniformBuffer, 0, sortParamsData);
+    }
+    if (useGpuDensity) {
+      const radius = config.smoothingRadius;
+      const spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4));
+      const spikyPow3Scale = 10 / (Math.PI * Math.pow(radius, 5));
+      densityParamsData[0] = radius;
+      densityParamsData[1] = spikyPow2Scale;
+      densityParamsData[2] = spikyPow3Scale;
+      densityParamsData[3] = 0;
+      densityParamsData[4] = particleCount;
+      densityParamsData[5] = 0;
+      densityParamsData[6] = 0;
+      densityParamsData[7] = 0;
+      densityParamsData[8] = 0;
+      densityParamsData[9] = 0;
+      densityParamsData[10] = 0;
+      densityParamsData[11] = 0;
+      device.queue.writeBuffer(densityUniformBuffer, 0, densityParamsData);
     }
 
     let lineVertexCount = 0;
@@ -1057,6 +1258,19 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       scatterPass.setBindGroup(0, scatterBindGroup);
       scatterPass.dispatchWorkgroups(1);
       scatterPass.end();
+
+      const spatialPass = encoder.beginComputePass();
+      spatialPass.setPipeline(spatialOffsetsPipeline);
+      spatialPass.setBindGroup(0, spatialOffsetsBindGroup);
+      spatialPass.dispatchWorkgroups(1);
+      spatialPass.end();
+    }
+    if (useGpuDensity) {
+      const densityPass = encoder.beginComputePass();
+      densityPass.setPipeline(densityPipeline);
+      densityPass.setBindGroup(0, densityBindGroup);
+      densityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+      densityPass.end();
     }
     const view = context.getCurrentTexture().createView();
     const pass = encoder.beginRenderPass({
