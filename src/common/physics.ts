@@ -686,8 +686,10 @@ export function createPhysics(
     const velocities = state.velocities;
 
     // Calculate boundary padding in world units
+    // Scale by DPR since canvas uses device pixels but config uses CSS pixels
+    const dpr = window.devicePixelRatio || 1;
     const paddingPx =
-      Math.max(1, Math.round(config.particleRadius)) + config.boundsPaddingPx;
+      (Math.max(1, Math.round(config.particleRadius)) + config.boundsPaddingPx) * dpr;
     const padding = paddingPx / getScale();
 
     // Half-extents of the collision boundary (centered at origin)

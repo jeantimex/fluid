@@ -79,10 +79,13 @@ export function createRenderer(
    */
   function resizeCanvas(): void {
     const rect = canvas.getBoundingClientRect();
-    const nextWidth = Math.max(1, Math.round(rect.width));
-    const nextHeight = Math.max(1, Math.round(rect.height));
+    const dpr = window.devicePixelRatio || 1;
 
-    // Capture initial scale on first resize
+    // Calculate canvas dimensions in device pixels for sharp rendering
+    const nextWidth = Math.max(1, Math.round(rect.width * dpr));
+    const nextHeight = Math.max(1, Math.round(rect.height * dpr));
+
+    // Capture initial scale on first resize (use CSS pixels for physics consistency)
     if (baseUnitsPerPixel === null) {
       const refWidth = Math.max(1, rect.width);
       baseUnitsPerPixel = config.boundsSize.x / refWidth;
@@ -97,10 +100,10 @@ export function createRenderer(
     }
 
     // Update world bounds to maintain consistent scale
-    // This makes the simulation area grow/shrink with the window
+    // Use CSS pixels (divide by DPR) to keep physics behavior consistent
     config.boundsSize = {
-      x: canvas.width * baseUnitsPerPixel,
-      y: canvas.height * baseUnitsPerPixel,
+      x: (canvas.width / dpr) * baseUnitsPerPixel,
+      y: (canvas.height / dpr) * baseUnitsPerPixel,
     };
 
     // Recalculate transformation parameters
@@ -156,7 +159,9 @@ export function createRenderer(
    * The stamp is rebuilt only when particleRadius changes.
    */
   function rebuildStamp(): void {
-    const nextRadius = Math.max(1, Math.round(config.particleRadius));
+    // Scale particle radius by DPR since canvas uses device pixels
+    const dpr = window.devicePixelRatio || 1;
+    const nextRadius = Math.max(1, Math.round(config.particleRadius * dpr));
     if (nextRadius === stampRadius) return;
 
     stampRadius = nextRadius;
