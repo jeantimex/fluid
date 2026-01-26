@@ -266,6 +266,24 @@ export interface Physics {
   /** Advance simulation by a single substep */
   substep: (dt: number, includeExternalForces: boolean) => void;
 
+  /** Predict positions from current velocities */
+  predictPositions: () => void;
+
+  /** Build spatial hash for neighbor queries */
+  runSpatialHash: () => void;
+
+  /** Compute densities for all particles */
+  calculateDensities: () => void;
+
+  /** Apply pressure forces */
+  calculatePressure: (dt: number) => void;
+
+  /** Apply viscosity forces */
+  calculateViscosity: (dt: number) => void;
+
+  /** Integrate and resolve collisions */
+  updatePositions: (dt: number) => void;
+
   /** Recalculate derived values after config changes */
   refreshSettings: () => void;
 

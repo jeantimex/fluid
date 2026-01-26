@@ -49,6 +49,7 @@ const useGpuExternalForces = true;
 const useGpuSpatialHash = true;
 const useGpuDensity = true;
 const useGpuDensityReadback = true;
+const useCpuSpatialDataForGpuDensity = true;
 
 const particlesFolder = gui.addFolder('Particles');
 particlesFolder
@@ -571,17 +572,15 @@ struct DensityParams {
   radius: f32,
   spikyPow2Scale: f32,
   spikyPow3Scale: f32,
-  pad0: f32,
-  particleCount: u32,
-  pad1: vec3<u32>,
+  particleCountF: f32,
+  pad0: vec4<f32>,
 };
 
 @group(0) @binding(0) var<storage, read> predicted: array<vec2<f32>>;
-@group(0) @binding(1) var<storage, read> indices: array<u32>;
-@group(0) @binding(2) var<storage, read> sortedKeys: array<u32>;
-@group(0) @binding(3) var<storage, read> spatialOffsets: array<u32>;
-@group(0) @binding(4) var<storage, read_write> densities: array<vec2<f32>>;
-@group(0) @binding(5) var<uniform> params: DensityParams;
+@group(0) @binding(1) var<storage, read> sortedKeys: array<u32>;
+@group(0) @binding(2) var<storage, read> spatialOffsets: array<u32>;
+@group(0) @binding(3) var<storage, read_write> densities: array<vec2<f32>>;
+@group(0) @binding(4) var<uniform> params: DensityParams;
 
 const neighborOffsets = array<vec2<i32>, 9>(
   vec2<i32>(-1, 1),
@@ -620,13 +619,12 @@ fn spikyPow3(dst: f32, radius: f32, scale: f32) -> f32 {
 @compute @workgroup_size(128)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let i = id.x;
-  let count = params.particleCount;
+  let count = u32(params.particleCountF + 0.5);
   if (i >= count) {
     return;
   }
 
-  let particleIndex = indices[i];
-  let pos = predicted[particleIndex];
+  let pos = predicted[i];
   let originCellX = i32(floor(pos.x / params.radius));
   let originCellY = i32(floor(pos.y / params.radius));
 
@@ -650,12 +648,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
       if (j >= count || sortedKeys[j] != key) {
         break;
       }
-      let neighborIndex = indices[j];
-      let neighborPos = predicted[neighborIndex];
+      let neighborPos = predicted[j];
       let dx = neighborPos.x - pos.x;
       let dy = neighborPos.y - pos.y;
       let dstSq = dx * dx + dy * dy;
-      if (dstSq < radiusSq) {
+      if (dstSq <= radiusSq) {
         let dst = sqrt(dstSq);
         density = density + spikyPow2(dst, params.radius, params.spikyPow2Scale);
         nearDensity = nearDensity + spikyPow3(dst, params.radius, params.spikyPow3Scale);
@@ -977,11 +974,10 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       layout: densityPipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: predictedBuffer } },
-        { binding: 1, resource: { buffer: indicesBuffer } },
-        { binding: 2, resource: { buffer: sortedKeysBuffer } },
-        { binding: 3, resource: { buffer: spatialOffsetsBuffer } },
-        { binding: 4, resource: { buffer: densitiesBuffer } },
-        { binding: 5, resource: { buffer: densityUniformBuffer } },
+        { binding: 1, resource: { buffer: sortedKeysBuffer } },
+        { binding: 2, resource: { buffer: spatialOffsetsBuffer } },
+        { binding: 3, resource: { buffer: densitiesBuffer } },
+        { binding: 4, resource: { buffer: densityUniformBuffer } },
       ],
     });
   };
@@ -1102,7 +1098,54 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
         state.velocities.set(mappedVelocities);
         velocityReadbackBuffer.unmap();
 
-        physics.substep(timeStep, false);
+        physics.predictPositions();
+        physics.runSpatialHash();
+
+        if (useGpuDensity) {
+          device.queue.writeBuffer(predictedBuffer, 0, state.predicted);
+          if (useCpuSpatialDataForGpuDensity) {
+            device.queue.writeBuffer(sortedKeysBuffer, 0, state.sortedKeys);
+            device.queue.writeBuffer(
+              spatialOffsetsBuffer,
+              0,
+              state.spatialOffsets
+            );
+          }
+
+          const densityEncoder = device.createCommandEncoder();
+          const densityPass = densityEncoder.beginComputePass();
+          densityPass.setPipeline(densityPipeline);
+          densityPass.setBindGroup(0, densityBindGroup);
+          densityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
+          densityPass.end();
+
+          if (useGpuDensityReadback) {
+            densityEncoder.copyBufferToBuffer(
+              densitiesBuffer,
+              0,
+              densityReadbackBuffer,
+              0,
+              particleCount * 2 * 4
+            );
+          }
+
+          device.queue.submit([densityEncoder.finish()]);
+
+          if (useGpuDensityReadback) {
+            await densityReadbackBuffer.mapAsync(GPUMapMode.READ);
+            const mappedDensities = new Float32Array(
+              densityReadbackBuffer.getMappedRange()
+            );
+            state.densities.set(mappedDensities);
+            densityReadbackBuffer.unmap();
+          }
+        } else {
+          physics.calculateDensities();
+        }
+
+        physics.calculatePressure(timeStep);
+        physics.calculateViscosity(timeStep);
+        physics.updatePositions(timeStep);
       }
     } else {
       physics.step(dt);
@@ -1140,8 +1183,8 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       densityParamsData[0] = radius;
       densityParamsData[1] = spikyPow2Scale;
       densityParamsData[2] = spikyPow3Scale;
-      densityParamsData[3] = 0;
-      densityParamsData[4] = particleCount;
+      densityParamsData[3] = particleCount;
+      densityParamsData[4] = 0;
       densityParamsData[5] = 0;
       densityParamsData[6] = 0;
       densityParamsData[7] = 0;
@@ -1150,6 +1193,10 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       densityParamsData[10] = 0;
       densityParamsData[11] = 0;
       device.queue.writeBuffer(densityUniformBuffer, 0, densityParamsData);
+      if (useCpuSpatialDataForGpuDensity) {
+        device.queue.writeBuffer(sortedKeysBuffer, 0, state.sortedKeys);
+        device.queue.writeBuffer(spatialOffsetsBuffer, 0, state.spatialOffsets);
+      }
     }
 
     let lineVertexCount = 0;
@@ -1242,7 +1289,7 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     );
 
     const encoder = device.createCommandEncoder();
-    if (useGpuSpatialHash) {
+    if (useGpuSpatialHash && !useCpuSpatialDataForGpuDensity) {
       const hashPass = encoder.beginComputePass();
       hashPass.setPipeline(hashPipeline);
       hashPass.setBindGroup(0, hashBindGroup);
@@ -1273,21 +1320,12 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
       spatialPass.dispatchWorkgroups(1);
       spatialPass.end();
     }
-    if (useGpuDensity) {
+    if (useGpuDensity && !useGpuExternalForces) {
       const densityPass = encoder.beginComputePass();
       densityPass.setPipeline(densityPipeline);
       densityPass.setBindGroup(0, densityBindGroup);
       densityPass.dispatchWorkgroups(Math.ceil(particleCount / 128));
       densityPass.end();
-      if (useGpuDensityReadback) {
-        encoder.copyBufferToBuffer(
-          densitiesBuffer,
-          0,
-          densityReadbackBuffer,
-          0,
-          particleCount * 2 * 4
-        );
-      }
     }
     const view = context.getCurrentTexture().createView();
     const pass = encoder.beginRenderPass({
@@ -1311,14 +1349,6 @@ fn fs_main(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
     }
     pass.end();
     device.queue.submit([encoder.finish()]);
-    if (useGpuDensity && useGpuDensityReadback) {
-      await densityReadbackBuffer.mapAsync(GPUMapMode.READ);
-      const mappedDensities = new Float32Array(
-        densityReadbackBuffer.getMappedRange()
-      );
-      state.densities.set(mappedDensities);
-      densityReadbackBuffer.unmap();
-    }
     stats.end();
     stats.update();
     requestAnimationFrame(frame);

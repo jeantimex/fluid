@@ -828,5 +828,16 @@ export function createPhysics(
     }
   }
 
-  return { step, substep, refreshSettings, applyParticleScale };
+  return {
+    step,
+    substep,
+    predictPositions,
+    runSpatialHash,
+    calculateDensities,
+    calculatePressure,
+    calculateViscosity,
+    updatePositions,
+    refreshSettings,
+    applyParticleScale,
+  };
 }
