@@ -17,7 +17,7 @@
  */
 
 /**
- * Hash function constants (matching Unity compute shader implementation).
+ * Hash function constants (matching the compute shader implementation).
  * These are large primes that provide good distribution of hash values
  * and minimize clustering/collisions in the hash table.
  */
