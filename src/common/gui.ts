@@ -83,7 +83,7 @@ export function setupGui(
     .name('Viscosity Strength');
 
   particlesFolder
-    .add(config, 'particleRadius', 1, 6, 1)
+    .add(config, 'particleRadius', 1, 5, 0.1)
     .name('Particle Radius');
 
   // === Obstacle Folder ===

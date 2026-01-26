@@ -286,12 +286,16 @@ export class Renderer {
     canvasWidth: number,
     canvasHeight: number
   ): void {
+    // Scale particle radius by device pixel ratio to match CSS pixel sizes
+    // This ensures particles appear the same size as in the Canvas2D version
+    const dpr = window.devicePixelRatio || 1;
+
     // Pack uniform data into the Float32Array
     this.uniformData[0] = config.boundsSize.x; // World bounds width
     this.uniformData[1] = config.boundsSize.y; // World bounds height
     this.uniformData[2] = canvasWidth; // Canvas pixel width
     this.uniformData[3] = canvasHeight; // Canvas pixel height
-    this.uniformData[4] = config.particleRadius; // Particle display radius
+    this.uniformData[4] = config.particleRadius * dpr; // Particle display radius (scaled for DPR)
     this.uniformData[5] = config.velocityDisplayMax; // Max velocity for color normalization
     this.uniformData[6] = config.gradientResolution; // Gradient LUT size
     this.uniformData[7] = 0; // Padding for alignment

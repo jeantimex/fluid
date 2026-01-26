@@ -51,7 +51,7 @@ export function createConfig(): SimConfig {
 
     // === Visualization ===
     velocityDisplayMax: 6.5, // Velocity that maps to max gradient color
-    particleRadius: 3, // Particle size in pixels
+    particleRadius: 2.5, // Particle size in pixels
     boundsPaddingPx: 10, // Boundary inset in pixels
     gradientResolution: 64, // Color LUT size
 
