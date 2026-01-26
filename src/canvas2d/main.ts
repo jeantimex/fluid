@@ -90,17 +90,7 @@ const particleRadiusCtrl = particlesFolder
   .add(sim.config, 'particleRadius', 1, 6, 1)
   .name('Particle Radius');
 
-// When particle radius changes, scale related parameters to maintain behavior
-particleRadiusCtrl.onChange(() => {
-  sim.applyParticleScale();
-
-  // Update GUI displays to show new computed values
-  smoothingCtrl.updateDisplay();
-  targetDensityCtrl.updateDisplay();
-  pressureCtrl.updateDisplay();
-  nearPressureCtrl.updateDisplay();
-  viscosityCtrl.updateDisplay();
-});
+// Particle radius changes are visual-only (no auto-scaling of sim params).
 
 // Obstacle controls
 const obstacleFolder = gui.addFolder('Obstacle');
