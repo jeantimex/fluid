@@ -238,14 +238,17 @@ async function main(): Promise<void> {
   });
 
   const computeParamsBuffer = device.createBuffer({
-    size: 4 * 4,
+    size: 4 * 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
   const computeModule = device.createShaderModule({
     code: `
 struct Params {
-  data : vec4<f32>,
+  data0 : vec4<f32>,
+  data1 : vec4<f32>,
+  data2 : vec4<f32>,
+  data3 : vec4<f32>,
 };
 
 @group(0) @binding(0) var<storage, read_write> Positions : array<vec4<f32>>;
@@ -255,13 +258,14 @@ struct Params {
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
   let idx = gid.x;
-  let count = u32(ParamsU.data.z);
+  let count = u32(ParamsU.data0.w);
   if (idx >= count) {
     return;
   }
 
-  let dt = ParamsU.data.x;
-  let gravity = ParamsU.data.y;
+  let dt = ParamsU.data0.x;
+  let gravity = ParamsU.data0.y;
+  let damping = ParamsU.data0.z;
 
   var v = Velocities[idx];
   v.y = v.y + gravity * dt;
@@ -269,7 +273,39 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
   var p = Positions[idx];
   p = p + vec4<f32>(v.xyz * dt, 0.0);
+
+  let center = ParamsU.data1.xyz;
+  let halfSize = ParamsU.data2.xyz;
+  let minB = center - halfSize;
+  let maxB = center + halfSize;
+
+  if (p.y < minB.y) {
+    p.y = minB.y;
+    v.y = -v.y * damping;
+  }
+  if (p.y > maxB.y) {
+    p.y = maxB.y;
+    v.y = -v.y * damping;
+  }
+  if (p.x < minB.x) {
+    p.x = minB.x;
+    v.x = -v.x * damping;
+  }
+  if (p.x > maxB.x) {
+    p.x = maxB.x;
+    v.x = -v.x * damping;
+  }
+  if (p.z < minB.z) {
+    p.z = minB.z;
+    v.z = -v.z * damping;
+  }
+  if (p.z > maxB.z) {
+    p.z = maxB.z;
+    v.z = -v.z * damping;
+  }
+
   Positions[idx] = p;
+  Velocities[idx] = v;
 }
     `,
   });
@@ -412,10 +448,17 @@ fn fsMain(in : VSOut) -> @location(0) vec4<f32> {
 
     updateCameraUniforms();
 
-    const params = new Float32Array(4);
+    const params = new Float32Array(16);
     params[0] = dt;
     params[1] = config.gravity;
-    params[2] = buffers.particleCount;
+    params[2] = config.collisionDamping;
+    params[3] = buffers.particleCount;
+    params[4] = config.boundsCenter.x;
+    params[5] = config.boundsCenter.y;
+    params[6] = config.boundsCenter.z;
+    params[8] = config.boundsSize.x * 0.5;
+    params[9] = config.boundsSize.y * 0.5;
+    params[10] = config.boundsSize.z * 0.5;
     device.queue.writeBuffer(computeParamsBuffer, 0, params);
 
     const encoder = device.createCommandEncoder();
