@@ -237,6 +237,51 @@ async function main(): Promise<void> {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
+  const computeParamsBuffer = device.createBuffer({
+    size: 4 * 4,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const computeModule = device.createShaderModule({
+    code: `
+struct Params {
+  data : vec4<f32>,
+};
+
+@group(0) @binding(0) var<storage, read_write> Positions : array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> Velocities : array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> ParamsU : Params;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let idx = gid.x;
+  let count = u32(ParamsU.data.z);
+  if (idx >= count) {
+    return;
+  }
+
+  let dt = ParamsU.data.x;
+  let gravity = ParamsU.data.y;
+
+  var v = Velocities[idx];
+  v.y = v.y + gravity * dt;
+  Velocities[idx] = v;
+
+  var p = Positions[idx];
+  p = p + vec4<f32>(v.xyz * dt, 0.0);
+  Positions[idx] = p;
+}
+    `,
+  });
+
+  const computePipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: computeModule,
+      entryPoint: 'main',
+    },
+  });
+
   const shaderModule = device.createShaderModule({
     code: `
 struct CameraUniforms {
@@ -323,6 +368,15 @@ fn fsMain(in : VSOut) -> @location(0) vec4<f32> {
     ],
   });
 
+  const computeBindGroup = device.createBindGroup({
+    layout: computePipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: buffers.positions } },
+      { binding: 1, resource: { buffer: buffers.velocities } },
+      { binding: 2, resource: { buffer: computeParamsBuffer } },
+    ],
+  });
+
   const view = createMat4();
   const proj = createMat4();
   const viewProj = createMat4();
@@ -349,10 +403,29 @@ fn fsMain(in : VSOut) -> @location(0) vec4<f32> {
     device.queue.writeBuffer(uniformBuffer, 0, data);
   };
 
+  let lastTime = performance.now();
+
   const frame = (): void => {
+    const now = performance.now();
+    const dt = Math.min(0.033, (now - lastTime) / 1000);
+    lastTime = now;
+
     updateCameraUniforms();
+
+    const params = new Float32Array(4);
+    params[0] = dt;
+    params[1] = config.gravity;
+    params[2] = buffers.particleCount;
+    device.queue.writeBuffer(computeParamsBuffer, 0, params);
+
     const encoder = device.createCommandEncoder();
     const view = context.getCurrentTexture().createView();
+
+    const computePass = encoder.beginComputePass();
+    computePass.setPipeline(computePipeline);
+    computePass.setBindGroup(0, computeBindGroup);
+    computePass.dispatchWorkgroups(Math.ceil(buffers.particleCount / 256));
+    computePass.end();
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [
