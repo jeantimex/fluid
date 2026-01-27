@@ -214,9 +214,9 @@ export class FluidSimulation {
 
   private updateDensityUniforms(): void {
     const radius = this.config.smoothingRadius;
-    // Use 2D kernel formulas to match 2D fluid behavior
-    const spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4));
-    const spikyPow3Scale = 10 / (Math.PI * Math.pow(radius, 5));
+    // Proper 3D SPH kernel normalization constants
+    const spikyPow2Scale = 15 / (2 * Math.PI * Math.pow(radius, 5));
+    const spikyPow3Scale = 15 / (Math.PI * Math.pow(radius, 6));
 
     this.densityParamsData[0] = radius;
     this.densityParamsData[1] = spikyPow2Scale;
@@ -228,9 +228,9 @@ export class FluidSimulation {
 
   private updatePressureUniforms(timeStep: number): void {
     const radius = this.config.smoothingRadius;
-    // Use 2D kernel derivative formulas to match 2D fluid behavior
-    const spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4));
-    const spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5));
+    // Proper 3D SPH kernel derivative normalization constants
+    const spikyPow2DerivScale = 15 / (Math.PI * Math.pow(radius, 5));
+    const spikyPow3DerivScale = 45 / (Math.PI * Math.pow(radius, 6));
 
     this.pressureParamsData[0] = timeStep;
     this.pressureParamsData[1] = this.config.targetDensity;
@@ -246,8 +246,8 @@ export class FluidSimulation {
 
   private updateViscosityUniforms(timeStep: number): void {
     const radius = this.config.smoothingRadius;
-    // Use 2D kernel formula to match 2D fluid behavior
-    const poly6Scale = 4 / (Math.PI * Math.pow(radius, 8));
+    // Proper 3D Poly6 kernel normalization constant
+    const poly6Scale = 315 / (64 * Math.PI * Math.pow(radius, 9));
 
     this.viscosityParamsData[0] = timeStep;
     this.viscosityParamsData[1] = this.config.viscosityStrength;

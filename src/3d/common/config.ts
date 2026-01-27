@@ -8,7 +8,8 @@ export function createConfig(): SimConfig {
     gravity: -12,
     collisionDamping: 0.95,
     smoothingRadius: 0.35,
-    targetDensity: 55,
+    // With proper 3D kernels and dense particle packing, need higher target
+    targetDensity: 450,
     pressureMultiplier: 500,
     nearPressureMultiplier: 5,
     viscosityStrength: 0.03,
