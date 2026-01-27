@@ -233,7 +233,7 @@ async function main(): Promise<void> {
   const buffers = new SimulationBuffers(device, spawn);
 
   const uniformBuffer = device.createBuffer({
-    size: 4 * 32, // 128-byte min binding size
+    size: 4 * 36, // mat4 + 5 vec4s
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
@@ -322,12 +322,11 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     code: `
 struct CameraUniforms {
   viewProj : mat4x4<f32>,
-  camRight : vec3<f32>,
-  _pad0 : f32,
-  camUp : vec3<f32>,
-  _pad1 : f32,
-  radius : f32,
-  _pad2 : vec3<f32>,
+  camRight : vec4<f32>,
+  camUp : vec4<f32>,
+  particle : vec4<f32>,
+  boundsCenter : vec4<f32>,
+  boundsSize : vec4<f32>,
 };
 
 @group(0) @binding(0) var<storage, read> Positions : array<vec4<f32>>;
@@ -353,7 +352,7 @@ fn quadVertex(id : u32) -> vec2<f32> {
 fn vsMain(@builtin(vertex_index) vid : u32, @builtin(instance_index) iid : u32) -> VSOut {
   let corner = quadVertex(vid);
   let center = Positions[iid].xyz;
-  let world = center + (Camera.camRight * corner.x + Camera.camUp * corner.y) * Camera.radius;
+  let world = center + (Camera.camRight.xyz * corner.x + Camera.camUp.xyz * corner.y) * Camera.particle.x;
 
   var out : VSOut;
   out.pos = Camera.viewProj * vec4<f32>(world, 1.0);
@@ -404,6 +403,79 @@ fn fsMain(in : VSOut) -> @location(0) vec4<f32> {
     ],
   });
 
+  const boundsShaderModule = device.createShaderModule({
+    code: `
+struct CameraUniforms {
+  viewProj : mat4x4<f32>,
+  camRight : vec4<f32>,
+  camUp : vec4<f32>,
+  particle : vec4<f32>,
+  boundsCenter : vec4<f32>,
+  boundsSize : vec4<f32>,
+};
+
+@group(0) @binding(0) var<uniform> Camera : CameraUniforms;
+
+struct VSOut {
+  @builtin(position) pos : vec4<f32>,
+};
+
+@vertex
+fn vsMain(@builtin(vertex_index) vid : u32) -> VSOut {
+  // 12 edges * 2 vertices = 24 positions (centered at origin, unit cube)
+  var positions = array<vec3<f32>, 24>(
+    vec3<f32>(-0.5, -0.5, -0.5), vec3<f32>( 0.5, -0.5, -0.5),
+    vec3<f32>( 0.5, -0.5, -0.5), vec3<f32>( 0.5,  0.5, -0.5),
+    vec3<f32>( 0.5,  0.5, -0.5), vec3<f32>(-0.5,  0.5, -0.5),
+    vec3<f32>(-0.5,  0.5, -0.5), vec3<f32>(-0.5, -0.5, -0.5),
+
+    vec3<f32>(-0.5, -0.5,  0.5), vec3<f32>( 0.5, -0.5,  0.5),
+    vec3<f32>( 0.5, -0.5,  0.5), vec3<f32>( 0.5,  0.5,  0.5),
+    vec3<f32>( 0.5,  0.5,  0.5), vec3<f32>(-0.5,  0.5,  0.5),
+    vec3<f32>(-0.5,  0.5,  0.5), vec3<f32>(-0.5, -0.5,  0.5),
+
+    vec3<f32>(-0.5, -0.5, -0.5), vec3<f32>(-0.5, -0.5,  0.5),
+    vec3<f32>( 0.5, -0.5, -0.5), vec3<f32>( 0.5, -0.5,  0.5),
+    vec3<f32>( 0.5,  0.5, -0.5), vec3<f32>( 0.5,  0.5,  0.5),
+    vec3<f32>(-0.5,  0.5, -0.5), vec3<f32>(-0.5,  0.5,  0.5)
+  );
+
+  let local = positions[vid];
+  let world = local * Camera.boundsSize.xyz + Camera.boundsCenter.xyz;
+
+  var out : VSOut;
+  out.pos = Camera.viewProj * vec4<f32>(world, 1.0);
+  return out;
+}
+
+@fragment
+fn fsMain() -> @location(0) vec4<f32> {
+  return vec4<f32>(0.2, 0.3, 0.45, 1.0);
+}
+    `,
+  });
+
+  const boundsPipeline = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: {
+      module: boundsShaderModule,
+      entryPoint: 'vsMain',
+    },
+    fragment: {
+      module: boundsShaderModule,
+      entryPoint: 'fsMain',
+      targets: [{ format }],
+    },
+    primitive: {
+      topology: 'line-list',
+    },
+  });
+
+  const boundsBindGroup = device.createBindGroup({
+    layout: boundsPipeline.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+  });
+
   const computeBindGroup = device.createBindGroup({
     layout: computePipeline.getBindGroupLayout(0),
     entries: [
@@ -430,11 +502,24 @@ fn fsMain(in : VSOut) -> @location(0) vec4<f32> {
     mat4Perspective(proj, Math.PI / 4, aspect, 0.1, 200);
     mat4Multiply(viewProj, proj, view);
 
-    const data = new Float32Array(32);
+    const data = new Float32Array(36);
     data.set(viewProj, 0);
     data.set([cameraRight.x, cameraRight.y, cameraRight.z, 0], 16);
     data.set([cameraUp.x, cameraUp.y, cameraUp.z, 0], 20);
-    data[24] = config.particleRadius;
+    data.set([config.particleRadius, 0, 0, 0], 24);
+    data.set(
+      [
+        config.boundsCenter.x,
+        config.boundsCenter.y,
+        config.boundsCenter.z,
+        0,
+      ],
+      28
+    );
+    data.set(
+      [config.boundsSize.x, config.boundsSize.y, config.boundsSize.z, 0],
+      32
+    );
 
     device.queue.writeBuffer(uniformBuffer, 0, data);
   };
@@ -480,6 +565,10 @@ fn fsMain(in : VSOut) -> @location(0) vec4<f32> {
         },
       ],
     });
+
+    pass.setPipeline(boundsPipeline);
+    pass.setBindGroup(0, boundsBindGroup);
+    pass.draw(24, 1);
 
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
