@@ -4,6 +4,19 @@ export interface Vec3 {
   z: number;
 }
 
+export interface ColorKey {
+  t: number;
+  r: number;
+  g: number;
+  b: number;
+}
+
+export interface RGB {
+  r: number;
+  g: number;
+  b: number;
+}
+
 export interface SpawnRegion {
   position: Vec3;
   size: Vec3;
@@ -29,6 +42,9 @@ export interface SimConfig {
   spawnDensity: number;
   initialVelocity: Vec3;
   jitterStr: number;
+  velocityDisplayMax: number;
+  gradientResolution: number;
+  colorKeys: ColorKey[];
   spawnRegions: SpawnRegion[];
 }
 

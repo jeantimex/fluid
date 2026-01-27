@@ -3,12 +3,14 @@ import lineShader from './shaders/line3d.wgsl?raw';
 import type { SimulationBuffers } from './simulation_buffers.ts';
 import type { SimConfig } from '../common/types.ts';
 import { mat4Perspective, mat4Multiply } from './math_utils.ts';
+import { buildGradientLut } from '../common/kernels.ts';
 
 export class Renderer {
     private device: GPUDevice;
     private particlePipeline: GPURenderPipeline;
     private linePipeline: GPURenderPipeline;
     private uniformBuffer: GPUBuffer;
+    private gradientBuffer: GPUBuffer;
     private particleBindGroup!: GPUBindGroup;
     private lineBindGroup: GPUBindGroup;
     private lineVertexBuffer: GPUBuffer;
@@ -16,7 +18,7 @@ export class Renderer {
     private canvas: HTMLCanvasElement;
     private depthTexture!: GPUTexture;
 
-    constructor(device: GPUDevice, canvas: HTMLCanvasElement, format: GPUTextureFormat) {
+    constructor(device: GPUDevice, canvas: HTMLCanvasElement, format: GPUTextureFormat, config: SimConfig) {
         this.device = device;
         this.canvas = canvas;
 
@@ -24,6 +26,23 @@ export class Renderer {
             size: 96,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
+
+        // Create Gradient Buffer
+        const gradientLut = buildGradientLut(config.colorKeys, config.gradientResolution);
+        const gradientData = new Float32Array(config.gradientResolution * 4);
+        for (let i = 0; i < gradientLut.length; i++) {
+            gradientData[i * 4] = gradientLut[i].r;
+            gradientData[i * 4 + 1] = gradientLut[i].g;
+            gradientData[i * 4 + 2] = gradientLut[i].b;
+            gradientData[i * 4 + 3] = 1;
+        }
+        this.gradientBuffer = device.createBuffer({
+            size: gradientData.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            mappedAtCreation: true,
+        });
+        new Float32Array(this.gradientBuffer.getMappedRange()).set(gradientData);
+        this.gradientBuffer.unmap();
 
         // Particle Pipeline
         const particleModule = device.createShaderModule({ code: particleShader });
@@ -56,7 +75,7 @@ export class Renderer {
                 module: lineModule,
                 entryPoint: 'vs_main',
                 buffers: [{
-                    arrayStride: 28, // 3 pos + 4 color = 7 floats * 4 bytes
+                    arrayStride: 28, // 3 pos + 4 color
                     attributes: [
                         { shaderLocation: 0, offset: 0, format: 'float32x3' }, // pos
                         { shaderLocation: 1, offset: 12, format: 'float32x4' } // color
@@ -93,7 +112,6 @@ export class Renderer {
         });
 
         // Line Resources
-        // 12 edges for cube * 2 vertices = 24 vertices.
         this.lineVertexData = new Float32Array(48 * 7);
         this.lineVertexBuffer = device.createBuffer({
             size: this.lineVertexData.byteLength,
@@ -123,7 +141,8 @@ export class Renderer {
             entries: [
                 { binding: 0, resource: { buffer: buffers.positions } },
                 { binding: 1, resource: { buffer: buffers.velocities } },
-                { binding: 2, resource: { buffer: this.uniformBuffer } }
+                { binding: 2, resource: { buffer: this.uniformBuffer } },
+                { binding: 3, resource: { buffer: this.gradientBuffer } }
             ]
         });
     }
@@ -136,6 +155,7 @@ export class Renderer {
         const uniforms = new Float32Array(24);
         uniforms.set(viewProj);
         uniforms[16] = config.particleRadius;
+        uniforms[17] = config.velocityDisplayMax;
         
         this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 

@@ -153,6 +153,11 @@ export function setupGui(
     .add(config, 'particleRadius', 0.01, 0.1, 0.001)
     .name('Particle Radius');
 
+  particlesFolder
+    .add(config, 'jitterStr', 0, 0.1, 0.001)
+    .name('Jitter Strength')
+    .onFinishChange(() => callbacks.onReset());
+
   const containerFolder = gui.addFolder('Container');
   
   containerFolder

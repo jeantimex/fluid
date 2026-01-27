@@ -36,7 +36,7 @@ export class FluidSimulation {
     this.config = config;
 
     this.pipelines = new ComputePipelines(device);
-    this.renderer = new Renderer(device, canvas, format);
+    this.renderer = new Renderer(device, canvas, format, config);
 
     this.reset();
   }
