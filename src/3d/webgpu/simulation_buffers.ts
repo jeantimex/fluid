@@ -30,18 +30,21 @@ export class SimulationBuffers {
     this.device = device;
     this.particleCount = spawn.count;
 
+    const paddedPositions = this.padVec3Array(spawn.positions);
+    const paddedVelocities = this.padVec3Array(spawn.velocities);
+
     this.positions = this.createBufferFromArray(
-      spawn.positions,
+      paddedPositions,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     );
 
     this.predicted = this.createBufferFromArray(
-      new Float32Array(spawn.positions),
+      new Float32Array(paddedPositions),
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     );
 
     this.velocities = this.createBufferFromArray(
-      spawn.velocities,
+      paddedVelocities,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
     );
 
@@ -72,20 +75,20 @@ export class SimulationBuffers {
     );
 
     this.positionsSorted = this.createEmptyBuffer(
-      spawn.count * 3 * 4,
+      spawn.count * 4 * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     );
     this.predictedSorted = this.createEmptyBuffer(
-      spawn.count * 3 * 4,
+      spawn.count * 4 * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     );
     this.velocitiesSorted = this.createEmptyBuffer(
-      spawn.count * 3 * 4,
+      spawn.count * 4 * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     );
 
     this.velocityReadback = device.createBuffer({
-      size: spawn.count * 3 * 4,
+      size: spawn.count * 4 * 4,
       usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
     this.densityReadback = device.createBuffer({
@@ -113,6 +116,20 @@ export class SimulationBuffers {
     buffer.unmap();
 
     return buffer;
+  }
+
+  private padVec3Array(data: Float32Array): Float32Array {
+    const count = Math.floor(data.length / 3);
+    const padded = new Float32Array(count * 4);
+    for (let i = 0; i < count; i += 1) {
+      const src = i * 3;
+      const dst = i * 4;
+      padded[dst] = data[src];
+      padded[dst + 1] = data[src + 1];
+      padded[dst + 2] = data[src + 2];
+      padded[dst + 3] = 0;
+    }
+    return padded;
   }
 
   private createEmptyBuffer(
