@@ -153,6 +153,20 @@ export function setupGui(
     .add(config, 'particleRadius', 0.01, 0.1, 0.001)
     .name('Particle Radius');
 
+  const containerFolder = gui.addFolder('Container');
+  
+  containerFolder
+    .add(config.boundsSize, 'x', 1, 10, 0.1)
+    .name('Size X');
+
+  containerFolder
+    .add(config.boundsSize, 'y', 1, 10, 0.1)
+    .name('Size Y');
+
+  containerFolder
+    .add(config.boundsSize, 'z', 1, 10, 0.1)
+    .name('Size Z');
+
   const interactionFolder = gui.addFolder('Interaction');
   interactionFolder.close();
 

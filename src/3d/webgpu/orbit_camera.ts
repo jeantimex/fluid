@@ -1,4 +1,4 @@
-import { mat4LookAt, vec3Add, vec3Scale } from "./math_utils";
+import { mat4LookAt, vec3Add } from "./math_utils";
 
 export class OrbitCamera {
     radius: number = 5.0;

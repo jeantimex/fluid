@@ -123,7 +123,6 @@ function setupInputHandlers(
     const ray = getRay(e.clientX, e.clientY);
     
     // Check box intersection
-    const h = config.boundsSize.x * 0.5; // Assumes cube/centered
     const boxMin = { x: -config.boundsSize.x/2, y: -config.boundsSize.y/2, z: -config.boundsSize.z/2 };
     const boxMax = { x: config.boundsSize.x/2, y: config.boundsSize.y/2, z: config.boundsSize.z/2 };
     
@@ -158,7 +157,7 @@ function setupInputHandlers(
       }
   });
 
-  canvas.addEventListener('mouseup', (e) => {
+  canvas.addEventListener('mouseup', () => {
     const input = getInput();
     if (!input) return;
     
