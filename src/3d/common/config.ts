@@ -7,14 +7,13 @@ export function createConfig(): SimConfig {
     iterationsPerFrame: 2,
     gravity: -12,
     collisionDamping: 0.95,
-    smoothingRadius: 0.35,
-    // With proper 3D kernels and dense particle packing, need higher target
-    targetDensity: 450,
-    pressureMultiplier: 500,
-    nearPressureMultiplier: 5,
-    viscosityStrength: 0.03,
+    smoothingRadius: 0.2,
+    targetDensity: 630,
+    pressureMultiplier: 288,
+    nearPressureMultiplier: 2.16,
+    viscosityStrength: 0,
 
-    boundsSize: { x: 3, y: 3, z: 3 },
+    boundsSize: { x: 3, y: 3, z: 6 },
     obstacleSize: { x: 0, y: 0, z: 0 },
     obstacleCentre: { x: 0, y: 0, z: 0 },
 
@@ -22,8 +21,8 @@ export function createConfig(): SimConfig {
     interactionStrength: 90,
 
     particleRadius: 2.5,  // In pixels, same as 2D
-    // To match 2D particle spacing: 2D uses 129/unit², 3D needs (√129)³ ≈ 1467/unit³
-    spawnDensity: 1467, 
+    // Unity Fluid Particles scene: particleSpawnDensity = 600
+    spawnDensity: 600, 
     velocityDisplayMax: 6.5,
     gradientResolution: 64,
 
@@ -35,9 +34,12 @@ export function createConfig(): SimConfig {
     ],
     
     initialVelocity: { x: 0, y: 0, z: 0 },
-    jitterStr: 0.03,
+    jitterStr: 0.035,
     
-    // Smaller region to keep particle count similar to 2D (~4000 particles)
-    spawnRegions: [{ position: { x: 0, y: 0.25, z: 0 }, size: { x: 1.4, y: 1.4, z: 1.4 } }],
+    // Reduced spawn volume (~5k particles at density 600), centered within bounds
+    spawnRegions: [
+      { position: { x: 0, y: 0, z: 1.5 }, size: { x: 1.6, y: 1.6, z: 1.6 } },
+      { position: { x: 0, y: 0, z: -1.5 }, size: { x: 1.6, y: 1.6, z: 1.6 } },
+    ],
   };
 }
