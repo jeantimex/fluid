@@ -1,5 +1,6 @@
 import './style.css';
 import { createConfig } from '../common/config.ts';
+import { setupGui } from '../common/gui.ts';
 import { FluidSimulation } from './fluid_simulation.ts';
 import {
   initWebGPU,
@@ -23,6 +24,23 @@ if (!app) throw new Error('Missing #app container');
 const canvas = createCanvas(app);
 const config = createConfig();
 let simulation: FluidSimulation | null = null;
+
+const { stats } = setupGui(
+  config,
+  {
+    onReset: () => simulation?.reset(),
+    onSmoothingRadiusChange: () => {
+        // Need to update constants in pipelines? 
+        // 2D version calls physics.refreshSettings() which updates uniforms
+        // Our 3D simulation updates uniforms every frame in step(), so just wait for next frame.
+    },
+  },
+  {
+    trackGPU: true,
+    title: 'WebGPU 3D Fluid',
+    githubUrl: 'https://github.com/jeantimex/fluid',
+  }
+);
 
 async function main() {
   let device: GPUDevice;
@@ -55,6 +73,8 @@ async function main() {
   let lastTime = performance.now();
 
   const frame = async (now: number) => {
+    stats.begin();
+    
     const dt = Math.min(0.033, (now - lastTime) / 1000);
     lastTime = now;
 
@@ -62,6 +82,9 @@ async function main() {
         await simulation.step(dt);
         simulation.render();
     }
+
+    stats.end();
+    stats.update();
 
     requestAnimationFrame(frame);
   };
