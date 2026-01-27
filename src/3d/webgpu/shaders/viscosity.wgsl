@@ -10,12 +10,20 @@ struct ViscosityParams {
 @group(0) @binding(0) var<storage, read> predicted: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read_write> velocities: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read> sortedKeys: array<u32>;
-@group(0) @binding(3) var<storage, read> indices: array<u32>;
-@group(0) @binding(4) var<storage, read> spatialOffsets: array<u32>;
-@group(0) @binding(5) var<uniform> params: ViscosityParams;
+@group(0) @binding(3) var<storage, read> spatialOffsets: array<u32>;
+@group(0) @binding(4) var<uniform> params: ViscosityParams;
 
 fn hashCell3D(cellX: i32, cellY: i32, cellZ: i32) -> u32 {
-    return u32(cellX) * 73856093u + u32(cellY) * 19349663u + u32(cellZ) * 83492791u;
+    let blockSize = 50u;
+    let ucell = vec3<u32>(
+        u32(cellX + i32(blockSize / 2u)),
+        u32(cellY + i32(blockSize / 2u)),
+        u32(cellZ + i32(blockSize / 2u))
+    );
+    let localCell = ucell % blockSize;
+    let blockID = ucell / blockSize;
+    let blockHash = blockID.x * 15823u + blockID.y * 9737333u + blockID.z * 440817757u;
+    return localCell.x + blockSize * (localCell.y + blockSize * localCell.z) + blockHash;
 }
 
 fn smoothingKernelPoly6(dst: f32, radius: f32, scale: f32) -> f32 {
@@ -59,7 +67,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         var j = start;
         loop {
             if (j >= count || sortedKeys[j] != key) { break; }
-            let neighborIndex = indices[j];
+            let neighborIndex = j;
             
             if (neighborIndex != i) {
                 let neighborPos = predicted[neighborIndex].xyz;

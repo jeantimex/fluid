@@ -10,7 +10,16 @@ struct HashParams {
 @group(0) @binding(3) var<uniform> params: HashParams;
 
 fn hashCell3D(cellX: i32, cellY: i32, cellZ: i32) -> u32 {
-    return u32(cellX) * 73856093u + u32(cellY) * 19349663u + u32(cellZ) * 83492791u;
+    let blockSize = 50u;
+    let ucell = vec3<u32>(
+        u32(cellX + i32(blockSize / 2u)),
+        u32(cellY + i32(blockSize / 2u)),
+        u32(cellZ + i32(blockSize / 2u))
+    );
+    let localCell = ucell % blockSize;
+    let blockID = ucell / blockSize;
+    let blockHash = blockID.x * 15823u + blockID.y * 9737333u + blockID.z * 440817757u;
+    return localCell.x + blockSize * (localCell.y + blockSize * localCell.z) + blockHash;
 }
 
 @compute @workgroup_size(256)

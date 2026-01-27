@@ -9,12 +9,17 @@ import densityShader from './shaders/density.wgsl?raw';
 import pressureShader from './shaders/pressure.wgsl?raw';
 import viscosityShader from './shaders/viscosity.wgsl?raw';
 import integrateShader from './shaders/integrate.wgsl?raw';
+import prefixSumShader from './shaders/prefix_sum.wgsl?raw';
+import reorderShader from './shaders/reorder.wgsl?raw';
 
 export interface UniformBuffers {
   compute: GPUBuffer;
   integrate: GPUBuffer;
   hash: GPUBuffer;
   sort: GPUBuffer;
+  scanParamsL0: GPUBuffer;
+  scanParamsL1: GPUBuffer;
+  scanParamsL2: GPUBuffer;
   density: GPUBuffer;
   pressure: GPUBuffer;
   viscosity: GPUBuffer;
@@ -25,8 +30,13 @@ export class ComputePipelines {
   hash: GPUComputePipeline;
   clearOffsets: GPUComputePipeline;
   countOffsets: GPUComputePipeline;
+  prefixScan: GPUComputePipeline;
+  prefixCombine: GPUComputePipeline;
   scatter: GPUComputePipeline;
-  spatialOffsets: GPUComputePipeline;
+  initSpatialOffsets: GPUComputePipeline;
+  updateSpatialOffsets: GPUComputePipeline;
+  reorder: GPUComputePipeline;
+  copyBack: GPUComputePipeline;
   density: GPUComputePipeline;
   pressure: GPUComputePipeline;
   viscosity: GPUComputePipeline;
@@ -37,8 +47,16 @@ export class ComputePipelines {
   hashBindGroup!: GPUBindGroup;
   clearOffsetsBindGroup!: GPUBindGroup;
   countOffsetsBindGroup!: GPUBindGroup;
+  scanPass0BindGroup!: GPUBindGroup;
+  scanPass1BindGroup!: GPUBindGroup;
+  scanPass2BindGroup!: GPUBindGroup;
+  combinePass1BindGroup!: GPUBindGroup;
+  combinePass0BindGroup!: GPUBindGroup;
   scatterBindGroup!: GPUBindGroup;
-  spatialOffsetsBindGroup!: GPUBindGroup;
+  initSpatialOffsetsBindGroup!: GPUBindGroup;
+  updateSpatialOffsetsBindGroup!: GPUBindGroup;
+  reorderBindGroup!: GPUBindGroup;
+  copyBackBindGroup!: GPUBindGroup;
   densityBindGroup!: GPUBindGroup;
   pressureBindGroup!: GPUBindGroup;
   viscosityBindGroup!: GPUBindGroup;
@@ -54,6 +72,9 @@ export class ComputePipelines {
       integrate: device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
       hash: device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
       sort: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      scanParamsL0: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      scanParamsL1: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      scanParamsL2: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
       density: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
       pressure: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
       viscosity: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
@@ -63,8 +84,13 @@ export class ComputePipelines {
     this.hash = this.createPipeline(hashShader, 'main');
     this.clearOffsets = this.createPipeline(sortShader, 'clearOffsets');
     this.countOffsets = this.createPipeline(sortShader, 'countOffsets');
-    this.scatter = this.createPipeline(scatterShader, 'prefixAndScatter');
-    this.spatialOffsets = this.createPipeline(spatialOffsetsShader, 'buildOffsets');
+    this.prefixScan = this.createPipeline(prefixSumShader, 'blockScan');
+    this.prefixCombine = this.createPipeline(prefixSumShader, 'blockCombine');
+    this.scatter = this.createPipeline(scatterShader, 'scatter');
+    this.initSpatialOffsets = this.createPipeline(spatialOffsetsShader, 'initOffsets');
+    this.updateSpatialOffsets = this.createPipeline(spatialOffsetsShader, 'calculateOffsets');
+    this.reorder = this.createPipeline(reorderShader, 'reorder');
+    this.copyBack = this.createPipeline(reorderShader, 'copyBack');
     this.density = this.createPipeline(densityShader, 'main');
     this.pressure = this.createPipeline(pressureShader, 'main');
     this.viscosity = this.createPipeline(viscosityShader, 'main');
@@ -126,6 +152,51 @@ export class ComputePipelines {
       ],
     });
 
+    this.scanPass0BindGroup = this.device.createBindGroup({
+      layout: this.prefixScan.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.sortOffsets } },
+        { binding: 1, resource: { buffer: buffers.groupSumsL1 } },
+        { binding: 2, resource: { buffer: this.uniformBuffers.scanParamsL0 } },
+      ],
+    });
+
+    this.scanPass1BindGroup = this.device.createBindGroup({
+      layout: this.prefixScan.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.groupSumsL1 } },
+        { binding: 1, resource: { buffer: buffers.groupSumsL2 } },
+        { binding: 2, resource: { buffer: this.uniformBuffers.scanParamsL1 } },
+      ],
+    });
+
+    this.scanPass2BindGroup = this.device.createBindGroup({
+      layout: this.prefixScan.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.groupSumsL2 } },
+        { binding: 1, resource: { buffer: buffers.scanScratch } },
+        { binding: 2, resource: { buffer: this.uniformBuffers.scanParamsL2 } },
+      ],
+    });
+
+    this.combinePass1BindGroup = this.device.createBindGroup({
+      layout: this.prefixCombine.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.groupSumsL1 } },
+        { binding: 2, resource: { buffer: this.uniformBuffers.scanParamsL1 } },
+        { binding: 3, resource: { buffer: buffers.groupSumsL2 } },
+      ],
+    });
+
+    this.combinePass0BindGroup = this.device.createBindGroup({
+      layout: this.prefixCombine.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.sortOffsets } },
+        { binding: 2, resource: { buffer: this.uniformBuffers.scanParamsL0 } },
+        { binding: 3, resource: { buffer: buffers.groupSumsL1 } },
+      ],
+    });
+
     this.scatterBindGroup = this.device.createBindGroup({
       layout: this.scatter.getBindGroupLayout(0),
       entries: [
@@ -137,12 +208,47 @@ export class ComputePipelines {
       ],
     });
 
-    this.spatialOffsetsBindGroup = this.device.createBindGroup({
-      layout: this.spatialOffsets.getBindGroupLayout(0),
+    this.initSpatialOffsetsBindGroup = this.device.createBindGroup({
+      layout: this.initSpatialOffsets.getBindGroupLayout(0),
+      entries: [
+        { binding: 1, resource: { buffer: buffers.spatialOffsets } },
+        { binding: 2, resource: { buffer: this.uniformBuffers.sort } },
+      ],
+    });
+
+    this.updateSpatialOffsetsBindGroup = this.device.createBindGroup({
+      layout: this.updateSpatialOffsets.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: buffers.sortedKeys } },
         { binding: 1, resource: { buffer: buffers.spatialOffsets } },
         { binding: 2, resource: { buffer: this.uniformBuffers.sort } },
+      ],
+    });
+
+    this.reorderBindGroup = this.device.createBindGroup({
+      layout: this.reorder.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.indices } },
+        { binding: 1, resource: { buffer: buffers.positions } },
+        { binding: 2, resource: { buffer: buffers.velocities } },
+        { binding: 3, resource: { buffer: buffers.predicted } },
+        { binding: 4, resource: { buffer: buffers.positionsSorted } },
+        { binding: 5, resource: { buffer: buffers.velocitiesSorted } },
+        { binding: 6, resource: { buffer: buffers.predictedSorted } },
+        { binding: 7, resource: { buffer: this.uniformBuffers.sort } },
+      ],
+    });
+
+    this.copyBackBindGroup = this.device.createBindGroup({
+      layout: this.copyBack.getBindGroupLayout(0),
+      entries: [
+        { binding: 1, resource: { buffer: buffers.positions } },
+        { binding: 2, resource: { buffer: buffers.velocities } },
+        { binding: 3, resource: { buffer: buffers.predicted } },
+        { binding: 4, resource: { buffer: buffers.positionsSorted } },
+        { binding: 5, resource: { buffer: buffers.velocitiesSorted } },
+        { binding: 6, resource: { buffer: buffers.predictedSorted } },
+        { binding: 7, resource: { buffer: this.uniformBuffers.sort } },
       ],
     });
 
@@ -151,10 +257,9 @@ export class ComputePipelines {
       entries: [
         { binding: 0, resource: { buffer: buffers.predicted } },
         { binding: 1, resource: { buffer: buffers.sortedKeys } },
-        { binding: 2, resource: { buffer: buffers.indices } },
-        { binding: 3, resource: { buffer: buffers.spatialOffsets } },
-        { binding: 4, resource: { buffer: buffers.densities } },
-        { binding: 5, resource: { buffer: this.uniformBuffers.density } },
+        { binding: 2, resource: { buffer: buffers.spatialOffsets } },
+        { binding: 3, resource: { buffer: buffers.densities } },
+        { binding: 4, resource: { buffer: this.uniformBuffers.density } },
       ],
     });
 
@@ -165,9 +270,8 @@ export class ComputePipelines {
         { binding: 1, resource: { buffer: buffers.velocities } },
         { binding: 2, resource: { buffer: buffers.densities } },
         { binding: 3, resource: { buffer: buffers.sortedKeys } },
-        { binding: 4, resource: { buffer: buffers.indices } },
-        { binding: 5, resource: { buffer: buffers.spatialOffsets } },
-        { binding: 6, resource: { buffer: this.uniformBuffers.pressure } },
+        { binding: 4, resource: { buffer: buffers.spatialOffsets } },
+        { binding: 5, resource: { buffer: this.uniformBuffers.pressure } },
       ],
     });
 
@@ -177,9 +281,8 @@ export class ComputePipelines {
         { binding: 0, resource: { buffer: buffers.predicted } },
         { binding: 1, resource: { buffer: buffers.velocities } },
         { binding: 2, resource: { buffer: buffers.sortedKeys } },
-        { binding: 3, resource: { buffer: buffers.indices } },
-        { binding: 4, resource: { buffer: buffers.spatialOffsets } },
-        { binding: 5, resource: { buffer: this.uniformBuffers.viscosity } },
+        { binding: 3, resource: { buffer: buffers.spatialOffsets } },
+        { binding: 4, resource: { buffer: this.uniformBuffers.viscosity } },
       ],
     });
   }

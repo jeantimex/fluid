@@ -20,6 +20,9 @@ export class FluidSimulation {
   private integrateData = new Float32Array(16);
   private hashParamsData = new Float32Array(4);
   private sortParamsData = new Uint32Array(8);
+  private scanParamsDataL0 = new Uint32Array(4);
+  private scanParamsDataL1 = new Uint32Array(4);
+  private scanParamsDataL2 = new Uint32Array(4);
   private densityParamsData = new Float32Array(8);
   private pressureParamsData = new Float32Array(12);
   private viscosityParamsData = new Float32Array(12);
@@ -173,6 +176,14 @@ export class FluidSimulation {
   private dispatchSpatialHash(encoder: GPUCommandEncoder): void {
     const { pipelines, buffers } = this;
     const workgroups = Math.ceil(buffers.particleCount / this.workgroupSize);
+    
+    // Calculate blocks for each level
+    // Level 0: particleCount items
+    const blocksL0 = Math.ceil(buffers.particleCount / 512);
+    // Level 1: blocksL0 items
+    const blocksL1 = Math.ceil(blocksL0 / 512);
+    // Level 2: blocksL1 items
+    const blocksL2 = Math.ceil(blocksL1 / 512);
 
     this.hashParamsData[0] = this.config.smoothingRadius;
     this.hashParamsData[1] = buffers.particleCount;
@@ -180,6 +191,16 @@ export class FluidSimulation {
 
     this.sortParamsData[0] = buffers.particleCount;
     this.device.queue.writeBuffer(pipelines.uniformBuffers.sort, 0, this.sortParamsData);
+
+    // Update Scan Params
+    this.scanParamsDataL0[0] = buffers.particleCount;
+    this.device.queue.writeBuffer(pipelines.uniformBuffers.scanParamsL0, 0, this.scanParamsDataL0);
+
+    this.scanParamsDataL1[0] = blocksL0;
+    this.device.queue.writeBuffer(pipelines.uniformBuffers.scanParamsL1, 0, this.scanParamsDataL1);
+
+    this.scanParamsDataL2[0] = blocksL1;
+    this.device.queue.writeBuffer(pipelines.uniformBuffers.scanParamsL2, 0, this.scanParamsDataL2);
 
     const hashPass = encoder.beginComputePass();
     hashPass.setPipeline(pipelines.hash);
@@ -199,17 +220,84 @@ export class FluidSimulation {
     countPass.dispatchWorkgroups(workgroups);
     countPass.end();
 
+    // ---------------------------------------------------------
+    // Hierarchical Prefix Sum (3 Levels)
+    // ---------------------------------------------------------
+
+    // Level 0: Scan Data -> Write L1Sums
+    const scanPass0 = encoder.beginComputePass();
+    scanPass0.setPipeline(pipelines.prefixScan);
+    scanPass0.setBindGroup(0, pipelines.scanPass0BindGroup);
+    scanPass0.dispatchWorkgroups(blocksL0);
+    scanPass0.end();
+
+    // Level 1: Scan L1Sums -> Write L2Sums
+    if (blocksL0 > 1) {
+      const scanPass1 = encoder.beginComputePass();
+      scanPass1.setPipeline(pipelines.prefixScan);
+      scanPass1.setBindGroup(0, pipelines.scanPass1BindGroup);
+      scanPass1.dispatchWorkgroups(blocksL1);
+      scanPass1.end();
+    }
+
+    // Level 2: Scan L2Sums -> Write Scratch (In-place basically)
+    if (blocksL1 > 1) {
+      const scanPass2 = encoder.beginComputePass();
+      scanPass2.setPipeline(pipelines.prefixScan);
+      scanPass2.setBindGroup(0, pipelines.scanPass2BindGroup);
+      scanPass2.dispatchWorkgroups(blocksL2);
+      scanPass2.end();
+    }
+
+    // Combine Level 1: Add L2Sums to L1Sums
+    if (blocksL1 > 1) {
+      const combinePass1 = encoder.beginComputePass();
+      combinePass1.setPipeline(pipelines.prefixCombine);
+      combinePass1.setBindGroup(0, pipelines.combinePass1BindGroup);
+      combinePass1.dispatchWorkgroups(blocksL1);
+      combinePass1.end();
+    }
+
+    // Combine Level 0: Add L1Sums to Data
+    if (blocksL0 > 1) {
+      const combinePass0 = encoder.beginComputePass();
+      combinePass0.setPipeline(pipelines.prefixCombine);
+      combinePass0.setBindGroup(0, pipelines.combinePass0BindGroup);
+      combinePass0.dispatchWorkgroups(blocksL0);
+      combinePass0.end();
+    }
+
+    // ---------------------------------------------------------
+
     const scatterPass = encoder.beginComputePass();
     scatterPass.setPipeline(pipelines.scatter);
     scatterPass.setBindGroup(0, pipelines.scatterBindGroup);
-    scatterPass.dispatchWorkgroups(1);
+    scatterPass.dispatchWorkgroups(workgroups);
     scatterPass.end();
 
-    const spatialPass = encoder.beginComputePass();
-    spatialPass.setPipeline(pipelines.spatialOffsets);
-    spatialPass.setBindGroup(0, pipelines.spatialOffsetsBindGroup);
-    spatialPass.dispatchWorkgroups(1);
-    spatialPass.end();
+    const initSpatialPass = encoder.beginComputePass();
+    initSpatialPass.setPipeline(pipelines.initSpatialOffsets);
+    initSpatialPass.setBindGroup(0, pipelines.initSpatialOffsetsBindGroup);
+    initSpatialPass.dispatchWorkgroups(workgroups);
+    initSpatialPass.end();
+
+    const updateSpatialPass = encoder.beginComputePass();
+    updateSpatialPass.setPipeline(pipelines.updateSpatialOffsets);
+    updateSpatialPass.setBindGroup(0, pipelines.updateSpatialOffsetsBindGroup);
+    updateSpatialPass.dispatchWorkgroups(workgroups);
+    updateSpatialPass.end();
+
+    const reorderPass = encoder.beginComputePass();
+    reorderPass.setPipeline(pipelines.reorder);
+    reorderPass.setBindGroup(0, pipelines.reorderBindGroup);
+    reorderPass.dispatchWorkgroups(workgroups);
+    reorderPass.end();
+
+    const copyBackPass = encoder.beginComputePass();
+    copyBackPass.setPipeline(pipelines.copyBack);
+    copyBackPass.setBindGroup(0, pipelines.copyBackBindGroup);
+    copyBackPass.dispatchWorkgroups(workgroups);
+    copyBackPass.end();
   }
 
   private updateDensityUniforms(): void {

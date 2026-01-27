@@ -11,6 +11,9 @@ export class SimulationBuffers {
   indices: GPUBuffer;
   sortOffsets: GPUBuffer;
   spatialOffsets: GPUBuffer;
+  groupSumsL1: GPUBuffer;
+  groupSumsL2: GPUBuffer;
+  scanScratch: GPUBuffer;
 
   positionsSorted: GPUBuffer;
   predictedSorted: GPUBuffer;
@@ -54,6 +57,13 @@ export class SimulationBuffers {
     this.indices = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
     this.sortOffsets = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
     this.spatialOffsets = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+
+    const blocksL0 = Math.ceil(spawn.count / 512);
+    const blocksL1 = Math.ceil(blocksL0 / 512);
+    
+    this.groupSumsL1 = this.createEmptyBuffer(blocksL0 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.groupSumsL2 = this.createEmptyBuffer(blocksL1 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.scanScratch = this.createEmptyBuffer(4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
 
     // Sorted Buffers - Stride 4 for Pos/Vel/Pred
     this.positionsSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
@@ -109,6 +119,9 @@ export class SimulationBuffers {
     this.indices.destroy();
     this.sortOffsets.destroy();
     this.spatialOffsets.destroy();
+    this.groupSumsL1.destroy();
+    this.groupSumsL2.destroy();
+    this.scanScratch.destroy();
     this.positionsSorted.destroy();
     this.predictedSorted.destroy();
     this.velocitiesSorted.destroy();
