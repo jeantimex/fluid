@@ -1,7 +1,3 @@
-/**
- * GPU buffer management for the 3D fluid simulation.
- */
-
 import type { SpawnData } from '../common/types.ts';
 
 export class SimulationBuffers {
@@ -30,63 +26,41 @@ export class SimulationBuffers {
     this.device = device;
     this.particleCount = spawn.count;
 
-    const paddedPositions = this.padVec3Array(spawn.positions);
-    const paddedVelocities = this.padVec3Array(spawn.velocities);
-
+    // Stride 4 (x,y,z,w) from spawn data
     this.positions = this.createBufferFromArray(
-      paddedPositions,
+      spawn.positions,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     );
 
     this.predicted = this.createBufferFromArray(
-      new Float32Array(paddedPositions),
+      new Float32Array(spawn.positions),
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     );
 
     this.velocities = this.createBufferFromArray(
-      paddedVelocities,
+      spawn.velocities,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
     );
 
+    // Stride 2 (density, nearDensity)
     this.densities = this.createEmptyBuffer(
       spawn.count * 2 * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
     );
 
-    this.keys = this.createEmptyBuffer(
-      spawn.count * 4,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-    );
-    this.sortedKeys = this.createEmptyBuffer(
-      spawn.count * 4,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-    );
-    this.indices = this.createEmptyBuffer(
-      spawn.count * 4,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-    );
-    this.sortOffsets = this.createEmptyBuffer(
-      spawn.count * 4,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-    );
-    this.spatialOffsets = this.createEmptyBuffer(
-      spawn.count * 4,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-    );
+    // Spatial Hash Buffers (1 uint)
+    this.keys = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.sortedKeys = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.indices = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.sortOffsets = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.spatialOffsets = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
 
-    this.positionsSorted = this.createEmptyBuffer(
-      spawn.count * 4 * 4,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-    );
-    this.predictedSorted = this.createEmptyBuffer(
-      spawn.count * 4 * 4,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-    );
-    this.velocitiesSorted = this.createEmptyBuffer(
-      spawn.count * 4 * 4,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-    );
+    // Sorted Buffers - Stride 4 for Pos/Vel/Pred
+    this.positionsSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.predictedSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.velocitiesSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
 
+    // Readback - sizes match stride
     this.velocityReadback = device.createBuffer({
       size: spawn.count * 4 * 4,
       usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
@@ -106,30 +80,13 @@ export class SimulationBuffers {
       usage,
       mappedAtCreation: true,
     });
-
     const mapping =
       data instanceof Float32Array
         ? new Float32Array(buffer.getMappedRange())
         : new Uint32Array(buffer.getMappedRange());
-
     mapping.set(data);
     buffer.unmap();
-
     return buffer;
-  }
-
-  private padVec3Array(data: Float32Array): Float32Array {
-    const count = Math.floor(data.length / 3);
-    const padded = new Float32Array(count * 4);
-    for (let i = 0; i < count; i += 1) {
-      const src = i * 3;
-      const dst = i * 4;
-      padded[dst] = data[src];
-      padded[dst + 1] = data[src + 1];
-      padded[dst + 2] = data[src + 2];
-      padded[dst + 3] = 0;
-    }
-    return padded;
   }
 
   private createEmptyBuffer(
