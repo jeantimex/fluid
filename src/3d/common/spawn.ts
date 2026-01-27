@@ -9,19 +9,22 @@ function createRng(seed: number): () => number {
 }
 
 function calculateSpawnCountPerAxis(size: Vec3, spawnDensity: number): Vec3 {
-  // Proportional distribution
-  // nx * ny * nz = total
-  // nx:ny:nz = sx:sy:sz
+  // Match 2D approach: spawnDensity = particles per unit volume
+  // Total particles = volume * density
+  const volume = size.x * size.y * size.z;
+  const targetTotal = Math.ceil(volume * spawnDensity);
+
+  // Distribute proportionally: nx:ny:nz = sx:sy:sz
+  // nx * ny * nz = targetTotal
   // nx = k * sx, ny = k * sy, nz = k * sz
-  // k^3 * sx * sy * sz = total
-  // k = cbrt(total / volume) = cbrt(density)
-  
-  const k = Math.pow(spawnDensity, 1.0/3.0);
-  
+  // k^3 * sx * sy * sz = targetTotal
+  // k = cbrt(targetTotal / volume)
+  const k = Math.pow(targetTotal / volume, 1.0 / 3.0);
+
   return {
-      x: Math.ceil(size.x * k),
-      y: Math.ceil(size.y * k),
-      z: Math.ceil(size.z * k)
+    x: Math.max(1, Math.ceil(size.x * k)),
+    y: Math.max(1, Math.ceil(size.y * k)),
+    z: Math.max(1, Math.ceil(size.z * k)),
   };
 }
 

@@ -151,12 +151,17 @@ export class Renderer {
         const aspect = this.canvas.width / this.canvas.height;
         const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 100.0);
         const viewProj = mat4Multiply(projection, viewMatrix);
-        
+
+        // Scale particle radius by DPR to match 2D behavior (config.particleRadius is in CSS pixels)
+        const dpr = window.devicePixelRatio || 1;
+
         const uniforms = new Float32Array(24);
         uniforms.set(viewProj);
-        uniforms[16] = config.particleRadius;
-        uniforms[17] = config.velocityDisplayMax;
-        
+        uniforms[16] = this.canvas.width;               // canvasSize.x
+        uniforms[17] = this.canvas.height;              // canvasSize.y
+        uniforms[18] = config.particleRadius * dpr;     // particleRadius in device pixels
+        uniforms[19] = config.velocityDisplayMax;
+
         this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
         // Update Line Data

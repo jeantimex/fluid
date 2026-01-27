@@ -1,8 +1,8 @@
 struct Uniforms {
   viewProjection: mat4x4<f32>,
-  radius: f32,
+  canvasSize: vec2<f32>,
+  particleRadius: f32,
   velocityDisplayMax: f32,
-  pad0: vec2<f32>,
 };
 
 @group(0) @binding(0) var<storage, read> positions: array<vec4<f32>>;
@@ -33,9 +33,17 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) ins
   }
 
   let clipPos = uniforms.viewProjection * vec4<f32>(pos, 1.0);
-  
+
+  // Convert pixel radius to NDC (same as 2D calculation)
+  let radiusNdc = vec2<f32>(
+    uniforms.particleRadius / uniforms.canvasSize.x * 2.0,
+    uniforms.particleRadius / uniforms.canvasSize.y * 2.0
+  );
+  // Scale by clipPos.w to work in clip space (before perspective divide)
+  let offset = quadPos * radiusNdc * clipPos.w;
+
   var out: VertexOutput;
-  out.position = clipPos + vec4<f32>(quadPos * uniforms.radius, 0.0, 0.0);
+  out.position = clipPos + vec4<f32>(offset, 0.0, 0.0);
   
   out.uv = quadPos;
   let speed = length(vel);

@@ -214,12 +214,13 @@ export class FluidSimulation {
 
   private updateDensityUniforms(): void {
     const radius = this.config.smoothingRadius;
-    const spikyPow2 = 15 / (2 * Math.PI * Math.pow(radius, 5));
-    const spikyPow3 = 15 / (Math.PI * Math.pow(radius, 6));
+    // Use 2D kernel formulas to match 2D fluid behavior
+    const spikyPow2Scale = 6 / (Math.PI * Math.pow(radius, 4));
+    const spikyPow3Scale = 10 / (Math.PI * Math.pow(radius, 5));
 
     this.densityParamsData[0] = radius;
-    this.densityParamsData[1] = spikyPow2;
-    this.densityParamsData[2] = spikyPow3;
+    this.densityParamsData[1] = spikyPow2Scale;
+    this.densityParamsData[2] = spikyPow3Scale;
     this.densityParamsData[3] = this.buffers.particleCount;
 
     this.device.queue.writeBuffer(this.pipelines.uniformBuffers.density, 0, this.densityParamsData);
@@ -227,16 +228,17 @@ export class FluidSimulation {
 
   private updatePressureUniforms(timeStep: number): void {
     const radius = this.config.smoothingRadius;
-    const spikyPow2Deriv = 15 / (Math.PI * Math.pow(radius, 5));
-    const spikyPow3Deriv = 45 / (Math.PI * Math.pow(radius, 6));
+    // Use 2D kernel derivative formulas to match 2D fluid behavior
+    const spikyPow2DerivScale = 12 / (Math.PI * Math.pow(radius, 4));
+    const spikyPow3DerivScale = 30 / (Math.PI * Math.pow(radius, 5));
 
     this.pressureParamsData[0] = timeStep;
     this.pressureParamsData[1] = this.config.targetDensity;
     this.pressureParamsData[2] = this.config.pressureMultiplier;
     this.pressureParamsData[3] = this.config.nearPressureMultiplier;
     this.pressureParamsData[4] = radius;
-    this.pressureParamsData[5] = spikyPow2Deriv;
-    this.pressureParamsData[6] = spikyPow3Deriv;
+    this.pressureParamsData[5] = spikyPow2DerivScale;
+    this.pressureParamsData[6] = spikyPow3DerivScale;
     this.pressureParamsData[7] = this.buffers.particleCount;
 
     this.device.queue.writeBuffer(this.pipelines.uniformBuffers.pressure, 0, this.pressureParamsData);
@@ -244,12 +246,13 @@ export class FluidSimulation {
 
   private updateViscosityUniforms(timeStep: number): void {
     const radius = this.config.smoothingRadius;
-    const poly6 = 315 / (64 * Math.PI * Math.pow(radius, 9)); 
+    // Use 2D kernel formula to match 2D fluid behavior
+    const poly6Scale = 4 / (Math.PI * Math.pow(radius, 8));
 
     this.viscosityParamsData[0] = timeStep;
     this.viscosityParamsData[1] = this.config.viscosityStrength;
     this.viscosityParamsData[2] = radius;
-    this.viscosityParamsData[3] = poly6; 
+    this.viscosityParamsData[3] = poly6Scale;
     this.viscosityParamsData[4] = this.buffers.particleCount;
 
     this.device.queue.writeBuffer(this.pipelines.uniformBuffers.viscosity, 0, this.viscosityParamsData);
