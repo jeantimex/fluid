@@ -1,4 +1,4 @@
-import type { SimConfig } from '../common/types.ts';
+import type { SimConfig, SimState } from '../common/types.ts';
 import { createSpawnData } from '../common/spawn.ts';
 import { SimulationBuffers } from './simulation_buffers.ts';
 import { ComputePipelines } from './compute_pipelines.ts';
@@ -12,10 +12,11 @@ export class FluidSimulation {
   private buffers!: SimulationBuffers;
   private pipelines: ComputePipelines;
   private renderer: Renderer;
+  private state!: SimState;
 
   private workgroupSize = 256;
 
-  private computeData = new Float32Array(4);
+  private computeData = new Float32Array(8); // Increased to 8 floats (32 bytes)
   private integrateData = new Float32Array(16);
   private hashParamsData = new Float32Array(4);
   private sortParamsData = new Uint32Array(8);
@@ -44,21 +45,57 @@ export class FluidSimulation {
     return this.buffers.particleCount;
   }
 
+  get simulationState(): SimState {
+    return this.state;
+  }
+
   reset(): void {
     if (this.buffers) {
       this.buffers.destroy();
     }
 
     const spawn = createSpawnData(this.config);
-    // this.state = this.createStateFromSpawn(spawn);
+    this.state = this.createStateFromSpawn(spawn);
     this.buffers = new SimulationBuffers(this.device, spawn);
 
     this.pipelines.createBindGroups(this.buffers);
     this.renderer.createBindGroup(this.buffers);
   }
 
+  private createStateFromSpawn(spawn: {
+    positions: Float32Array;
+    velocities: Float32Array;
+    count: number;
+  }): SimState {
+    return {
+      positions: spawn.positions,
+      predicted: new Float32Array(spawn.positions),
+      velocities: spawn.velocities,
+      densities: new Float32Array(spawn.count * 2),
+
+      keys: new Uint32Array(spawn.count),
+      sortedKeys: new Uint32Array(spawn.count),
+      indices: new Uint32Array(spawn.count),
+      sortOffsets: new Uint32Array(spawn.count),
+      spatialOffsets: new Uint32Array(spawn.count),
+
+      positionsSorted: new Float32Array(spawn.count * 4),
+      predictedSorted: new Float32Array(spawn.count * 4),
+      velocitiesSorted: new Float32Array(spawn.count * 4),
+
+      count: spawn.count,
+      input: {
+          worldX: 0,
+          worldY: 0,
+          worldZ: 0,
+          pull: false,
+          push: false
+      }
+    };
+  }
+
   async step(dt: number): Promise<void> {
-    const { config, buffers, pipelines, device } = this;
+    const { config, buffers, pipelines, device, state } = this;
 
     const maxDeltaTime = config.maxTimestepFPS
       ? 1 / config.maxTimestepFPS
@@ -68,9 +105,20 @@ export class FluidSimulation {
 
     for (let i = 0; i < config.iterationsPerFrame; i++) {
         
-        // External Forces
+        // External Forces & Interaction
+        let interactionStrength = 0;
+        if (state.input.push) interactionStrength = -config.interactionStrength;
+        else if (state.input.pull) interactionStrength = config.interactionStrength;
+
         this.computeData[0] = timeStep;
         this.computeData[1] = config.gravity;
+        this.computeData[2] = config.interactionRadius;
+        this.computeData[3] = interactionStrength;
+        this.computeData[4] = state.input.worldX;
+        this.computeData[5] = state.input.worldY;
+        this.computeData[6] = state.input.worldZ;
+        this.computeData[7] = 0; // padding
+
         device.queue.writeBuffer(pipelines.uniformBuffers.compute, 0, this.computeData);
 
         const encoder = device.createCommandEncoder();
@@ -197,10 +245,6 @@ export class FluidSimulation {
   private updateViscosityUniforms(timeStep: number): void {
     const radius = this.config.smoothingRadius;
     const poly6 = 315 / (64 * Math.PI * Math.pow(radius, 9)); 
-    // Unity uses Poly6 for viscosity? Code said "Poly6ScalingFactor".
-    // 2D TS used 4 / ...
-    // Standard Poly6 is 315/64pi*r^9.
-    // Let's stick to what Unity does if possible, but standard is fine.
 
     this.viscosityParamsData[0] = timeStep;
     this.viscosityParamsData[1] = this.config.viscosityStrength;
@@ -212,11 +256,10 @@ export class FluidSimulation {
   }
 
   private updateIntegrateUniforms(timeStep: number): void {
-    // IntegrateParams: dt, damp, hasObs, pad0, halfBounds(3), pad1, obsCen(3), pad2, obsHalf(3), pad3
     
     this.integrateData[0] = timeStep;
     this.integrateData[1] = this.config.collisionDamping;
-    this.integrateData[2] = 0; // hasObstacle (false for now)
+    this.integrateData[2] = 0; // hasObstacle
     
     const hx = this.config.boundsSize.x * 0.5;
     const hy = this.config.boundsSize.y * 0.5;
@@ -226,13 +269,11 @@ export class FluidSimulation {
     this.integrateData[5] = hy;
     this.integrateData[6] = hz;
     
-    // Obstacle ignored (zeros)
-    
     this.device.queue.writeBuffer(this.pipelines.uniformBuffers.integrate, 0, this.integrateData);
   }
 
   render(): void {
-    this.renderer.resize(); // Handle resize dynamically?
+    this.renderer.resize(); 
     const encoder = this.device.createCommandEncoder();
     this.renderer.render(
       encoder,

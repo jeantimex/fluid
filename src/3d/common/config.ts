@@ -17,8 +17,8 @@ export function createConfig(): SimConfig {
     obstacleSize: { x: 0, y: 0, z: 0 },
     obstacleCentre: { x: 0, y: 0, z: 0 },
     
-    interactionRadius: 0.1,
-    interactionStrength: 0,
+    interactionRadius: 0.5,
+    interactionStrength: 50,
     
     particleRadius: 0.02, 
     spawnDensity: 630, 

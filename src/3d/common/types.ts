@@ -32,6 +32,14 @@ export interface SimConfig {
   spawnRegions: SpawnRegion[];
 }
 
+export interface InputState {
+  worldX: number;
+  worldY: number;
+  worldZ: number;
+  pull: boolean;
+  push: boolean;
+}
+
 export interface SimState {
   positions: Float32Array; // Stride 4
   predicted: Float32Array; // Stride 4
@@ -49,6 +57,7 @@ export interface SimState {
   velocitiesSorted: Float32Array; // Stride 4
 
   count: number;
+  input: InputState;
 }
 
 export interface SpawnData {

@@ -68,9 +68,9 @@ export class Renderer {
         // Simple fixed camera
         const aspect = this.canvas.width / this.canvas.height;
         const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 100.0);
-        // Camera at (0, 0, -5.0) looking at (0, 0, 0)
+        // Camera at (0, 0, 5.0) looking at (0, 0, 0)
         const viewMat = mat4LookAt(
-            {x: 0, y: 0, z: -5.0}, 
+            {x: 0, y: 0, z: 5.0}, 
             {x: 0, y: 0, z: 0}, 
             {x: 0, y: 1, z: 0}
         );

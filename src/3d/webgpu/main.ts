@@ -7,6 +7,7 @@ import {
   configureContext,
   WebGPUInitError,
 } from './webgpu_utils.ts';
+import type { InputState } from '../common/types.ts';
 
 function createCanvas(app: HTMLDivElement): HTMLCanvasElement {
   app.innerHTML =
@@ -16,6 +17,63 @@ function createCanvas(app: HTMLDivElement): HTMLCanvasElement {
     throw new Error('Failed to create canvas element');
   }
   return canvas;
+}
+
+function setupInputHandlers(
+  canvas: HTMLCanvasElement,
+  getInput: () => InputState | undefined
+) {
+  const updatePointer = (event: MouseEvent) => {
+    const input = getInput();
+    if (!input) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    // Camera parameters (must match Renderer)
+    const fov = Math.PI / 3;
+    const distance = 5.0; // Camera Z = 5, Plane Z = 0
+    const v = Math.tan(fov / 2);
+    const aspect = canvas.width / canvas.height;
+
+    // Map screen (0..w, 0..h) to world at Z=0
+    // NDC: x [-1, 1], y [-1, 1]
+    // World = NDC * scale * distance
+    
+    const nx = (x / rect.width) * 2 - 1;
+    const ny = -((y / rect.height) * 2 - 1); // Invert Y (screen Y is down, world Y is up)
+
+    input.worldX = nx * v * distance * aspect;
+    input.worldY = ny * v * distance;
+    input.worldZ = 0;
+  };
+
+  canvas.addEventListener('mousemove', updatePointer);
+  
+  canvas.addEventListener('mousedown', (e) => {
+    const input = getInput();
+    if (!input) return;
+    updatePointer(e);
+    if (e.button === 0) input.pull = true;
+    if (e.button === 2) input.push = true;
+  });
+
+  canvas.addEventListener('mouseup', (e) => {
+    const input = getInput();
+    if (!input) return;
+    if (e.button === 0) input.pull = false;
+    if (e.button === 2) input.push = false;
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+      const input = getInput();
+      if (!input) return;
+      input.pull = false;
+      input.push = false;
+  });
+
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -29,11 +87,7 @@ const { stats } = setupGui(
   config,
   {
     onReset: () => simulation?.reset(),
-    onSmoothingRadiusChange: () => {
-        // Need to update constants in pipelines? 
-        // 2D version calls physics.refreshSettings() which updates uniforms
-        // Our 3D simulation updates uniforms every frame in step(), so just wait for next frame.
-    },
+    onSmoothingRadiusChange: () => {},
   },
   {
     trackGPU: true,
@@ -60,14 +114,19 @@ async function main() {
   configureContext(context, device, format);
 
   simulation = new FluidSimulation(device, context, canvas, config, format);
+  
+  // Setup inputs
+  setupInputHandlers(canvas, () => simulation?.simulationState.input);
 
   window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
     configureContext(context, device, format);
   });
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
   configureContext(context, device, format);
 
   let lastTime = performance.now();
