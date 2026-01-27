@@ -150,7 +150,7 @@ export function setupGui(
     .name('Viscosity Strength');
 
   particlesFolder
-    .add(config, 'particleRadius', 0.01, 0.1, 0.001)
+    .add(config, 'particleRadius', 1, 5, 0.1)
     .name('Particle Radius');
 
   particlesFolder
