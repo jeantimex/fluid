@@ -272,14 +272,15 @@ export class FluidSimulation {
     this.device.queue.writeBuffer(this.pipelines.uniformBuffers.integrate, 0, this.integrateData);
   }
 
-  render(): void {
+  render(viewMatrix: Float32Array): void {
     this.renderer.resize(); 
     const encoder = this.device.createCommandEncoder();
     this.renderer.render(
       encoder,
       this.context.getCurrentTexture().createView(),
       this.config,
-      this.buffers.particleCount
+      this.buffers.particleCount,
+      viewMatrix
     );
     this.device.queue.submit([encoder.finish()]);
   }
