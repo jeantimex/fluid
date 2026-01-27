@@ -5,7 +5,7 @@ export function createConfig(): SimConfig {
     timeScale: 1,
     maxTimestepFPS: 60,
     iterationsPerFrame: 2,
-    gravity: -12,
+    gravity: -10,
     collisionDamping: 0.95,
     smoothingRadius: 0.2,
     targetDensity: 630,
@@ -13,7 +13,7 @@ export function createConfig(): SimConfig {
     nearPressureMultiplier: 2.16,
     viscosityStrength: 0,
 
-    boundsSize: { x: 3, y: 3, z: 6 },
+    boundsSize: { x: 24, y: 10, z: 15 },
     obstacleSize: { x: 0, y: 0, z: 0 },
     obstacleCentre: { x: 0, y: 0, z: 0 },
 
@@ -36,10 +36,10 @@ export function createConfig(): SimConfig {
     initialVelocity: { x: 0, y: 0, z: 0 },
     jitterStr: 0.035,
     
-    // Reduced spawn volume (~5k particles at density 600), centered within bounds
+    // Match Unity Fluid Particles scene spawn regions
     spawnRegions: [
-      { position: { x: 0, y: 0, z: 1.5 }, size: { x: 1.6, y: 1.6, z: 1.6 } },
-      { position: { x: 0, y: 0, z: -1.5 }, size: { x: 1.6, y: 1.6, z: 1.6 } },
+      { position: { x: -8.3, y: -1.3, z: 3.65 }, size: { x: 7, y: 7, z: 7 } },
+      { position: { x: -8.3, y: -1.3, z: -3.65 }, size: { x: 7, y: 7, z: 7 } },
     ],
   };
 }
