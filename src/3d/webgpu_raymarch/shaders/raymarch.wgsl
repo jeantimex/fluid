@@ -34,6 +34,10 @@ struct RaymarchParams {
   indexOfRefraction: f32,
   numRefractions: f32,
   pad12: vec2<f32>,
+  floorSize: vec3<f32>,
+  pad13: f32,
+  floorCenter: vec3<f32>,
+  pad14: f32,
 };
 
 @group(0) @binding(0) var densityTex: texture_3d<f32>;
@@ -293,43 +297,54 @@ fn transmittance(opticalDepth: f32) -> vec3<f32> {
 }
 
 fn skyColor(dir: vec3<f32>) -> vec3<f32> {
-  let t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
-  let top = vec3<f32>(0.45, 0.65, 0.95);
-  let bottom = vec3<f32>(0.1, 0.12, 0.16);
-  return mix(bottom, top, t);
+  let colGround = vec3<f32>(0.35, 0.3, 0.35) * 0.53;
+  let colSkyHorizon = vec3<f32>(1.0, 1.0, 1.0);
+  let colSkyZenith = vec3<f32>(0.08, 0.37, 0.73);
+
+  let sun = pow(max(0.0, dot(dir, params.dirToSun)), 500.0);
+  let skyGradientT = pow(smoothstep(0.0, 0.4, dir.y), 0.35);
+  let groundToSkyT = smoothstep(-0.01, 0.0, dir.y);
+  let skyGradient = mix(colSkyHorizon, colSkyZenith, skyGradientT);
+
+  var res = mix(colGround, skyGradient, groundToSkyT);
+  if (dir.y >= -0.01) {
+    res = res + sun;
+  }
+  return res;
 }
 
 fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
-  let floorY = -0.5 * params.boundsSize.y;
+  let floorMin = params.floorCenter - 0.5 * params.floorSize;
+  let floorMax = params.floorCenter + 0.5 * params.floorSize;
+  let hit = rayBoxIntersection(origin, dir, floorMin, floorMax);
   
-  if (abs(dir.y) > 0.0001) {
-    let t = (floorY - origin.y) / dir.y;
-    if (t > 0.0) {
-      let hitPos = origin + dir * t;
-      
-      var tileCol = params.tileCol1;
-      if (hitPos.x >= 0.0) { tileCol = params.tileCol2; }
-      if (hitPos.z < 0.0) {
-        if (hitPos.x < 0.0) { tileCol = params.tileCol3; }
-        else { tileCol = params.tileCol4; }
-      }
-
-      let tileCoord = floor(hitPos.xz * params.tileScale);
-      let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
-      
-      var offset = 0.0;
-      if (isDarkTile) { offset = params.tileDarkOffset; }
-      tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, offset));
-
-      var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
-      let randomVariation = randomSNorm3(&rngState) * params.tileColVariation * 0.1;
-      tileCol = tweakHsv(tileCol, randomVariation);
-      
-      let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-      let shadowMap = transmittance(shadowDepth * 2.0);
-      
-      return tileCol * shadowMap;
+  if (hit.y >= max(hit.x, 0.0)) {
+    let t = select(hit.x, 0.0, hit.x < 0.0);
+    let hitPos = origin + dir * t;
+    
+    // Choose tileCol based on quadrant
+    var tileCol = params.tileCol1;
+    if (hitPos.x >= 0.0) { tileCol = params.tileCol2; }
+    if (hitPos.z < 0.0) {
+      if (hitPos.x < 0.0) { tileCol = params.tileCol3; }
+      else { tileCol = params.tileCol4; }
     }
+
+    let tileCoord = floor(hitPos.xz * params.tileScale);
+    let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
+    
+    var offset = 0.0;
+    if (isDarkTile) { offset = params.tileDarkOffset; }
+    tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, offset));
+
+    var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
+    let randomVariation = randomSNorm3(&rngState) * params.tileColVariation * 0.1;
+    tileCol = tweakHsv(tileCol, randomVariation);
+    
+    let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
+    let shadowMap = transmittance(shadowDepth * 2.0);
+    
+    return tileCol * shadowMap;
   }
   
   return skyColor(dir);
@@ -485,5 +500,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let finalBg = sampleEnvironment(rayPos, rayDir);
   totalLight = totalLight + finalBg * totalTransmittance * transmittance(densityRemainder);
   
-  return vec4<f32>(totalLight, 1.0);
+  // Gamma correction (Linear -> sRGB)
+  let correctedColor = pow(totalLight, vec3<f32>(1.0 / 2.2));
+  
+  return vec4<f32>(correctedColor, 1.0);
 }

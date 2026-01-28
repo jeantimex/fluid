@@ -16,4 +16,5 @@ export interface RaymarchConfig extends SimConfig {
   extinctionCoefficients: { x: number; y: number; z: number };
   indexOfRefraction: number;
   numRefractions: number;
+  floorSize: { x: number; y: number; z: number };
 }

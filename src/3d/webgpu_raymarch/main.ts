@@ -411,6 +411,7 @@ const config: RaymarchConfig = {
   extinctionCoefficients: { x: 12, y: 4, z: 4 },
   indexOfRefraction: 1.33,
   numRefractions: 4,
+  floorSize: { x: 60, y: 0.05, z: 60 },
 };
 
 // Simulation instance (initialized asynchronously in main())
@@ -418,9 +419,9 @@ let simulation: FluidSimulation | null = null;
 
 // Initialize the orbit camera with default view position
 const camera = new OrbitCamera();
-camera.radius = 30.0; // Distance from target
-camera.theta = Math.PI / 6; // 30 degrees horizontal rotation
-camera.phi = Math.PI / 2.5; // ~72 degrees from vertical (looking slightly down)
+camera.radius = 28.0; // Moved back to see the whole water volume
+camera.theta = 3.88; // Adjusted to match Unity (approx 222 degrees)
+camera.phi = 1.27; // Adjusted to match Unity (approx 72.7 degrees)
 
 // Set up the GUI controls panel
 const { stats, gui } = setupGui(
