@@ -206,6 +206,9 @@ const canvas = createCanvas(app);
 const config = createConfig();
 let simulation: FluidSimulation | null = null;
 const camera = new OrbitCamera();
+camera.radius = 30.0;
+camera.theta = Math.PI / 6; // 30 degrees
+camera.phi = Math.PI / 2.5; // 72 degrees (looking slightly down)
 
 const { stats } = setupGui(
   config,

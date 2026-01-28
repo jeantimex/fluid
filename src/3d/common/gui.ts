@@ -100,7 +100,7 @@ export function setupGui(
   const uiState = { showStats: false };
 
   const particlesFolder = gui.addFolder('Particles');
-  // particlesFolder.close();
+  particlesFolder.close();
 
   const display = { particleCount: calculateParticleCount(config) };
 
@@ -159,12 +159,13 @@ export function setupGui(
     .onFinishChange(() => callbacks.onReset());
 
   const containerFolder = gui.addFolder('Container');
+  containerFolder.close();
 
-  containerFolder.add(config.boundsSize, 'x', 1, 10, 0.1).name('Size X');
+  containerFolder.add(config.boundsSize, 'x', 1, 50, 0.1).name('Size X');
 
-  containerFolder.add(config.boundsSize, 'y', 1, 10, 0.1).name('Size Y');
+  containerFolder.add(config.boundsSize, 'y', 1, 50, 0.1).name('Size Y');
 
-  containerFolder.add(config.boundsSize, 'z', 1, 10, 0.1).name('Size Z');
+  containerFolder.add(config.boundsSize, 'z', 1, 50, 0.1).name('Size Z');
 
   const interactionFolder = gui.addFolder('Interaction');
   interactionFolder.close();

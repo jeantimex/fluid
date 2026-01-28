@@ -6,11 +6,10 @@ export class OrbitCamera {
   phi: number = Math.PI / 2; // Angle from Y axis (polar)
   target: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
 
-  minRadius: number = 2.0;
-  maxRadius: number = 20.0;
-
-  constructor() {}
-
+      minRadius: number = 2.0;
+      maxRadius: number = 100.0;
+  
+      constructor() {}
   rotate(dTheta: number, dPhi: number) {
     this.theta += dTheta;
     this.phi += dPhi;
