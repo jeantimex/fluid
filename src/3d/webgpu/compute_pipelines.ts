@@ -11,6 +11,7 @@ import viscosityShader from './shaders/viscosity.wgsl?raw';
 import integrateShader from './shaders/integrate.wgsl?raw';
 import prefixSumShader from './shaders/prefix_sum.wgsl?raw';
 import reorderShader from './shaders/reorder.wgsl?raw';
+import cullShader from './shaders/cull.wgsl?raw';
 
 export interface UniformBuffers {
   compute: GPUBuffer;
@@ -23,6 +24,7 @@ export interface UniformBuffers {
   density: GPUBuffer;
   pressure: GPUBuffer;
   viscosity: GPUBuffer;
+  cull: GPUBuffer;
 }
 
 export class ComputePipelines {
@@ -37,6 +39,7 @@ export class ComputePipelines {
   updateSpatialOffsets: GPUComputePipeline;
   reorder: GPUComputePipeline;
   copyBack: GPUComputePipeline;
+  cull: GPUComputePipeline;
   density: GPUComputePipeline;
   pressure: GPUComputePipeline;
   viscosity: GPUComputePipeline;
@@ -57,6 +60,7 @@ export class ComputePipelines {
   updateSpatialOffsetsBindGroup!: GPUBindGroup;
   reorderBindGroup!: GPUBindGroup;
   copyBackBindGroup!: GPUBindGroup;
+  cullBindGroup!: GPUBindGroup;
   densityBindGroup!: GPUBindGroup;
   pressureBindGroup!: GPUBindGroup;
   viscosityBindGroup!: GPUBindGroup;
@@ -75,6 +79,7 @@ export class ComputePipelines {
       scanParamsL0: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
       scanParamsL1: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
       scanParamsL2: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      cull: device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), // mat4 (64) + float + uint + pad (16)
       density: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
       pressure: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
       viscosity: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
@@ -91,6 +96,7 @@ export class ComputePipelines {
     this.updateSpatialOffsets = this.createPipeline(spatialOffsetsShader, 'calculateOffsets');
     this.reorder = this.createPipeline(reorderShader, 'reorder');
     this.copyBack = this.createPipeline(reorderShader, 'copyBack');
+    this.cull = this.createPipeline(cullShader, 'main');
     this.density = this.createPipeline(densityShader, 'main');
     this.pressure = this.createPipeline(pressureShader, 'main');
     this.viscosity = this.createPipeline(viscosityShader, 'main');
@@ -249,6 +255,16 @@ export class ComputePipelines {
         { binding: 5, resource: { buffer: buffers.velocitiesSorted } },
         { binding: 6, resource: { buffer: buffers.predictedSorted } },
         { binding: 7, resource: { buffer: this.uniformBuffers.sort } },
+      ],
+    });
+
+    this.cullBindGroup = this.device.createBindGroup({
+      layout: this.cull.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.positions } },
+        { binding: 1, resource: { buffer: buffers.visibleIndices } },
+        { binding: 2, resource: { buffer: buffers.indirectDraw } },
+        { binding: 3, resource: { buffer: this.uniformBuffers.cull } },
       ],
     });
 

@@ -9,6 +9,7 @@ struct Uniforms {
 @group(0) @binding(1) var<storage, read> velocities: array<vec4<f32>>;
 @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 @group(0) @binding(3) var<storage, read> gradient: array<vec4<f32>>;
+@group(0) @binding(4) var<storage, read> visibleIndices: array<u32>;
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -18,8 +19,9 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) instanceIndex: u32) -> VertexOutput {
-  let pos = positions[instanceIndex].xyz;
-  let vel = velocities[instanceIndex].xyz;
+  let index = visibleIndices[instanceIndex];
+  let pos = positions[index].xyz;
+  let vel = velocities[index].xyz;
   
   var quadPos = vec2<f32>(0.0, 0.0);
   switch (vertexIndex) {
@@ -48,8 +50,8 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) ins
   out.uv = quadPos;
   let speed = length(vel);
   let t = saturate(speed / uniforms.velocityDisplayMax);
-  let index = u32(t * f32(arrayLength(&gradient) - 1u));
-  out.color = gradient[index].rgb;
+  let colorIndex = u32(t * f32(arrayLength(&gradient) - 1u));
+  out.color = gradient[colorIndex].rgb;
   
   return out;
 }

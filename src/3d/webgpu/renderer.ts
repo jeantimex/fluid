@@ -142,12 +142,13 @@ export class Renderer {
                 { binding: 0, resource: { buffer: buffers.positions } },
                 { binding: 1, resource: { buffer: buffers.velocities } },
                 { binding: 2, resource: { buffer: this.uniformBuffer } },
-                { binding: 3, resource: { buffer: this.gradientBuffer } }
+                { binding: 3, resource: { buffer: this.gradientBuffer } },
+                { binding: 4, resource: { buffer: buffers.visibleIndices } }
             ]
         });
     }
 
-    render(encoder: GPUCommandEncoder, view: GPUTextureView, config: SimConfig, count: number, viewMatrix: Float32Array) {
+    render(encoder: GPUCommandEncoder, view: GPUTextureView, config: SimConfig, buffers: SimulationBuffers, viewMatrix: Float32Array) {
         const aspect = this.canvas.width / this.canvas.height;
         const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 100.0);
         const viewProj = mat4Multiply(projection, viewMatrix);
@@ -224,7 +225,7 @@ export class Renderer {
         // Draw Particles
         pass.setPipeline(this.particlePipeline);
         pass.setBindGroup(0, this.particleBindGroup);
-        pass.draw(6, count);
+        pass.drawIndirect(buffers.indirectDraw, 0);
         
         pass.end();
     }

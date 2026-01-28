@@ -3,6 +3,7 @@ import { createSpawnData } from '../common/spawn.ts';
 import { SimulationBuffers } from './simulation_buffers.ts';
 import { ComputePipelines } from './compute_pipelines.ts';
 import { Renderer } from './renderer.ts';
+import { mat4Perspective, mat4Multiply } from './math_utils.ts';
 
 export class FluidSimulation {
   private device: GPUDevice;
@@ -26,6 +27,8 @@ export class FluidSimulation {
   private densityParamsData = new Float32Array(8);
   private pressureParamsData = new Float32Array(12);
   private viscosityParamsData = new Float32Array(12);
+  private cullParamsData = new Float32Array(20); // 80 bytes / 4 = 20 floats
+  private indirectArgs = new Uint32Array([6, 0, 0, 0]);
 
   constructor(
     device: GPUDevice,
@@ -363,14 +366,46 @@ export class FluidSimulation {
     this.device.queue.writeBuffer(this.pipelines.uniformBuffers.integrate, 0, this.integrateData);
   }
 
+  private dispatchCull(encoder: GPUCommandEncoder, viewMatrix: Float32Array): void {
+      const { pipelines, buffers, config } = this;
+      
+      // Reset indirect args (instanceCount = 0)
+      this.device.queue.writeBuffer(buffers.indirectDraw, 0, this.indirectArgs);
+
+      // Compute ViewProjection
+      const aspect = this.context.canvas.width / this.context.canvas.height;
+      const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 100.0);
+      const viewProj = mat4Multiply(projection, viewMatrix);
+
+      // Update Cull Params
+      this.cullParamsData.set(viewProj); // First 16 floats
+      this.cullParamsData[16] = config.particleRadius; // radius
+      
+      // particleCount is u32, use DataView or aliasing?
+      // Since Float32Array and Uint32Array share buffer...
+      const u32View = new Uint32Array(this.cullParamsData.buffer);
+      u32View[17] = buffers.particleCount;
+
+      this.device.queue.writeBuffer(pipelines.uniformBuffers.cull, 0, this.cullParamsData);
+
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(pipelines.cull);
+      pass.setBindGroup(0, pipelines.cullBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
+      pass.end();
+  }
+
   render(viewMatrix: Float32Array): void {
     this.renderer.resize(); 
     const encoder = this.device.createCommandEncoder();
+    
+    this.dispatchCull(encoder, viewMatrix);
+
     this.renderer.render(
       encoder,
       this.context.getCurrentTexture().createView(),
       this.config,
-      this.buffers.particleCount,
+      this.buffers,
       viewMatrix
     );
     this.device.queue.submit([encoder.finish()]);

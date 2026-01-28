@@ -14,6 +14,9 @@ export class SimulationBuffers {
   groupSumsL1: GPUBuffer;
   groupSumsL2: GPUBuffer;
   scanScratch: GPUBuffer;
+  
+  visibleIndices: GPUBuffer;
+  indirectDraw: GPUBuffer;
 
   positionsSorted: GPUBuffer;
   predictedSorted: GPUBuffer;
@@ -64,6 +67,10 @@ export class SimulationBuffers {
     this.groupSumsL1 = this.createEmptyBuffer(blocksL0 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
     this.groupSumsL2 = this.createEmptyBuffer(blocksL1 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
     this.scanScratch = this.createEmptyBuffer(4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    
+    this.visibleIndices = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    // Indirect Draw buffer: 4 u32s (vertexCount, instanceCount, firstVertex, firstInstance)
+    this.indirectDraw = this.createEmptyBuffer(4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.INDIRECT);
 
     // Sorted Buffers - Stride 4 for Pos/Vel/Pred
     this.positionsSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
@@ -122,6 +129,8 @@ export class SimulationBuffers {
     this.groupSumsL1.destroy();
     this.groupSumsL2.destroy();
     this.scanScratch.destroy();
+    this.visibleIndices.destroy();
+    this.indirectDraw.destroy();
     this.positionsSorted.destroy();
     this.predictedSorted.destroy();
     this.velocitiesSorted.destroy();
