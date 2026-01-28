@@ -305,7 +305,9 @@ export class FluidSimulation {
       // Scale by DPR since canvas.width uses device pixels but config uses CSS pixels
       const dpr = window.devicePixelRatio || 1;
       const paddingPx =
-        (Math.max(1, Math.round(config.particleRadius)) + config.boundsPaddingPx) * dpr;
+        (Math.max(1, Math.round(config.particleRadius)) +
+          config.boundsPaddingPx) *
+        dpr;
       const padding = paddingPx / this.getScale();
       const halfX = Math.max(0, config.boundsSize.x * 0.5 - padding);
       const halfY = Math.max(0, config.boundsSize.y * 0.5 - padding);

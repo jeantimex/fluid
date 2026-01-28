@@ -689,7 +689,9 @@ export function createPhysics(
     // Scale by DPR since canvas uses device pixels but config uses CSS pixels
     const dpr = window.devicePixelRatio || 1;
     const paddingPx =
-      (Math.max(1, Math.round(config.particleRadius)) + config.boundsPaddingPx) * dpr;
+      (Math.max(1, Math.round(config.particleRadius)) +
+        config.boundsPaddingPx) *
+      dpr;
     const padding = paddingPx / getScale();
 
     // Half-extents of the collision boundary (centered at origin)

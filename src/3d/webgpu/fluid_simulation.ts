@@ -91,12 +91,12 @@ export class FluidSimulation {
 
       count: spawn.count,
       input: {
-          worldX: 0,
-          worldY: 0,
-          worldZ: 0,
-          pull: false,
-          push: false
-      }
+        worldX: 0,
+        worldY: 0,
+        worldZ: 0,
+        pull: false,
+        push: false,
+      },
     };
   }
 
@@ -110,76 +110,90 @@ export class FluidSimulation {
     const timeStep = frameTime / config.iterationsPerFrame;
 
     for (let i = 0; i < config.iterationsPerFrame; i++) {
-        
-        // External Forces & Interaction
-        let interactionStrength = 0;
-        if (state.input.push) interactionStrength = -config.interactionStrength;
-        else if (state.input.pull) interactionStrength = config.interactionStrength;
+      // External Forces & Interaction
+      let interactionStrength = 0;
+      if (state.input.push) interactionStrength = -config.interactionStrength;
+      else if (state.input.pull)
+        interactionStrength = config.interactionStrength;
 
-        this.computeData[0] = timeStep;
-        this.computeData[1] = config.gravity;
-        this.computeData[2] = config.interactionRadius;
-        this.computeData[3] = interactionStrength;
-        this.computeData[4] = state.input.worldX;
-        this.computeData[5] = state.input.worldY;
-        this.computeData[6] = state.input.worldZ;
-        this.computeData[7] = 0; // padding
+      this.computeData[0] = timeStep;
+      this.computeData[1] = config.gravity;
+      this.computeData[2] = config.interactionRadius;
+      this.computeData[3] = interactionStrength;
+      this.computeData[4] = state.input.worldX;
+      this.computeData[5] = state.input.worldY;
+      this.computeData[6] = state.input.worldZ;
+      this.computeData[7] = 0; // padding
 
-        device.queue.writeBuffer(pipelines.uniformBuffers.compute, 0, this.computeData);
+      device.queue.writeBuffer(
+        pipelines.uniformBuffers.compute,
+        0,
+        this.computeData
+      );
 
-        const encoder = device.createCommandEncoder();
+      const encoder = device.createCommandEncoder();
 
-        const computePass = encoder.beginComputePass();
-        computePass.setPipeline(pipelines.externalForces);
-        computePass.setBindGroup(0, pipelines.externalForcesBindGroup);
-        computePass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
-        computePass.end();
+      const computePass = encoder.beginComputePass();
+      computePass.setPipeline(pipelines.externalForces);
+      computePass.setBindGroup(0, pipelines.externalForcesBindGroup);
+      computePass.dispatchWorkgroups(
+        Math.ceil(buffers.particleCount / this.workgroupSize)
+      );
+      computePass.end();
 
-        // Spatial Hash
-        this.dispatchSpatialHash(encoder);
+      // Spatial Hash
+      this.dispatchSpatialHash(encoder);
 
-        // Density
-        this.updateDensityUniforms();
-        const densityPass = encoder.beginComputePass();
-        densityPass.setPipeline(pipelines.density);
-        densityPass.setBindGroup(0, pipelines.densityBindGroup);
-        densityPass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
-        densityPass.end();
+      // Density
+      this.updateDensityUniforms();
+      const densityPass = encoder.beginComputePass();
+      densityPass.setPipeline(pipelines.density);
+      densityPass.setBindGroup(0, pipelines.densityBindGroup);
+      densityPass.dispatchWorkgroups(
+        Math.ceil(buffers.particleCount / this.workgroupSize)
+      );
+      densityPass.end();
 
-        // Pressure
-        this.updatePressureUniforms(timeStep);
-        const pressurePass = encoder.beginComputePass();
-        pressurePass.setPipeline(pipelines.pressure);
-        pressurePass.setBindGroup(0, pipelines.pressureBindGroup);
-        pressurePass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
-        pressurePass.end();
+      // Pressure
+      this.updatePressureUniforms(timeStep);
+      const pressurePass = encoder.beginComputePass();
+      pressurePass.setPipeline(pipelines.pressure);
+      pressurePass.setBindGroup(0, pipelines.pressureBindGroup);
+      pressurePass.dispatchWorkgroups(
+        Math.ceil(buffers.particleCount / this.workgroupSize)
+      );
+      pressurePass.end();
 
-        // Viscosity
-        if (config.viscosityStrength > 0) {
-            this.updateViscosityUniforms(timeStep);
-            const viscosityPass = encoder.beginComputePass();
-            viscosityPass.setPipeline(pipelines.viscosity);
-            viscosityPass.setBindGroup(0, pipelines.viscosityBindGroup);
-            viscosityPass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
-            viscosityPass.end();
-        }
+      // Viscosity
+      if (config.viscosityStrength > 0) {
+        this.updateViscosityUniforms(timeStep);
+        const viscosityPass = encoder.beginComputePass();
+        viscosityPass.setPipeline(pipelines.viscosity);
+        viscosityPass.setBindGroup(0, pipelines.viscosityBindGroup);
+        viscosityPass.dispatchWorkgroups(
+          Math.ceil(buffers.particleCount / this.workgroupSize)
+        );
+        viscosityPass.end();
+      }
 
-        // Integrate
-        this.updateIntegrateUniforms(timeStep);
-        const integratePass = encoder.beginComputePass();
-        integratePass.setPipeline(pipelines.integrate);
-        integratePass.setBindGroup(0, pipelines.integrateBindGroup);
-        integratePass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
-        integratePass.end();
+      // Integrate
+      this.updateIntegrateUniforms(timeStep);
+      const integratePass = encoder.beginComputePass();
+      integratePass.setPipeline(pipelines.integrate);
+      integratePass.setBindGroup(0, pipelines.integrateBindGroup);
+      integratePass.dispatchWorkgroups(
+        Math.ceil(buffers.particleCount / this.workgroupSize)
+      );
+      integratePass.end();
 
-        device.queue.submit([encoder.finish()]);
+      device.queue.submit([encoder.finish()]);
     }
   }
 
   private dispatchSpatialHash(encoder: GPUCommandEncoder): void {
     const { pipelines, buffers } = this;
     const workgroups = Math.ceil(buffers.particleCount / this.workgroupSize);
-    
+
     // Calculate blocks for each level
     // Level 0: particleCount items
     const blocksL0 = Math.ceil(buffers.particleCount / 512);
@@ -190,20 +204,40 @@ export class FluidSimulation {
 
     this.hashParamsData[0] = this.config.smoothingRadius;
     this.hashParamsData[1] = buffers.particleCount;
-    this.device.queue.writeBuffer(pipelines.uniformBuffers.hash, 0, this.hashParamsData);
+    this.device.queue.writeBuffer(
+      pipelines.uniformBuffers.hash,
+      0,
+      this.hashParamsData
+    );
 
     this.sortParamsData[0] = buffers.particleCount;
-    this.device.queue.writeBuffer(pipelines.uniformBuffers.sort, 0, this.sortParamsData);
+    this.device.queue.writeBuffer(
+      pipelines.uniformBuffers.sort,
+      0,
+      this.sortParamsData
+    );
 
     // Update Scan Params
     this.scanParamsDataL0[0] = buffers.particleCount;
-    this.device.queue.writeBuffer(pipelines.uniformBuffers.scanParamsL0, 0, this.scanParamsDataL0);
+    this.device.queue.writeBuffer(
+      pipelines.uniformBuffers.scanParamsL0,
+      0,
+      this.scanParamsDataL0
+    );
 
     this.scanParamsDataL1[0] = blocksL0;
-    this.device.queue.writeBuffer(pipelines.uniformBuffers.scanParamsL1, 0, this.scanParamsDataL1);
+    this.device.queue.writeBuffer(
+      pipelines.uniformBuffers.scanParamsL1,
+      0,
+      this.scanParamsDataL1
+    );
 
     this.scanParamsDataL2[0] = blocksL1;
-    this.device.queue.writeBuffer(pipelines.uniformBuffers.scanParamsL2, 0, this.scanParamsDataL2);
+    this.device.queue.writeBuffer(
+      pipelines.uniformBuffers.scanParamsL2,
+      0,
+      this.scanParamsDataL2
+    );
 
     const hashPass = encoder.beginComputePass();
     hashPass.setPipeline(pipelines.hash);
@@ -314,7 +348,11 @@ export class FluidSimulation {
     this.densityParamsData[2] = spikyPow3Scale;
     this.densityParamsData[3] = this.buffers.particleCount;
 
-    this.device.queue.writeBuffer(this.pipelines.uniformBuffers.density, 0, this.densityParamsData);
+    this.device.queue.writeBuffer(
+      this.pipelines.uniformBuffers.density,
+      0,
+      this.densityParamsData
+    );
   }
 
   private updatePressureUniforms(timeStep: number): void {
@@ -332,7 +370,11 @@ export class FluidSimulation {
     this.pressureParamsData[6] = spikyPow3DerivScale;
     this.pressureParamsData[7] = this.buffers.particleCount;
 
-    this.device.queue.writeBuffer(this.pipelines.uniformBuffers.pressure, 0, this.pressureParamsData);
+    this.device.queue.writeBuffer(
+      this.pipelines.uniformBuffers.pressure,
+      0,
+      this.pressureParamsData
+    );
   }
 
   private updateViscosityUniforms(timeStep: number): void {
@@ -346,59 +388,75 @@ export class FluidSimulation {
     this.viscosityParamsData[3] = poly6Scale;
     this.viscosityParamsData[4] = this.buffers.particleCount;
 
-    this.device.queue.writeBuffer(this.pipelines.uniformBuffers.viscosity, 0, this.viscosityParamsData);
+    this.device.queue.writeBuffer(
+      this.pipelines.uniformBuffers.viscosity,
+      0,
+      this.viscosityParamsData
+    );
   }
 
   private updateIntegrateUniforms(timeStep: number): void {
-    
     this.integrateData[0] = timeStep;
     this.integrateData[1] = this.config.collisionDamping;
     this.integrateData[2] = 0; // hasObstacle
-    
+
     const hx = this.config.boundsSize.x * 0.5;
     const hy = this.config.boundsSize.y * 0.5;
     const hz = this.config.boundsSize.z * 0.5;
-    
+
     this.integrateData[4] = hx;
     this.integrateData[5] = hy;
     this.integrateData[6] = hz;
-    
-    this.device.queue.writeBuffer(this.pipelines.uniformBuffers.integrate, 0, this.integrateData);
+
+    this.device.queue.writeBuffer(
+      this.pipelines.uniformBuffers.integrate,
+      0,
+      this.integrateData
+    );
   }
 
-  private dispatchCull(encoder: GPUCommandEncoder, viewMatrix: Float32Array): void {
-      const { pipelines, buffers, config } = this;
-      
-      // Reset indirect args (instanceCount = 0)
-      this.device.queue.writeBuffer(buffers.indirectDraw, 0, this.indirectArgs);
+  private dispatchCull(
+    encoder: GPUCommandEncoder,
+    viewMatrix: Float32Array
+  ): void {
+    const { pipelines, buffers, config } = this;
 
-      // Compute ViewProjection
-      const aspect = this.context.canvas.width / this.context.canvas.height;
-      const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 100.0);
-      const viewProj = mat4Multiply(projection, viewMatrix);
+    // Reset indirect args (instanceCount = 0)
+    this.device.queue.writeBuffer(buffers.indirectDraw, 0, this.indirectArgs);
 
-      // Update Cull Params
-      this.cullParamsData.set(viewProj); // First 16 floats
-      this.cullParamsData[16] = config.particleRadius; // radius
-      
-      // particleCount is u32, use DataView or aliasing?
-      // Since Float32Array and Uint32Array share buffer...
-      const u32View = new Uint32Array(this.cullParamsData.buffer);
-      u32View[17] = buffers.particleCount;
+    // Compute ViewProjection
+    const aspect = this.context.canvas.width / this.context.canvas.height;
+    const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 100.0);
+    const viewProj = mat4Multiply(projection, viewMatrix);
 
-      this.device.queue.writeBuffer(pipelines.uniformBuffers.cull, 0, this.cullParamsData);
+    // Update Cull Params
+    this.cullParamsData.set(viewProj); // First 16 floats
+    this.cullParamsData[16] = config.particleRadius; // radius
 
-      const pass = encoder.beginComputePass();
-      pass.setPipeline(pipelines.cull);
-      pass.setBindGroup(0, pipelines.cullBindGroup);
-      pass.dispatchWorkgroups(Math.ceil(buffers.particleCount / this.workgroupSize));
-      pass.end();
+    // particleCount is u32, use DataView or aliasing?
+    // Since Float32Array and Uint32Array share buffer...
+    const u32View = new Uint32Array(this.cullParamsData.buffer);
+    u32View[17] = buffers.particleCount;
+
+    this.device.queue.writeBuffer(
+      pipelines.uniformBuffers.cull,
+      0,
+      this.cullParamsData
+    );
+
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(pipelines.cull);
+    pass.setBindGroup(0, pipelines.cullBindGroup);
+    pass.dispatchWorkgroups(
+      Math.ceil(buffers.particleCount / this.workgroupSize)
+    );
+    pass.end();
   }
 
   render(viewMatrix: Float32Array): void {
-    this.renderer.resize(); 
+    this.renderer.resize();
     const encoder = this.device.createCommandEncoder();
-    
+
     this.dispatchCull(encoder, viewMatrix);
 
     this.renderer.render(

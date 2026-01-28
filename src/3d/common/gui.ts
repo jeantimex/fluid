@@ -159,25 +159,17 @@ export function setupGui(
     .onFinishChange(() => callbacks.onReset());
 
   const containerFolder = gui.addFolder('Container');
-  
-  containerFolder
-    .add(config.boundsSize, 'x', 1, 10, 0.1)
-    .name('Size X');
 
-  containerFolder
-    .add(config.boundsSize, 'y', 1, 10, 0.1)
-    .name('Size Y');
+  containerFolder.add(config.boundsSize, 'x', 1, 10, 0.1).name('Size X');
 
-  containerFolder
-    .add(config.boundsSize, 'z', 1, 10, 0.1)
-    .name('Size Z');
+  containerFolder.add(config.boundsSize, 'y', 1, 10, 0.1).name('Size Y');
+
+  containerFolder.add(config.boundsSize, 'z', 1, 10, 0.1).name('Size Z');
 
   const interactionFolder = gui.addFolder('Interaction');
   interactionFolder.close();
 
-  interactionFolder
-    .add(config, 'interactionRadius', 0, 2, 0.01)
-    .name('Radius');
+  interactionFolder.add(config, 'interactionRadius', 0, 2, 0.01).name('Radius');
   interactionFolder
     .add(config, 'interactionStrength', 0, 200, 1)
     .name('Strength');

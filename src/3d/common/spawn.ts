@@ -77,7 +77,7 @@ export function createSpawnData(config: SimConfig): SpawnData {
       allPoints.push({
         x: p.x + jx,
         y: p.y + jy,
-        z: p.z + jz
+        z: p.z + jz,
       });
     }
   }

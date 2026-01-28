@@ -20,9 +20,9 @@ export function createConfig(): SimConfig {
     interactionRadius: 2,
     interactionStrength: 90,
 
-    particleRadius: 2.5,  // In pixels, same as 2D
+    particleRadius: 2.5, // In pixels, same as 2D
     // Unity Fluid Particles scene: particleSpawnDensity = 600
-    spawnDensity: 600, 
+    spawnDensity: 600,
     velocityDisplayMax: 6.5,
     gradientResolution: 64,
 
@@ -32,10 +32,10 @@ export function createConfig(): SimConfig {
       { t: 46738 / 65535, r: 1, g: 0.9309917, b: 0 }, // Fast: yellow
       { t: 1, r: 0.96862745, g: 0.28555763, b: 0.031372573 }, // Very fast: orange
     ],
-    
+
     initialVelocity: { x: 0, y: 0, z: 0 },
     jitterStr: 0.035,
-    
+
     // Match Unity Fluid Particles scene spawn regions
     spawnRegions: [
       { position: { x: -8.3, y: -1.3, z: 3.65 }, size: { x: 7, y: 7, z: 7 } },

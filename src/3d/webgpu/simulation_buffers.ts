@@ -14,7 +14,7 @@ export class SimulationBuffers {
   groupSumsL1: GPUBuffer;
   groupSumsL2: GPUBuffer;
   scanScratch: GPUBuffer;
-  
+
   visibleIndices: GPUBuffer;
   indirectDraw: GPUBuffer;
 
@@ -55,27 +55,66 @@ export class SimulationBuffers {
     );
 
     // Spatial Hash Buffers (1 uint)
-    this.keys = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.sortedKeys = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.indices = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.sortOffsets = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.spatialOffsets = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.keys = this.createEmptyBuffer(
+      spawn.count * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.sortedKeys = this.createEmptyBuffer(
+      spawn.count * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.indices = this.createEmptyBuffer(
+      spawn.count * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.sortOffsets = this.createEmptyBuffer(
+      spawn.count * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.spatialOffsets = this.createEmptyBuffer(
+      spawn.count * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
 
     const blocksL0 = Math.ceil(spawn.count / 512);
     const blocksL1 = Math.ceil(blocksL0 / 512);
-    
-    this.groupSumsL1 = this.createEmptyBuffer(blocksL0 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.groupSumsL2 = this.createEmptyBuffer(blocksL1 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.scanScratch = this.createEmptyBuffer(4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    
-    this.visibleIndices = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+
+    this.groupSumsL1 = this.createEmptyBuffer(
+      blocksL0 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.groupSumsL2 = this.createEmptyBuffer(
+      blocksL1 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.scanScratch = this.createEmptyBuffer(
+      4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+
+    this.visibleIndices = this.createEmptyBuffer(
+      spawn.count * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
     // Indirect Draw buffer: 4 u32s (vertexCount, instanceCount, firstVertex, firstInstance)
-    this.indirectDraw = this.createEmptyBuffer(4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.INDIRECT);
+    this.indirectDraw = this.createEmptyBuffer(
+      4 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.INDIRECT
+    );
 
     // Sorted Buffers - Stride 4 for Pos/Vel/Pred
-    this.positionsSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.predictedSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.velocitiesSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.positionsSorted = this.createEmptyBuffer(
+      spawn.count * 4 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.predictedSorted = this.createEmptyBuffer(
+      spawn.count * 4 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.velocitiesSorted = this.createEmptyBuffer(
+      spawn.count * 4 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
 
     // Readback - sizes match stride
     this.velocityReadback = device.createBuffer({

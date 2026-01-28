@@ -72,17 +72,50 @@ export class ComputePipelines {
     this.device = device;
 
     this.uniformBuffers = {
-      compute: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      integrate: device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      hash: device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      sort: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      scanParamsL0: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      scanParamsL1: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      scanParamsL2: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      cull: device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), // mat4 (64) + float + uint + pad (16)
-      density: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      pressure: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      viscosity: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      compute: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      integrate: device.createBuffer({
+        size: 64,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      hash: device.createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      sort: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      scanParamsL0: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      scanParamsL1: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      scanParamsL2: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      cull: device.createBuffer({
+        size: 80,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }), // mat4 (64) + float + uint + pad (16)
+      density: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      pressure: device.createBuffer({
+        size: 48,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      viscosity: device.createBuffer({
+        size: 48,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
     };
 
     this.externalForces = this.createPipeline(externalForcesShader, 'main');
@@ -92,8 +125,14 @@ export class ComputePipelines {
     this.prefixScan = this.createPipeline(prefixSumShader, 'blockScan');
     this.prefixCombine = this.createPipeline(prefixSumShader, 'blockCombine');
     this.scatter = this.createPipeline(scatterShader, 'scatter');
-    this.initSpatialOffsets = this.createPipeline(spatialOffsetsShader, 'initOffsets');
-    this.updateSpatialOffsets = this.createPipeline(spatialOffsetsShader, 'calculateOffsets');
+    this.initSpatialOffsets = this.createPipeline(
+      spatialOffsetsShader,
+      'initOffsets'
+    );
+    this.updateSpatialOffsets = this.createPipeline(
+      spatialOffsetsShader,
+      'calculateOffsets'
+    );
     this.reorder = this.createPipeline(reorderShader, 'reorder');
     this.copyBack = this.createPipeline(reorderShader, 'copyBack');
     this.cull = this.createPipeline(cullShader, 'main');

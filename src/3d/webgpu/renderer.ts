@@ -6,227 +6,378 @@ import { mat4Perspective, mat4Multiply } from './math_utils.ts';
 import { buildGradientLut } from '../common/kernels.ts';
 
 export class Renderer {
-    private device: GPUDevice;
-    private particlePipeline: GPURenderPipeline;
-    private linePipeline: GPURenderPipeline;
-    private uniformBuffer: GPUBuffer;
-    private gradientBuffer: GPUBuffer;
-    private particleBindGroup!: GPUBindGroup;
-    private lineBindGroup: GPUBindGroup;
-    private lineVertexBuffer: GPUBuffer;
-    private lineVertexData: Float32Array;
-    private canvas: HTMLCanvasElement;
-    private depthTexture!: GPUTexture;
+  private device: GPUDevice;
+  private particlePipeline: GPURenderPipeline;
+  private linePipeline: GPURenderPipeline;
+  private uniformBuffer: GPUBuffer;
+  private gradientBuffer: GPUBuffer;
+  private particleBindGroup!: GPUBindGroup;
+  private lineBindGroup: GPUBindGroup;
+  private lineVertexBuffer: GPUBuffer;
+  private lineVertexData: Float32Array;
+  private canvas: HTMLCanvasElement;
+  private depthTexture!: GPUTexture;
 
-    constructor(device: GPUDevice, canvas: HTMLCanvasElement, format: GPUTextureFormat, config: SimConfig) {
-        this.device = device;
-        this.canvas = canvas;
+  constructor(
+    device: GPUDevice,
+    canvas: HTMLCanvasElement,
+    format: GPUTextureFormat,
+    config: SimConfig
+  ) {
+    this.device = device;
+    this.canvas = canvas;
 
-        this.uniformBuffer = device.createBuffer({
-            size: 96,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-        });
+    this.uniformBuffer = device.createBuffer({
+      size: 96,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
 
-        // Create Gradient Buffer
-        const gradientLut = buildGradientLut(config.colorKeys, config.gradientResolution);
-        const gradientData = new Float32Array(config.gradientResolution * 4);
-        for (let i = 0; i < gradientLut.length; i++) {
-            gradientData[i * 4] = gradientLut[i].r;
-            gradientData[i * 4 + 1] = gradientLut[i].g;
-            gradientData[i * 4 + 2] = gradientLut[i].b;
-            gradientData[i * 4 + 3] = 1;
-        }
-        this.gradientBuffer = device.createBuffer({
-            size: gradientData.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-            mappedAtCreation: true,
-        });
-        new Float32Array(this.gradientBuffer.getMappedRange()).set(gradientData);
-        this.gradientBuffer.unmap();
-
-        // Particle Pipeline
-        const particleModule = device.createShaderModule({ code: particleShader });
-        this.particlePipeline = device.createRenderPipeline({
-            layout: 'auto',
-            vertex: {
-                module: particleModule,
-                entryPoint: 'vs_main',
-            },
-            fragment: {
-                module: particleModule,
-                entryPoint: 'fs_main',
-                targets: [{ format }]
-            },
-            primitive: {
-                topology: 'triangle-list'
-            },
-            depthStencil: {
-                format: 'depth24plus',
-                depthWriteEnabled: true,
-                depthCompare: 'less',
-            }
-        });
-
-        // Line Pipeline
-        const lineModule = device.createShaderModule({ code: lineShader });
-        this.linePipeline = device.createRenderPipeline({
-            layout: 'auto',
-            vertex: {
-                module: lineModule,
-                entryPoint: 'vs_main',
-                buffers: [{
-                    arrayStride: 28, // 3 pos + 4 color
-                    attributes: [
-                        { shaderLocation: 0, offset: 0, format: 'float32x3' }, // pos
-                        { shaderLocation: 1, offset: 12, format: 'float32x4' } // color
-                    ]
-                }]
-            },
-            fragment: {
-                module: lineModule,
-                entryPoint: 'fs_main',
-                targets: [{ 
-                    format,
-                    blend: {
-                        color: {
-                            srcFactor: 'src-alpha',
-                            dstFactor: 'one-minus-src-alpha',
-                            operation: 'add',
-                        },
-                        alpha: {
-                            srcFactor: 'one',
-                            dstFactor: 'one-minus-src-alpha',
-                            operation: 'add',
-                        },
-                    }
-                }]
-            },
-            primitive: {
-                topology: 'line-list'
-            },
-            depthStencil: {
-                format: 'depth24plus',
-                depthWriteEnabled: true,
-                depthCompare: 'less',
-            }
-        });
-
-        // Line Resources
-        this.lineVertexData = new Float32Array(48 * 7);
-        this.lineVertexBuffer = device.createBuffer({
-            size: this.lineVertexData.byteLength,
-            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
-        });
-
-        this.lineBindGroup = device.createBindGroup({
-            layout: this.linePipeline.getBindGroupLayout(0),
-            entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }]
-        });
-
-        this.resize();
+    // Create Gradient Buffer
+    const gradientLut = buildGradientLut(
+      config.colorKeys,
+      config.gradientResolution
+    );
+    const gradientData = new Float32Array(config.gradientResolution * 4);
+    for (let i = 0; i < gradientLut.length; i++) {
+      gradientData[i * 4] = gradientLut[i].r;
+      gradientData[i * 4 + 1] = gradientLut[i].g;
+      gradientData[i * 4 + 2] = gradientLut[i].b;
+      gradientData[i * 4 + 3] = 1;
     }
+    this.gradientBuffer = device.createBuffer({
+      size: gradientData.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.gradientBuffer.getMappedRange()).set(gradientData);
+    this.gradientBuffer.unmap();
 
-    resize() {
-        if (this.depthTexture) this.depthTexture.destroy();
-        this.depthTexture = this.device.createTexture({
-            size: [this.canvas.width, this.canvas.height],
-            format: 'depth24plus',
-            usage: GPUTextureUsage.RENDER_ATTACHMENT,
-        });
-    }
+    // Particle Pipeline
+    const particleModule = device.createShaderModule({ code: particleShader });
+    this.particlePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: particleModule,
+        entryPoint: 'vs_main',
+      },
+      fragment: {
+        module: particleModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: {
+        topology: 'triangle-list',
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
 
-    createBindGroup(buffers: SimulationBuffers) {
-        this.particleBindGroup = this.device.createBindGroup({
-            layout: this.particlePipeline.getBindGroupLayout(0),
-            entries: [
-                { binding: 0, resource: { buffer: buffers.positions } },
-                { binding: 1, resource: { buffer: buffers.velocities } },
-                { binding: 2, resource: { buffer: this.uniformBuffer } },
-                { binding: 3, resource: { buffer: this.gradientBuffer } },
-                { binding: 4, resource: { buffer: buffers.visibleIndices } }
-            ]
-        });
-    }
+    // Line Pipeline
+    const lineModule = device.createShaderModule({ code: lineShader });
+    this.linePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: lineModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 28, // 3 pos + 4 color
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' }, // pos
+              { shaderLocation: 1, offset: 12, format: 'float32x4' }, // color
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: lineModule,
+        entryPoint: 'fs_main',
+        targets: [
+          {
+            format,
+            blend: {
+              color: {
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
+              alpha: {
+                srcFactor: 'one',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
+            },
+          },
+        ],
+      },
+      primitive: {
+        topology: 'line-list',
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
 
-    render(encoder: GPUCommandEncoder, view: GPUTextureView, config: SimConfig, buffers: SimulationBuffers, viewMatrix: Float32Array) {
-        const aspect = this.canvas.width / this.canvas.height;
-        const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 100.0);
-        const viewProj = mat4Multiply(projection, viewMatrix);
+    // Line Resources
+    this.lineVertexData = new Float32Array(48 * 7);
+    this.lineVertexBuffer = device.createBuffer({
+      size: this.lineVertexData.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
 
-        // Scale particle radius by DPR to match 2D behavior (config.particleRadius is in CSS pixels)
-        const dpr = window.devicePixelRatio || 1;
+    this.lineBindGroup = device.createBindGroup({
+      layout: this.linePipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+    });
 
-        const uniforms = new Float32Array(24);
-        uniforms.set(viewProj);
-        uniforms[16] = this.canvas.width;               // canvasSize.x
-        uniforms[17] = this.canvas.height;              // canvasSize.y
-        uniforms[18] = config.particleRadius * dpr;     // particleRadius in device pixels
-        uniforms[19] = config.velocityDisplayMax;
+    this.resize();
+  }
 
-        this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
+  resize() {
+    if (this.depthTexture) this.depthTexture.destroy();
+    this.depthTexture = this.device.createTexture({
+      size: [this.canvas.width, this.canvas.height],
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+  }
 
-        // Update Line Data
-        let vertexCount = 0;
-        const addLine = (p1: {x:number, y:number, z:number}, p2: {x:number, y:number, z:number}, r:number, g:number, b:number, a:number) => {
-            const i = vertexCount * 7;
-            this.lineVertexData[i] = p1.x; this.lineVertexData[i+1] = p1.y; this.lineVertexData[i+2] = p1.z;
-            this.lineVertexData[i+3] = r; this.lineVertexData[i+4] = g; this.lineVertexData[i+5] = b; this.lineVertexData[i+6] = a;
-            
-            this.lineVertexData[i+7] = p2.x; this.lineVertexData[i+8] = p2.y; this.lineVertexData[i+9] = p2.z;
-            this.lineVertexData[i+10] = r; this.lineVertexData[i+11] = g; this.lineVertexData[i+12] = b; this.lineVertexData[i+13] = a;
-            vertexCount += 2;
-        };
+  createBindGroup(buffers: SimulationBuffers) {
+    this.particleBindGroup = this.device.createBindGroup({
+      layout: this.particlePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.positions } },
+        { binding: 1, resource: { buffer: buffers.velocities } },
+        { binding: 2, resource: { buffer: this.uniformBuffer } },
+        { binding: 3, resource: { buffer: this.gradientBuffer } },
+        { binding: 4, resource: { buffer: buffers.visibleIndices } },
+      ],
+    });
+  }
 
-        const drawBox = (cx:number, cy:number, cz:number, sx:number, sy:number, sz:number, r:number, g:number, b:number, a:number) => {
-            const hx = sx/2, hy = sy/2, hz = sz/2;
-            // Bottom
-            addLine({x:cx-hx, y:cy-hy, z:cz-hz}, {x:cx+hx, y:cy-hy, z:cz-hz}, r, g, b, a);
-            addLine({x:cx+hx, y:cy-hy, z:cz-hz}, {x:cx+hx, y:cy-hy, z:cz+hz}, r, g, b, a);
-            addLine({x:cx+hx, y:cy-hy, z:cz+hz}, {x:cx-hx, y:cy-hy, z:cz+hz}, r, g, b, a);
-            addLine({x:cx-hx, y:cy-hy, z:cz+hz}, {x:cx-hx, y:cy-hy, z:cz-hz}, r, g, b, a);
-            // Top
-            addLine({x:cx-hx, y:cy+hy, z:cz-hz}, {x:cx+hx, y:cy+hy, z:cz-hz}, r, g, b, a);
-            addLine({x:cx+hx, y:cy+hy, z:cz-hz}, {x:cx+hx, y:cy+hy, z:cz+hz}, r, g, b, a);
-            addLine({x:cx+hx, y:cy+hy, z:cz+hz}, {x:cx-hx, y:cy+hy, z:cz+hz}, r, g, b, a);
-            addLine({x:cx-hx, y:cy+hy, z:cz+hz}, {x:cx-hx, y:cy+hy, z:cz-hz}, r, g, b, a);
-            // Vertical
-            addLine({x:cx-hx, y:cy-hy, z:cz-hz}, {x:cx-hx, y:cy+hy, z:cz-hz}, r, g, b, a);
-            addLine({x:cx+hx, y:cy-hy, z:cz-hz}, {x:cx+hx, y:cy+hy, z:cz-hz}, r, g, b, a);
-            addLine({x:cx+hx, y:cy-hy, z:cz+hz}, {x:cx+hx, y:cy+hy, z:cz+hz}, r, g, b, a);
-            addLine({x:cx-hx, y:cy-hy, z:cz+hz}, {x:cx-hx, y:cy+hy, z:cz+hz}, r, g, b, a);
-        };
+  render(
+    encoder: GPUCommandEncoder,
+    view: GPUTextureView,
+    config: SimConfig,
+    buffers: SimulationBuffers,
+    viewMatrix: Float32Array
+  ) {
+    const aspect = this.canvas.width / this.canvas.height;
+    const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 100.0);
+    const viewProj = mat4Multiply(projection, viewMatrix);
 
-        const boundsCol = { r: 0.9, g: 0.9, b: 0.9 };
-        drawBox(0, 0, 0, config.boundsSize.x, config.boundsSize.y, config.boundsSize.z, boundsCol.r, boundsCol.g, boundsCol.b, 0.5);
+    // Scale particle radius by DPR to match 2D behavior (config.particleRadius is in CSS pixels)
+    const dpr = window.devicePixelRatio || 1;
 
-        this.device.queue.writeBuffer(this.lineVertexBuffer, 0, this.lineVertexData as unknown as BufferSource, 0, vertexCount * 7);
+    const uniforms = new Float32Array(24);
+    uniforms.set(viewProj);
+    uniforms[16] = this.canvas.width; // canvasSize.x
+    uniforms[17] = this.canvas.height; // canvasSize.y
+    uniforms[18] = config.particleRadius * dpr; // particleRadius in device pixels
+    uniforms[19] = config.velocityDisplayMax;
 
-        const pass = encoder.beginRenderPass({
-            colorAttachments: [{
-                view,
-                clearValue: { r: 0.05, g: 0.05, b: 0.08, a: 1 },
-                loadOp: 'clear',
-                storeOp: 'store'
-            }],
-            depthStencilAttachment: {
-                view: this.depthTexture.createView(),
-                depthClearValue: 1.0,
-                depthLoadOp: 'clear',
-                depthStoreOp: 'store'
-            }
-        });
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
-        // Draw Lines
-        pass.setPipeline(this.linePipeline);
-        pass.setBindGroup(0, this.lineBindGroup);
-        pass.setVertexBuffer(0, this.lineVertexBuffer);
-        pass.draw(vertexCount);
+    // Update Line Data
+    let vertexCount = 0;
+    const addLine = (
+      p1: { x: number; y: number; z: number },
+      p2: { x: number; y: number; z: number },
+      r: number,
+      g: number,
+      b: number,
+      a: number
+    ) => {
+      const i = vertexCount * 7;
+      this.lineVertexData[i] = p1.x;
+      this.lineVertexData[i + 1] = p1.y;
+      this.lineVertexData[i + 2] = p1.z;
+      this.lineVertexData[i + 3] = r;
+      this.lineVertexData[i + 4] = g;
+      this.lineVertexData[i + 5] = b;
+      this.lineVertexData[i + 6] = a;
 
-        // Draw Particles
-        pass.setPipeline(this.particlePipeline);
-        pass.setBindGroup(0, this.particleBindGroup);
-        pass.drawIndirect(buffers.indirectDraw, 0);
-        
-        pass.end();
-    }
+      this.lineVertexData[i + 7] = p2.x;
+      this.lineVertexData[i + 8] = p2.y;
+      this.lineVertexData[i + 9] = p2.z;
+      this.lineVertexData[i + 10] = r;
+      this.lineVertexData[i + 11] = g;
+      this.lineVertexData[i + 12] = b;
+      this.lineVertexData[i + 13] = a;
+      vertexCount += 2;
+    };
+
+    const drawBox = (
+      cx: number,
+      cy: number,
+      cz: number,
+      sx: number,
+      sy: number,
+      sz: number,
+      r: number,
+      g: number,
+      b: number,
+      a: number
+    ) => {
+      const hx = sx / 2,
+        hy = sy / 2,
+        hz = sz / 2;
+      // Bottom
+      addLine(
+        { x: cx - hx, y: cy - hy, z: cz - hz },
+        { x: cx + hx, y: cy - hy, z: cz - hz },
+        r,
+        g,
+        b,
+        a
+      );
+      addLine(
+        { x: cx + hx, y: cy - hy, z: cz - hz },
+        { x: cx + hx, y: cy - hy, z: cz + hz },
+        r,
+        g,
+        b,
+        a
+      );
+      addLine(
+        { x: cx + hx, y: cy - hy, z: cz + hz },
+        { x: cx - hx, y: cy - hy, z: cz + hz },
+        r,
+        g,
+        b,
+        a
+      );
+      addLine(
+        { x: cx - hx, y: cy - hy, z: cz + hz },
+        { x: cx - hx, y: cy - hy, z: cz - hz },
+        r,
+        g,
+        b,
+        a
+      );
+      // Top
+      addLine(
+        { x: cx - hx, y: cy + hy, z: cz - hz },
+        { x: cx + hx, y: cy + hy, z: cz - hz },
+        r,
+        g,
+        b,
+        a
+      );
+      addLine(
+        { x: cx + hx, y: cy + hy, z: cz - hz },
+        { x: cx + hx, y: cy + hy, z: cz + hz },
+        r,
+        g,
+        b,
+        a
+      );
+      addLine(
+        { x: cx + hx, y: cy + hy, z: cz + hz },
+        { x: cx - hx, y: cy + hy, z: cz + hz },
+        r,
+        g,
+        b,
+        a
+      );
+      addLine(
+        { x: cx - hx, y: cy + hy, z: cz + hz },
+        { x: cx - hx, y: cy + hy, z: cz - hz },
+        r,
+        g,
+        b,
+        a
+      );
+      // Vertical
+      addLine(
+        { x: cx - hx, y: cy - hy, z: cz - hz },
+        { x: cx - hx, y: cy + hy, z: cz - hz },
+        r,
+        g,
+        b,
+        a
+      );
+      addLine(
+        { x: cx + hx, y: cy - hy, z: cz - hz },
+        { x: cx + hx, y: cy + hy, z: cz - hz },
+        r,
+        g,
+        b,
+        a
+      );
+      addLine(
+        { x: cx + hx, y: cy - hy, z: cz + hz },
+        { x: cx + hx, y: cy + hy, z: cz + hz },
+        r,
+        g,
+        b,
+        a
+      );
+      addLine(
+        { x: cx - hx, y: cy - hy, z: cz + hz },
+        { x: cx - hx, y: cy + hy, z: cz + hz },
+        r,
+        g,
+        b,
+        a
+      );
+    };
+
+    const boundsCol = { r: 0.9, g: 0.9, b: 0.9 };
+    drawBox(
+      0,
+      0,
+      0,
+      config.boundsSize.x,
+      config.boundsSize.y,
+      config.boundsSize.z,
+      boundsCol.r,
+      boundsCol.g,
+      boundsCol.b,
+      0.5
+    );
+
+    this.device.queue.writeBuffer(
+      this.lineVertexBuffer,
+      0,
+      this.lineVertexData as unknown as BufferSource,
+      0,
+      vertexCount * 7
+    );
+
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view,
+          clearValue: { r: 0.05, g: 0.05, b: 0.08, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+      depthStencilAttachment: {
+        view: this.depthTexture.createView(),
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    });
+
+    // Draw Lines
+    pass.setPipeline(this.linePipeline);
+    pass.setBindGroup(0, this.lineBindGroup);
+    pass.setVertexBuffer(0, this.lineVertexBuffer);
+    pass.draw(vertexCount);
+
+    // Draw Particles
+    pass.setPipeline(this.particlePipeline);
+    pass.setBindGroup(0, this.particleBindGroup);
+    pass.drawIndirect(buffers.indirectDraw, 0);
+
+    pass.end();
+  }
 }
