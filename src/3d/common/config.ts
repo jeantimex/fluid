@@ -14,7 +14,7 @@ export function createConfig(): SimConfig {
     viscosityStrength: 0,
 
     boundsSize: { x: 24, y: 10, z: 15 },
-    obstacleSize: { x: 4, y: 4, z: 4 },
+    obstacleSize: { x: 0, y: 0, z: 0 },
     obstacleCentre: { x: 0, y: -2, z: 0 },
 
     interactionRadius: 2,

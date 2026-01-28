@@ -401,17 +401,17 @@ const config: RaymarchConfig = {
   densityMultiplier: 0.05,
   stepSize: 0.08,
   maxSteps: 512,
-  tileCol1: { r: 0.20392157, g: 0.5176471, b: 0.7764706 },
-  tileCol2: { r: 0.6081319, g: 0.36850303, b: 0.8584906 },
-  tileCol3: { r: 0.3019758, g: 0.735849, b: 0.45801795 },
-  tileCol4: { r: 0.8018868, g: 0.6434483, b: 0.36690104 },
-  tileColVariation: { x: 0.33, y: 0, z: 0.47 },
-  tileScale: 1,
-  tileDarkOffset: -0.35,
+  tileCol1: { r: 0.35, g: 0.65, b: 0.9 }, // Lighter blue
+  tileCol2: { r: 0.75, g: 0.55, b: 0.9 }, // Lighter purple
+  tileCol3: { r: 0.45, g: 0.85, b: 0.6 }, // Lighter green
+  tileCol4: { r: 0.9, g: 0.75, b: 0.45 }, // Lighter orange/yellow
+  tileColVariation: { x: 0.2, y: 0, z: 0.2 },
+  tileScale: 0.25,
+  tileDarkOffset: -0.15,
   extinctionCoefficients: { x: 12, y: 4, z: 4 },
   indexOfRefraction: 1.33,
   numRefractions: 4,
-  floorSize: { x: 60, y: 0.05, z: 60 },
+  floorSize: { x: 80, y: 0.05, z: 80 },
 };
 
 // Simulation instance (initialized asynchronously in main())
@@ -420,7 +420,7 @@ let simulation: FluidSimulation | null = null;
 // Initialize the orbit camera with default view position
 const camera = new OrbitCamera();
 camera.radius = 28.0; // Moved back to see the whole water volume
-camera.theta = 3.88; // Adjusted to match Unity (approx 222 degrees)
+camera.theta = 0.39; // Rotated 160 degrees from original position
 camera.phi = 1.27; // Adjusted to match Unity (approx 72.7 degrees)
 
 // Set up the GUI controls panel
