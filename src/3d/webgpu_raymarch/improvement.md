@@ -126,3 +126,33 @@ For empty space skipping:
 - Mark cells as "occupied" if any particle splatted there
 - During raymarching, take larger steps through empty cells
 - Can use hierarchical structure (mipmap) for adaptive step sizes
+
+
+Phase 1: Easy Wins & Rendering Efficiency
+   * Sub-task 1.1: Optimize Compute Occupancy
+       * Change: Update density_volume.wgsl workgroup size from (4, 4, 4) (64 threads) to (8, 8, 4) (256
+         threads).
+       * Goal: Better GPU utilization.
+       * Verification: Ensure simulation still runs and the density volume looks identical.
+   * Sub-task 1.2: Early Transmittance Cutoff
+       * Change: Add an early exit in the raymarch.wgsl refraction loop if totalTransmittance falls below
+         a threshold (e.g., 0.01).
+       * Goal: Stop computing expensive refractions once the fluid is already opaque.
+       * Verification: No visual change in dense regions; slight FPS boost in deep water.
+
+  Phase 2: Refraction Heuristic
+   * Sub-task 2.1: Simplify `calculateDensityForRefraction`
+       * Change: Replace the 64-step shadow-marching trace in the refraction heuristic with a cheaper
+         single-sample or 4-step lookup.
+       * Goal: Remove the "512 steps per pixel" bottleneck.
+       * Verification: Compare refraction quality; significant FPS increase expected.
+
+  Phase 3: Particle Splatting (The "Push" Method)
+   * Sub-task 3.1: Atomic Buffer Infrastructure
+       * Change: Set up a u32 storage buffer for atomic density accumulation (fixed-point) and a "Clear"
+         pass.
+   * Sub-task 3.2: Splatting Kernel & Resolve
+       * Change: Implement the new splatting logic where particles write to the volume, plus a "Resolve"
+         pass to copy it to the filterable texture.
+       * Goal: Massive speedup in volume generation ($O(N\_particles)$ instead of $O(Voxels)$).
+       * Verification: The fluid volume should look the same as the current "Pull" method.
