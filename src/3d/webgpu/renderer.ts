@@ -191,6 +191,8 @@ export class Renderer {
    * Recreated on canvas resize.
    */
   private depthTexture!: GPUTexture;
+  private depthWidth = 0;
+  private depthHeight = 0;
 
   // ===========================================================================
   // Constructor
@@ -381,15 +383,23 @@ export class Renderer {
    * The depth texture must match the canvas size exactly.
    */
   resize() {
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    if (this.depthTexture && width === this.depthWidth && height === this.depthHeight) {
+      return;
+    }
+
     // Destroy old depth texture if it exists
     if (this.depthTexture) this.depthTexture.destroy();
 
     // Create new depth texture matching canvas size
     this.depthTexture = this.device.createTexture({
-      size: [this.canvas.width, this.canvas.height],
+      size: [width, height],
       format: 'depth24plus',
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
+    this.depthWidth = width;
+    this.depthHeight = height;
   }
 
   // ===========================================================================
@@ -641,12 +651,11 @@ export class Renderer {
     );
 
     // Upload line vertex data
+    const lineVertexView = this.lineVertexData.subarray(0, vertexCount * 7);
     this.device.queue.writeBuffer(
       this.lineVertexBuffer,
       0,
-      this.lineVertexData as unknown as BufferSource,
-      0,
-      vertexCount * 7
+      lineVertexView
     );
 
     // -------------------------------------------------------------------------
