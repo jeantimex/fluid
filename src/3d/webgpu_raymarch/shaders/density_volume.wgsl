@@ -84,7 +84,7 @@ fn densityAtPoint(worldPos: vec3<f32>) -> f32 {
   return density;
 }
 
-@compute @workgroup_size(4, 4, 4)
+@compute @workgroup_size(8, 8, 4)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   if (id.x >= params.volumeSize.x || id.y >= params.volumeSize.y || id.z >= params.volumeSize.z) {
     return;

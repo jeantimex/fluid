@@ -139,7 +139,7 @@ export class FluidSimulation {
   private densityTextureView!: GPUTextureView;
   private densityTextureSize = { x: 1, y: 1, z: 1 };
 
-  private densityWorkgroupSize = 4;
+  private densityWorkgroupSize = { x: 8, y: 8, z: 4 };
 
   /** Handles raymarch rendering */
   private renderer: RaymarchRenderer;
@@ -567,9 +567,9 @@ export class FluidSimulation {
     densityPass.setPipeline(this.densityVolumePipeline);
     densityPass.setBindGroup(0, this.densityVolumeBindGroup);
     densityPass.dispatchWorkgroups(
-      Math.ceil(this.densityTextureSize.x / this.densityWorkgroupSize),
-      Math.ceil(this.densityTextureSize.y / this.densityWorkgroupSize),
-      Math.ceil(this.densityTextureSize.z / this.densityWorkgroupSize)
+      Math.ceil(this.densityTextureSize.x / this.densityWorkgroupSize.x),
+      Math.ceil(this.densityTextureSize.y / this.densityWorkgroupSize.y),
+      Math.ceil(this.densityTextureSize.z / this.densityWorkgroupSize.z)
     );
     densityPass.end();
     device.queue.submit([densityEncoder.finish()]);

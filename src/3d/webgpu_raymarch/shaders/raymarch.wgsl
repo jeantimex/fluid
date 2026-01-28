@@ -426,6 +426,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let iorFluid = params.indexOfRefraction;
   
   for (var i = 0; i < i32(params.numRefractions); i = i + 1) {
+     if (all(totalTransmittance < vec3<f32>(0.01))) {
+        break;
+     }
      let densityStepSize = params.stepSize * f32(i + 1);
      let searchForNextFluidEntryPoint = !travellingThroughFluid;
      
