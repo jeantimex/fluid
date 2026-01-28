@@ -38,6 +38,8 @@ export class RaymarchRenderer {
       },
     });
 
+    this.uniformData = new Float32Array(56); // Increased size for new params
+
     this.uniformBuffer = device.createBuffer({
       size: this.uniformData.byteLength,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -104,10 +106,48 @@ export class RaymarchRenderer {
     this.uniformData[21] = config.stepSize;
     this.uniformData[22] = aspect;
     this.uniformData[23] = fovY;
+
     this.uniformData[24] = config.maxSteps;
-    this.uniformData[25] = 0;
-    this.uniformData[26] = 0;
-    this.uniformData[27] = 0;
+    this.uniformData[25] = config.tileScale;
+    this.uniformData[26] = config.tileDarkOffset;
+    this.uniformData[27] = 0; // padding
+
+    // Tile Colors
+    this.uniformData[28] = config.tileCol1.r;
+    this.uniformData[29] = config.tileCol1.g;
+    this.uniformData[30] = config.tileCol1.b;
+    this.uniformData[31] = 0;
+
+    this.uniformData[32] = config.tileCol2.r;
+    this.uniformData[33] = config.tileCol2.g;
+    this.uniformData[34] = config.tileCol2.b;
+    this.uniformData[35] = 0;
+
+    this.uniformData[36] = config.tileCol3.r;
+    this.uniformData[37] = config.tileCol3.g;
+    this.uniformData[38] = config.tileCol3.b;
+    this.uniformData[39] = 0;
+
+    this.uniformData[40] = config.tileCol4.r;
+    this.uniformData[41] = config.tileCol4.g;
+    this.uniformData[42] = config.tileCol4.b;
+    this.uniformData[43] = 0;
+
+    // Variation & Sun
+    this.uniformData[44] = config.tileColVariation.x;
+    this.uniformData[45] = config.tileColVariation.y;
+    this.uniformData[46] = config.tileColVariation.z;
+    this.uniformData[47] = 0;
+
+    this.uniformData[48] = 0.83; // dirToSun.x
+    this.uniformData[49] = 0.42; // dirToSun.y
+    this.uniformData[50] = 0.36; // dirToSun.z
+    this.uniformData[51] = 0;
+
+    this.uniformData[52] = config.extinctionCoefficients.x;
+    this.uniformData[53] = config.extinctionCoefficients.y;
+    this.uniformData[54] = config.extinctionCoefficients.z;
+    this.uniformData[55] = 0;
 
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);
 

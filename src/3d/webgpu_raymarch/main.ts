@@ -401,6 +401,14 @@ const config: RaymarchConfig = {
   densityMultiplier: 0.05,
   stepSize: 0.08,
   maxSteps: 512,
+  tileCol1: { r: 0.20392157, g: 0.5176471, b: 0.7764706 },
+  tileCol2: { r: 0.6081319, g: 0.36850303, b: 0.8584906 },
+  tileCol3: { r: 0.3019758, g: 0.735849, b: 0.45801795 },
+  tileCol4: { r: 0.8018868, g: 0.6434483, b: 0.36690104 },
+  tileColVariation: { x: 0.33, y: 0, z: 0.47 },
+  tileScale: 1,
+  tileDarkOffset: -0.35,
+  extinctionCoefficients: { x: 12, y: 4, z: 4 },
 };
 
 // Simulation instance (initialized asynchronously in main())
