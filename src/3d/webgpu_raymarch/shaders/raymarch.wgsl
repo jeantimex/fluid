@@ -50,6 +50,46 @@ fn rayBoxIntersection(origin: vec3<f32>, dir: vec3<f32>, boundsMin: vec3<f32>, b
   return vec2<f32>(tmin, tmax);
 }
 
+fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
+  let uvw = (pos + 0.5 * params.boundsSize) / params.boundsSize;
+  return textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r - params.densityOffset;
+}
+
+fn densityGradient(pos: vec3<f32>, eps: f32) -> vec3<f32> {
+  let dx = sampleDensityRaw(pos + vec3<f32>(eps, 0.0, 0.0)) - sampleDensityRaw(pos - vec3<f32>(eps, 0.0, 0.0));
+  let dy = sampleDensityRaw(pos + vec3<f32>(0.0, eps, 0.0)) - sampleDensityRaw(pos - vec3<f32>(0.0, eps, 0.0));
+  let dz = sampleDensityRaw(pos + vec3<f32>(0.0, 0.0, eps)) - sampleDensityRaw(pos - vec3<f32>(0.0, 0.0, eps));
+  return vec3<f32>(dx, dy, dz);
+}
+
+fn skyColor(dir: vec3<f32>) -> vec3<f32> {
+  let t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
+  let top = vec3<f32>(0.45, 0.65, 0.95);
+  let bottom = vec3<f32>(0.1, 0.12, 0.16);
+  return mix(bottom, top, t);
+}
+
+fn floorColor(pos: vec3<f32>) -> vec3<f32> {
+  let scale = 0.6;
+  let q = pos.xz * scale;
+  let check = (i32(floor(q.x)) + i32(floor(q.y))) & 1;
+  let c1 = vec3<f32>(0.28, 0.55, 0.85);
+  let c2 = vec3<f32>(0.75, 0.65, 0.9);
+  return select(c1, c2, check == 1);
+}
+
+fn environmentColor(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
+  let floorY = -0.5 * params.boundsSize.y;
+  if (abs(dir.y) > 0.0001) {
+    let t = (floorY - origin.y) / dir.y;
+    if (t > 0.0) {
+      let hitPos = origin + dir * t;
+      return floorColor(hitPos);
+    }
+  }
+  return skyColor(dir);
+}
+
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let ndc = in.uv * 2.0 - vec2<f32>(1.0);
@@ -62,7 +102,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let hit = rayBoxIntersection(params.viewPos, rayDir, boundsMin, boundsMax);
 
   if (hit.y <= max(hit.x, 0.0)) {
-    return vec4<f32>(0.03, 0.05, 0.08, 1.0);
+    let env = environmentColor(params.viewPos, rayDir);
+    return vec4<f32>(env, 1.0);
   }
 
   let tStart = max(hit.x, 0.0);
@@ -70,6 +111,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let maxSteps = u32(params.maxSteps + 0.5);
 
   var opticalDepth = 0.0;
+  var hitPos = vec3<f32>(0.0);
+  var hitFound = false;
   var t = tStart;
 
   for (var i = 0u; i < maxSteps; i = i + 1u) {
@@ -78,18 +121,38 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     }
 
     let pos = params.viewPos + rayDir * t;
-    let uvw = (pos + 0.5 * params.boundsSize) / params.boundsSize;
-    let sample = textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r;
-    let density = max(0.0, sample - params.densityOffset) * params.densityMultiplier;
+    let sample = sampleDensityRaw(pos);
+    if (!hitFound && sample > 0.0002) {
+      hitFound = true;
+      hitPos = pos;
+    }
+    let density = max(0.0, sample - 0.0002) * params.densityMultiplier;
     opticalDepth = opticalDepth + density * params.stepSize;
 
     t = t + params.stepSize;
   }
 
-  let alpha = 1.0 - exp(-opticalDepth);
-  let fluidColor = vec3<f32>(0.12, 0.45, 0.8);
-  let bgColor = vec3<f32>(0.03, 0.05, 0.08);
-  let color = mix(bgColor, fluidColor, clamp(alpha, 0.0, 1.0));
+  if (!hitFound) {
+    let bg = environmentColor(params.viewPos, rayDir);
+    return vec4<f32>(bg, 1.0);
+  }
+
+  opticalDepth = max(opticalDepth, 0.01);
+  let alpha = 1.0 - exp(-opticalDepth * 6.0);
+  let fluidColor = vec3<f32>(0.35, 0.75, 1.0);
+  let bgColor = environmentColor(params.viewPos, rayDir);
+  var color = mix(bgColor, fluidColor, clamp(alpha, 0.0, 1.0));
+  color = min(color + vec3<f32>(0.2), vec3<f32>(1.0));
+
+  if (hitFound) {
+    let grad = densityGradient(hitPos, params.stepSize);
+    if (dot(grad, grad) > 0.0) {
+      let normal = normalize(grad);
+      let fresnel = pow(1.0 - clamp(dot(-rayDir, normal), 0.0, 1.0), 5.0);
+      let refl = environmentColor(hitPos, reflect(rayDir, normal));
+      color = mix(color, refl, 0.35 * fresnel + 0.1);
+    }
+  }
 
   return vec4<f32>(color, 1.0);
 }
