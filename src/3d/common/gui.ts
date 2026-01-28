@@ -94,10 +94,10 @@ export function setupGui(
     trackGPU: options.trackGPU ?? false,
     horizontal: true,
   });
-  stats.dom.style.display = 'none';
+  stats.dom.style.display = 'block';
   document.body.appendChild(stats.dom);
 
-  const uiState = { showStats: false };
+  const uiState = { showStats: true };
 
   const particlesFolder = gui.addFolder('Particles');
   particlesFolder.close();
