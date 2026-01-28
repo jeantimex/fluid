@@ -399,8 +399,8 @@ const config: RaymarchConfig = {
   densityTextureRes: 150,
   densityOffset: 200,
   densityMultiplier: 0.05,
-  stepSize: 0.02,
-  maxSteps: 256,
+  stepSize: 0.08,
+  maxSteps: 512,
 };
 
 // Simulation instance (initialized asynchronously in main())
@@ -436,8 +436,8 @@ raymarchFolder.add(config, 'densityOffset', 0, 400, 1).name('Density Offset');
 raymarchFolder
   .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
   .name('Density Multiplier');
-raymarchFolder.add(config, 'stepSize', 0.005, 0.1, 0.001).name('Step Size');
-raymarchFolder.add(config, 'maxSteps', 32, 512, 1).name('Max Steps');
+raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
+raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
 
 /**
  * Main Application Entry Point
