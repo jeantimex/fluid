@@ -409,6 +409,8 @@ const config: RaymarchConfig = {
   tileScale: 1,
   tileDarkOffset: -0.35,
   extinctionCoefficients: { x: 12, y: 4, z: 4 },
+  indexOfRefraction: 1.33,
+  numRefractions: 4,
 };
 
 // Simulation instance (initialized asynchronously in main())

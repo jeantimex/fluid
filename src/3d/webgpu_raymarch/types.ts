@@ -14,4 +14,6 @@ export interface RaymarchConfig extends SimConfig {
   tileScale: number;
   tileDarkOffset: number;
   extinctionCoefficients: { x: number; y: number; z: number };
+  indexOfRefraction: number;
+  numRefractions: number;
 }

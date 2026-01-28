@@ -38,7 +38,7 @@ export class RaymarchRenderer {
       },
     });
 
-    this.uniformData = new Float32Array(56); // Increased size for new params
+    this.uniformData = new Float32Array(60); // Increased size for new params
 
     this.uniformBuffer = device.createBuffer({
       size: this.uniformData.byteLength,
@@ -148,6 +148,11 @@ export class RaymarchRenderer {
     this.uniformData[53] = config.extinctionCoefficients.y;
     this.uniformData[54] = config.extinctionCoefficients.z;
     this.uniformData[55] = 0;
+
+    this.uniformData[56] = config.indexOfRefraction;
+    this.uniformData[57] = config.numRefractions;
+    this.uniformData[58] = 0; // padding
+    this.uniformData[59] = 0; // padding
 
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);
 

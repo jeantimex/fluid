@@ -31,6 +31,9 @@ struct RaymarchParams {
   pad10: f32,
   extinctionCoefficients: vec3<f32>,
   pad11: f32,
+  indexOfRefraction: f32,
+  numRefractions: f32,
+  pad12: vec2<f32>,
 };
 
 @group(0) @binding(0) var densityTex: texture_3d<f32>;
@@ -84,15 +87,134 @@ fn sampleDensity(pos: vec3<f32>) -> f32 {
   return textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r - params.densityOffset;
 }
 
-fn densityGradient(pos: vec3<f32>, eps: f32) -> vec3<f32> {
-  let dx = sampleDensityRaw(pos + vec3<f32>(eps, 0.0, 0.0)) - sampleDensityRaw(pos - vec3<f32>(eps, 0.0, 0.0));
-  let dy = sampleDensityRaw(pos + vec3<f32>(0.0, eps, 0.0)) - sampleDensityRaw(pos - vec3<f32>(0.0, eps, 0.0));
-  let dz = sampleDensityRaw(pos + vec3<f32>(0.0, 0.0, eps)) - sampleDensityRaw(pos - vec3<f32>(0.0, 0.0, eps));
-  return vec3<f32>(dx, dy, dz);
+fn isInsideFluid(pos: vec3<f32>) -> bool {
+  let boundsMin = -0.5 * params.boundsSize;
+  let boundsMax = 0.5 * params.boundsSize;
+  let hit = rayBoxIntersection(pos, vec3<f32>(0.0, 0.0, 1.0), boundsMin, boundsMax);
+  return (hit.x <= 0.0 && hit.y > 0.0) && sampleDensity(pos) > 0.0;
+}
+
+fn calculateClosestFaceNormal(boxSize: vec3<f32>, p: vec3<f32>) -> vec3<f32> {
+  let halfSize = boxSize * 0.5;
+  let o = halfSize - abs(p);
+  if (o.x < o.y && o.x < o.z) {
+    return vec3<f32>(sign(p.x), 0.0, 0.0);
+  } else if (o.y < o.z) {
+    return vec3<f32>(0.0, sign(p.y), 0.0);
+  } else {
+    return vec3<f32>(0.0, 0.0, sign(p.z));
+  }
+}
+
+fn calculateNormal(pos: vec3<f32>) -> vec3<f32> {
+  let s = 0.1;
+  let offsetX = vec3<f32>(s, 0.0, 0.0);
+  let offsetY = vec3<f32>(0.0, s, 0.0);
+  let offsetZ = vec3<f32>(0.0, 0.0, s);
+
+  let dx = sampleDensity(pos - offsetX) - sampleDensity(pos + offsetX);
+  let dy = sampleDensity(pos - offsetY) - sampleDensity(pos + offsetY);
+  let dz = sampleDensity(pos - offsetZ) - sampleDensity(pos + offsetZ);
+
+  let volumeNormal = normalize(vec3<f32>(dx, dy, dz));
+
+  // Smoothly flatten normals out at boundary edges
+  let o = params.boundsSize * 0.5 - abs(pos);
+  var faceWeight = min(o.x, min(o.y, o.z));
+  let faceNormal = calculateClosestFaceNormal(params.boundsSize, pos);
+  
+  let smoothDst = 0.3;
+  let smoothPow = 5.0;
+  
+  // smoothstep(edge0, edge1, x)
+  let smoothFactor = smoothstep(0.0, smoothDst, faceWeight);
+  let volFactor = pow(clamp(volumeNormal.y, 0.0, 1.0), smoothPow);
+  
+  faceWeight = (1.0 - smoothFactor) * (1.0 - volFactor);
+
+  return normalize(mix(volumeNormal, faceNormal, faceWeight));
+}
+
+struct SurfaceInfo {
+  pos: vec3<f32>,
+  densityAlongRay: f32,
+  foundSurface: bool,
+};
+
+fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint: bool, rngState: ptr<function, u32>, maxDst: f32) -> SurfaceInfo {
+  var info: SurfaceInfo;
+  info.densityAlongRay = 0.0;
+  info.foundSurface = false;
+  
+  if (dot(rayDir, rayDir) < 0.5) { return info; }
+
+  let boundsMin = -0.5 * params.boundsSize;
+  let boundsMax = 0.5 * params.boundsSize;
+  let boundsDstInfo = rayBoxIntersection(origin, rayDir, boundsMin, boundsMax);
+  
+  // Random jitter
+  let r = (randomValue(rngState) - 0.5) * params.stepSize * 0.4;
+  
+  var currentOrigin = origin;
+  // If outside box, jump to box
+  if (boundsDstInfo.x > 0.0) {
+     currentOrigin = origin + rayDir * (boundsDstInfo.x + r);
+  } else {
+     // Inside box
+     currentOrigin = origin + rayDir * r;
+  }
+  
+  var hasExittedFluid = !isInsideFluid(origin);
+  
+  let stepSize = params.stepSize;
+  var hasEnteredFluid = false;
+  var lastPosInFluid = currentOrigin;
+  
+  // Max distance inside box
+  let dstToTest = boundsDstInfo.y - 0.01; // TinyNudge
+  
+  var dst = 0.0;
+  for (var i = 0u; i < 512u; i = i + 1u) { // Hard limit loop
+    if (dst >= dstToTest) { break; }
+    
+    let isLastStep = (dst + stepSize) >= dstToTest;
+    let samplePos = currentOrigin + rayDir * dst;
+    let thickness = sampleDensity(samplePos) * params.densityMultiplier * stepSize;
+    let insideFluid = thickness > 0.0;
+    
+    if (insideFluid) {
+      hasEnteredFluid = true;
+      lastPosInFluid = samplePos;
+      if (dst <= maxDst) {
+         info.densityAlongRay = info.densityAlongRay + thickness;
+      }
+    }
+    
+    if (!insideFluid) {
+      hasExittedFluid = true;
+    }
+    
+    var found = false;
+    if (findNextFluidEntryPoint) {
+      found = insideFluid && hasExittedFluid;
+    } else {
+      found = hasEnteredFluid && (!insideFluid || isLastStep);
+    }
+    
+    if (found) {
+      info.pos = lastPosInFluid;
+      info.foundSurface = true;
+      break;
+    }
+    
+    dst = dst + stepSize;
+  }
+  
+  return info;
 }
 
 // =============================================================================
-// Color & Environment Logic (Ported from Unity)
+// Lighting & Environment
 // =============================================================================
 
 fn rgbToHsv(rgb: vec3<f32>) -> vec3<f32> {
@@ -120,7 +242,6 @@ fn hashInt2(v: vec2<i32>) -> u32 {
   return u32(v.x) * 5023u + u32(v.y) * 96456u;
 }
 
-// PCG Random
 fn nextRandom(state: ptr<function, u32>) -> u32 {
   *state = *state * 747796405u + 2891336453u;
   let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
@@ -143,12 +264,10 @@ fn modulo(x: f32, y: f32) -> f32 {
   return x - y * floor(x / y);
 }
 
-fn calculateDensityAlongRay(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) -> f32 {
+fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) -> f32 {
     let boundsMin = -0.5 * params.boundsSize;
     let boundsMax = 0.5 * params.boundsSize;
     let hit = rayBoxIntersection(rayPos, rayDir, boundsMin, boundsMax);
-    
-    // Check if ray intersects bounds
     if (hit.y <= max(hit.x, 0.0)) { return 0.0; }
     
     let tStart = max(hit.x, 0.0);
@@ -156,7 +275,6 @@ fn calculateDensityAlongRay(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) -
     if (tStart >= tEnd) { return 0.0; }
     
     var opticalDepth = 0.0;
-    // Use a larger step size for shadows to be cheaper
     let shadowStep = params.stepSize * 2.0; 
     var t = tStart;
     
@@ -164,8 +282,8 @@ fn calculateDensityAlongRay(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) -
         if (t >= tEnd) { break; }
         let pos = rayPos + rayDir * t;
         let d = max(0.0, sampleDensityRaw(pos));
-        opticalDepth += d * params.densityMultiplier * shadowStep;
-        t += shadowStep;
+        opticalDepth = opticalDepth + d * params.densityMultiplier * shadowStep;
+        t = t + shadowStep;
     }
     return opticalDepth;
 }
@@ -189,37 +307,26 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     if (t > 0.0) {
       let hitPos = origin + dir * t;
       
-      // Choose tileCol based on quadrant
       var tileCol = params.tileCol1;
-      if (hitPos.x >= 0.0) {
-        tileCol = params.tileCol2;
-      }
+      if (hitPos.x >= 0.0) { tileCol = params.tileCol2; }
       if (hitPos.z < 0.0) {
-        if (hitPos.x < 0.0) {
-           tileCol = params.tileCol3;
-        } else {
-           tileCol = params.tileCol4;
-        }
+        if (hitPos.x < 0.0) { tileCol = params.tileCol3; }
+        else { tileCol = params.tileCol4; }
       }
 
-      // Checkerboard
       let tileCoord = floor(hitPos.xz * params.tileScale);
       let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
       
       var offset = 0.0;
-      if (isDarkTile) {
-        offset = params.tileDarkOffset;
-      }
+      if (isDarkTile) { offset = params.tileDarkOffset; }
       tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, offset));
 
-      // Random Variation
       var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
       let randomVariation = randomSNorm3(&rngState) * params.tileColVariation * 0.1;
       tileCol = tweakHsv(tileCol, randomVariation);
       
-      // Shadow (from fluid)
-      let shadowDepth = calculateDensityAlongRay(hitPos, params.dirToSun, 100.0);
-      let shadowMap = transmittance(shadowDepth * 2.0); // * 2 to match Unity
+      let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
+      let shadowMap = transmittance(shadowDepth * 2.0);
       
       return tileCol * shadowMap;
     }
@@ -228,70 +335,155 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
   return skyColor(dir);
 }
 
+// =============================================================================
+// Refraction / Reflection
+// =============================================================================
+
+struct LightResponse {
+    reflectDir: vec3<f32>,
+    refractDir: vec3<f32>,
+    reflectWeight: f32,
+    refractWeight: f32,
+};
+
+fn calculateReflectance(inDir: vec3<f32>, normal: vec3<f32>, iorA: f32, iorB: f32) -> f32 {
+    let refractRatio = iorA / iorB;
+    let cosAngleIn = -dot(inDir, normal);
+    let sinSqrAngleOfRefraction = refractRatio * refractRatio * (1.0 - cosAngleIn * cosAngleIn);
+    
+    if (sinSqrAngleOfRefraction >= 1.0) { return 1.0; } // Total internal reflection
+
+    let cosAngleOfRefraction = sqrt(1.0 - sinSqrAngleOfRefraction);
+    
+    var rPerp = (iorA * cosAngleIn - iorB * cosAngleOfRefraction) / (iorA * cosAngleIn + iorB * cosAngleOfRefraction);
+    rPerp = rPerp * rPerp;
+    
+    var rPara = (iorB * cosAngleIn - iorA * cosAngleOfRefraction) / (iorB * cosAngleIn + iorA * cosAngleOfRefraction);
+    rPara = rPara * rPara;
+
+    return (rPerp + rPara) * 0.5;
+}
+
+fn refract(inDir: vec3<f32>, normal: vec3<f32>, iorA: f32, iorB: f32) -> vec3<f32> {
+    let refractRatio = iorA / iorB;
+    let cosAngleIn = -dot(inDir, normal);
+    let sinSqrAngleOfRefraction = refractRatio * refractRatio * (1.0 - cosAngleIn * cosAngleIn);
+    
+    if (sinSqrAngleOfRefraction > 1.0) { return vec3<f32>(0.0); }
+
+    return refractRatio * inDir + (refractRatio * cosAngleIn - sqrt(1.0 - sinSqrAngleOfRefraction)) * normal;
+}
+
+fn calculateReflectionAndRefraction(inDir: vec3<f32>, normal: vec3<f32>, iorA: f32, iorB: f32) -> LightResponse {
+    var res: LightResponse;
+    res.reflectWeight = calculateReflectance(inDir, normal, iorA, iorB);
+    res.refractWeight = 1.0 - res.reflectWeight;
+    res.reflectDir = reflect(inDir, normal);
+    res.refractDir = refract(inDir, normal, iorA, iorB);
+    return res;
+}
+
+fn calculateDensityForRefraction(rayPos: vec3<f32>, rayDir: vec3<f32>, stepSize: f32) -> f32 {
+   // Simplified trace for comparing paths
+   return calculateDensityForShadow(rayPos, rayDir, 100.0); 
+}
+
+// =============================================================================
+// Main
+// =============================================================================
+
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let ndc = in.uv * 2.0 - vec2<f32>(1.0);
   let tanFov = tan(0.5 * params.fovY);
-  var rayDir = params.cameraForward + params.cameraRight * (ndc.x * params.aspect * tanFov) + params.cameraUp * (ndc.y * tanFov);
-  rayDir = normalize(rayDir);
+  var rayDir = normalize(params.cameraForward + params.cameraRight * (ndc.x * params.aspect * tanFov) + params.cameraUp * (ndc.y * tanFov));
+  var rayPos = params.viewPos;
+  
+  // Seed random
+  var rngState = hashInt2(vec2<i32>(i32(in.uv.x * 5000.0), i32(in.uv.y * 5000.0)));
 
-  let boundsMin = -0.5 * params.boundsSize;
-  let boundsMax = 0.5 * params.boundsSize;
-  let hit = rayBoxIntersection(params.viewPos, rayDir, boundsMin, boundsMax);
-
-  // If ray misses box or is behind us
-  if (hit.y <= max(hit.x, 0.0)) {
-    let env = sampleEnvironment(params.viewPos, rayDir);
-    return vec4<f32>(env, 1.0);
+  var travellingThroughFluid = isInsideFluid(rayPos);
+  
+  var totalTransmittance = vec3<f32>(1.0);
+  var totalLight = vec3<f32>(0.0);
+  
+  let iorAir = 1.0;
+  let iorFluid = params.indexOfRefraction;
+  
+  for (var i = 0; i < i32(params.numRefractions); i = i + 1) {
+     let densityStepSize = params.stepSize * f32(i + 1);
+     let searchForNextFluidEntryPoint = !travellingThroughFluid;
+     
+     // Note: passing 1000.0 as maxDst for now
+     let surfaceInfo = findNextSurface(rayPos, rayDir, searchForNextFluidEntryPoint, &rngState, 1000.0);
+     
+     if (!surfaceInfo.foundSurface) {
+        break;
+     }
+     
+     totalTransmittance = totalTransmittance * transmittance(surfaceInfo.densityAlongRay);
+     
+     // Check if we hit floor? Unity checks `surfaceInfo.pos.y < -boundsSize.y / 2 + 0.05`
+     if (surfaceInfo.pos.y < -params.boundsSize.y * 0.5 + 0.05) {
+        break;
+     }
+     
+     var normal = calculateNormal(surfaceInfo.pos);
+     if (dot(normal, rayDir) > 0.0) {
+        normal = -normal;
+     }
+     
+     let iorA = select(iorFluid, iorAir, !travellingThroughFluid); // if travelling through fluid, iorA = fluid
+     let iorB = select(iorAir, iorFluid, !travellingThroughFluid); // target
+     
+     // If we are currently IN fluid, iorA is fluid, iorB is air.
+     // But wait, `travellingThroughFluid` is true if we ARE in fluid.
+     // So iorA should be iorFluid.
+     // Correct: select(falseVal, trueVal, condition) in WGSL?
+     // select(f, t, cond) -> if cond is true, returns t.
+     
+     // Unity:
+     // float iorA = travellingThroughFluid ? indexOfRefraction : iorAir;
+     // float iorB = travellingThroughFluid ? iorAir : indexOfRefraction;
+     
+     let response = calculateReflectionAndRefraction(rayDir, normal, select(iorAir, iorFluid, travellingThroughFluid), select(iorFluid, iorAir, travellingThroughFluid));
+     
+     // Approximate densities for heuristic
+     let densityRefract = calculateDensityForRefraction(surfaceInfo.pos, response.refractDir, densityStepSize);
+     let densityReflect = calculateDensityForRefraction(surfaceInfo.pos, response.reflectDir, densityStepSize);
+     
+     let traceRefractedRay = (densityRefract * response.refractWeight) > (densityReflect * response.reflectWeight);
+     
+     // Update state for next iteration
+     travellingThroughFluid = (traceRefractedRay != travellingThroughFluid);
+     
+     if (traceRefractedRay) {
+        // Add reflection contribution immediately (heuristic)
+        let reflectLight = sampleEnvironment(surfaceInfo.pos, response.reflectDir);
+        let reflectTrans = transmittance(densityReflect);
+        totalLight = totalLight + reflectLight * totalTransmittance * reflectTrans * response.reflectWeight;
+        
+        // Continue with refraction
+        rayPos = surfaceInfo.pos;
+        rayDir = response.refractDir;
+        totalTransmittance = totalTransmittance * response.refractWeight;
+     } else {
+        // Add refraction contribution
+        let refractLight = sampleEnvironment(surfaceInfo.pos, response.refractDir);
+        let refractTrans = transmittance(densityRefract);
+        totalLight = totalLight + refractLight * totalTransmittance * refractTrans * response.refractWeight;
+        
+        // Continue with reflection
+        rayPos = surfaceInfo.pos;
+        rayDir = response.reflectDir;
+        totalTransmittance = totalTransmittance * response.reflectWeight;
+     }
   }
-
-  let tStart = max(hit.x, 0.0);
-  let tEnd = hit.y;
-  let maxSteps = u32(params.maxSteps + 0.5);
-
-  var opticalDepth = 0.0;
-  var hitPos = vec3<f32>(0.0);
-  var hitFound = false;
-  var t = tStart;
-
-  for (var i = 0u; i < maxSteps; i = i + 1u) {
-    if (t > tEnd) {
-      break;
-    }
-
-    let pos = params.viewPos + rayDir * t;
-    let sample = sampleDensityRaw(pos);
-    if (!hitFound && sample > 0.0002) {
-      hitFound = true;
-      hitPos = pos;
-    }
-    let density = max(0.0, sample - 0.0002) * params.densityMultiplier;
-    opticalDepth = opticalDepth + density * params.stepSize;
-
-    t = t + params.stepSize;
-  }
-
-  if (!hitFound) {
-    let bg = sampleEnvironment(params.viewPos, rayDir);
-    return vec4<f32>(bg, 1.0);
-  }
-
-  opticalDepth = max(opticalDepth, 0.01);
-  let alpha = 1.0 - exp(-opticalDepth * 6.0);
-  let fluidColor = vec3<f32>(0.35, 0.75, 1.0);
-  let bgColor = sampleEnvironment(params.viewPos, rayDir);
-  var color = mix(bgColor, fluidColor, clamp(alpha, 0.0, 1.0));
-  color = min(color + vec3<f32>(0.2), vec3<f32>(1.0));
-
-  if (hitFound) {
-    let grad = densityGradient(hitPos, params.stepSize);
-    if (dot(grad, grad) > 0.0) {
-      let normal = normalize(grad);
-      let fresnel = pow(1.0 - clamp(dot(-rayDir, normal), 0.0, 1.0), 5.0);
-      let refl = sampleEnvironment(hitPos, reflect(rayDir, normal));
-      color = mix(color, refl, 0.35 * fresnel + 0.1);
-    }
-  }
-
-  return vec4<f32>(color, 1.0);
+  
+  // Approximate remaining path
+  let densityRemainder = calculateDensityForShadow(rayPos, rayDir, 1000.0);
+  let finalBg = sampleEnvironment(rayPos, rayDir);
+  totalLight = totalLight + finalBg * totalTransmittance * transmittance(densityRemainder);
+  
+  return vec4<f32>(totalLight, 1.0);
 }
