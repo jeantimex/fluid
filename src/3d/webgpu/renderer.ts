@@ -650,12 +650,25 @@ export class Renderer {
       0.5 // Semi-transparent
     );
 
+    // Draw obstacle if active
+    if (config.obstacleSize.x > 0) {
+      drawBox(
+        config.obstacleCentre.x,
+        config.obstacleCentre.y,
+        config.obstacleCentre.z,
+        config.obstacleSize.x,
+        config.obstacleSize.y,
+        config.obstacleSize.z,
+        1.0, 0.5, 0.0, 0.8 // Orange
+      );
+    }
+
     // Upload line vertex data
     const lineVertexView = this.lineVertexData.subarray(0, vertexCount * 7);
     this.device.queue.writeBuffer(
       this.lineVertexBuffer,
       0,
-      lineVertexView
+      lineVertexView as any
     );
 
     // -------------------------------------------------------------------------

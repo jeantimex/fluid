@@ -161,6 +161,50 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let halfBounds = params.halfBounds;
 
   // ========================================================================
+  // OBSTACLE COLLISION HANDLING (AABB)
+  // ========================================================================
+  // If enabled, check if particle is inside the obstacle box.
+  // If so, push it out to the nearest face and reflect velocity.
+
+  if (params.hasObstacle > 0.5) {
+      let obsCenter = params.obstacleCenter;
+      let obsHalf = params.obstacleHalf;
+
+      // Calculate position relative to obstacle center
+      let localPos = pos - obsCenter;
+
+      // Check if inside obstacle (overlap on all axes)
+      // We use a small epsilon for robustness, though strict inequality is fine
+      if (abs(localPos.x) < obsHalf.x && 
+          abs(localPos.y) < obsHalf.y && 
+          abs(localPos.z) < obsHalf.z) {
+
+          // Determine penetration depth on each axis
+          // (Distance to the nearest face)
+          let depthX = obsHalf.x - abs(localPos.x);
+          let depthY = obsHalf.y - abs(localPos.y);
+          let depthZ = obsHalf.z - abs(localPos.z);
+
+          // Find the axis of least penetration (closest face)
+          if (depthX < depthY && depthX < depthZ) {
+              // ---- X-AXIS COLLISION ----
+              // Snap to surface
+              pos.x = obsCenter.x + obsHalf.x * sign(localPos.x);
+              // Reflect velocity
+              vel.x = -vel.x * params.collisionDamping;
+          } else if (depthY < depthZ) {
+              // ---- Y-AXIS COLLISION ----
+              pos.y = obsCenter.y + obsHalf.y * sign(localPos.y);
+              vel.y = -vel.y * params.collisionDamping;
+          } else {
+              // ---- Z-AXIS COLLISION ----
+              pos.z = obsCenter.z + obsHalf.z * sign(localPos.z);
+              vel.z = -vel.z * params.collisionDamping;
+          }
+      }
+  }
+
+  // ========================================================================
   // BOUNDARY COLLISION HANDLING
   // ========================================================================
   // For each axis, check if particle has crossed the boundary.

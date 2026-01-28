@@ -818,7 +818,12 @@ export class FluidSimulation {
   private updateIntegrateUniforms(timeStep: number): void {
     this.integrateData[0] = timeStep;
     this.integrateData[1] = this.config.collisionDamping;
-    this.integrateData[2] = 0; // hasObstacle (not implemented)
+    
+    // Check if obstacle is active (has volume)
+    const hasObstacle = this.config.obstacleSize.x > 0 && 
+                       this.config.obstacleSize.y > 0 && 
+                       this.config.obstacleSize.z > 0;
+    this.integrateData[2] = hasObstacle ? 1 : 0;
 
     // Calculate half-extents of simulation bounds
     const hx = this.config.boundsSize.x * 0.5;
@@ -828,6 +833,15 @@ export class FluidSimulation {
     this.integrateData[4] = hx;
     this.integrateData[5] = hy;
     this.integrateData[6] = hz;
+
+    // Obstacle parameters
+    this.integrateData[8] = this.config.obstacleCentre.x;
+    this.integrateData[9] = this.config.obstacleCentre.y;
+    this.integrateData[10] = this.config.obstacleCentre.z;
+
+    this.integrateData[12] = this.config.obstacleSize.x * 0.5;
+    this.integrateData[13] = this.config.obstacleSize.y * 0.5;
+    this.integrateData[14] = this.config.obstacleSize.z * 0.5;
 
     this.device.queue.writeBuffer(
       this.pipelines.uniformBuffers.integrate,
