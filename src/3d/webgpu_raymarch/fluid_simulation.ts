@@ -84,10 +84,8 @@ import { SimulationBuffers } from '../webgpu_particles/simulation_buffers.ts';
 import { ComputePipelines } from '../webgpu_particles/compute_pipelines.ts';
 import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import { RaymarchRenderer } from './renderer.ts';
+import { SplatPipeline } from './splat_pipeline.ts';
 import type { RaymarchConfig } from './types.ts';
-import splatClearShader from './shaders/splat_clear.wgsl?raw';
-import splatParticlesShader from './shaders/splat_particles.wgsl?raw';
-import splatResolveShader from './shaders/splat_resolve.wgsl?raw';
 
 /**
  * Main orchestrator class for the 3D SPH fluid simulation.
@@ -123,36 +121,8 @@ export class FluidSimulation {
   /** Manages compute shader pipelines and bind groups */
   private pipelines: ComputePipelines;
 
-  /** Splat clear pipeline and bind group */
-  private splatClearPipeline: GPUComputePipeline;
-  private splatClearBindGroup!: GPUBindGroup;
-  private splatClearParamsBuffer: GPUBuffer;
-
-  /** Splat particles pipeline and bind group */
-  private splatParticlesPipeline: GPUComputePipeline;
-  private splatParticlesBindGroup!: GPUBindGroup;
-  private splatParticlesParamsBuffer: GPUBuffer;
-  private splatParticlesParamsData: ArrayBuffer;
-  private splatParticlesParamsF32: Float32Array;
-  private splatParticlesParamsU32: Uint32Array;
-
-  /** Splat resolve pipeline and bind group */
-  private splatResolvePipeline: GPUComputePipeline;
-  private splatResolveBindGroup!: GPUBindGroup;
-  private splatResolveParamsBuffer: GPUBuffer;
-  private splatResolveParamsData: ArrayBuffer;
-  private splatResolveParamsF32: Float32Array;
-  private splatResolveParamsU32: Uint32Array;
-
-  /** Atomic density buffer for particle splatting */
-  private atomicDensityBuffer!: GPUBuffer;
-
-  /** Density volume texture and view */
-  private densityTexture!: GPUTexture;
-  private densityTextureView!: GPUTextureView;
-  private densityTextureSize = { x: 1, y: 1, z: 1 };
-
-  private densityWorkgroupSize = { x: 8, y: 8, z: 4 };
+  /** Manages the 3-pass density splatting system */
+  private splatPipeline: SplatPipeline;
 
   /** Handles raymarch rendering */
   private renderer: RaymarchRenderer;
@@ -273,48 +243,8 @@ export class FluidSimulation {
     // Create compute pipelines (compiles all shaders)
     this.pipelines = new ComputePipelines(device);
 
-    // Splat clear pipeline
-    const clearModule = device.createShaderModule({ code: splatClearShader });
-    this.splatClearPipeline = device.createComputePipeline({
-      layout: 'auto',
-      compute: { module: clearModule, entryPoint: 'main' },
-    });
-    this.splatClearParamsBuffer = device.createBuffer({
-      size: 16, // totalVoxels (u32) + padding to 16-byte alignment
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    // Splat particles pipeline
-    const splatModule = device.createShaderModule({ code: splatParticlesShader });
-    this.splatParticlesPipeline = device.createComputePipeline({
-      layout: 'auto',
-      compute: { module: splatModule, entryPoint: 'main' },
-    });
-    // SplatParams: radius(f32), spikyPow2Scale(f32), particleCount(u32), fixedPointScale(f32),
-    //              boundsSize(vec3<f32>), pad0(f32), volumeSize(vec3<u32>), pad1(u32) = 48 bytes
-    this.splatParticlesParamsData = new ArrayBuffer(48);
-    this.splatParticlesParamsF32 = new Float32Array(this.splatParticlesParamsData);
-    this.splatParticlesParamsU32 = new Uint32Array(this.splatParticlesParamsData);
-    this.splatParticlesParamsBuffer = device.createBuffer({
-      size: 48,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    // Splat resolve pipeline
-    const resolveModule = device.createShaderModule({ code: splatResolveShader });
-    this.splatResolvePipeline = device.createComputePipeline({
-      layout: 'auto',
-      compute: { module: resolveModule, entryPoint: 'main' },
-    });
-    // ResolveParams: fixedPointScale(f32), pad0(f32), pad1(f32), pad2(f32),
-    //                volumeSize(vec3<u32>), pad3(u32) = 32 bytes
-    this.splatResolveParamsData = new ArrayBuffer(32);
-    this.splatResolveParamsF32 = new Float32Array(this.splatResolveParamsData);
-    this.splatResolveParamsU32 = new Uint32Array(this.splatResolveParamsData);
-    this.splatResolveParamsBuffer = device.createBuffer({
-      size: 32,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    // Create splat pipeline (density volume splatting)
+    this.splatPipeline = new SplatPipeline(device);
 
     // Create renderer (raymarched volume)
     this.renderer = new RaymarchRenderer(device, canvas, format);
@@ -358,10 +288,6 @@ export class FluidSimulation {
       this.buffers.destroy();
     }
 
-    if (this.densityTexture) {
-      this.densityTexture.destroy();
-    }
-
     // Generate initial particle positions and velocities
     const spawn = createSpawnData(this.config);
 
@@ -374,81 +300,8 @@ export class FluidSimulation {
     // Recreate bind groups to point to new buffers
     this.pipelines.createBindGroups(this.buffers);
 
-    this.createDensityTexture();
-    this.createAtomicDensityBuffer();
-    this.createSplatBindGroups();
-    this.renderer.createBindGroup(this.densityTextureView);
-  }
-
-  private createDensityTexture(): void {
-    const bounds = this.config.boundsSize;
-    const maxAxis = Math.max(bounds.x, bounds.y, bounds.z);
-
-    const targetRes = Math.max(1, Math.round(this.config.densityTextureRes));
-    const width = Math.max(1, Math.round((bounds.x / maxAxis) * targetRes));
-    const height = Math.max(1, Math.round((bounds.y / maxAxis) * targetRes));
-    const depth = Math.max(1, Math.round((bounds.z / maxAxis) * targetRes));
-
-    this.densityTextureSize = { x: width, y: height, z: depth };
-
-    this.densityTexture = this.device.createTexture({
-      size: { width, height, depthOrArrayLayers: depth },
-      dimension: '3d',
-      format: 'rgba16float',
-      usage:
-        GPUTextureUsage.STORAGE_BINDING |
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_SRC,
-    });
-
-    this.densityTextureView = this.densityTexture.createView({
-      dimension: '3d',
-    });
-  }
-
-  private createAtomicDensityBuffer(): void {
-    if (this.atomicDensityBuffer) {
-      this.atomicDensityBuffer.destroy();
-    }
-    const totalVoxels =
-      this.densityTextureSize.x *
-      this.densityTextureSize.y *
-      this.densityTextureSize.z;
-    this.atomicDensityBuffer = this.device.createBuffer({
-      size: totalVoxels * 4, // u32 per voxel
-      usage: GPUBufferUsage.STORAGE,
-    });
-  }
-
-  private createSplatBindGroups(): void {
-    // Clear bind group
-    this.splatClearBindGroup = this.device.createBindGroup({
-      layout: this.splatClearPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.atomicDensityBuffer } },
-        { binding: 1, resource: { buffer: this.splatClearParamsBuffer } },
-      ],
-    });
-
-    // Splat particles bind group
-    this.splatParticlesBindGroup = this.device.createBindGroup({
-      layout: this.splatParticlesPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.buffers.predicted } },
-        { binding: 1, resource: { buffer: this.atomicDensityBuffer } },
-        { binding: 2, resource: { buffer: this.splatParticlesParamsBuffer } },
-      ],
-    });
-
-    // Resolve bind group
-    this.splatResolveBindGroup = this.device.createBindGroup({
-      layout: this.splatResolvePipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.atomicDensityBuffer } },
-        { binding: 1, resource: this.densityTextureView },
-        { binding: 2, resource: { buffer: this.splatResolveParamsBuffer } },
-      ],
-    });
+    this.splatPipeline.recreate(this.config, this.buffers.predicted);
+    this.renderer.createBindGroup(this.splatPipeline.textureView);
   }
 
   /**
@@ -635,41 +488,8 @@ export class FluidSimulation {
     // -----------------------------------------------------------------------
     // 7. Density Volume Texture (Particle Splatting: Clear -> Splat -> Resolve)
     // -----------------------------------------------------------------------
-    this.updateSplatParams();
-    const totalVoxels =
-      this.densityTextureSize.x *
-      this.densityTextureSize.y *
-      this.densityTextureSize.z;
-
     const splatEncoder = device.createCommandEncoder();
-
-    // Pass 1: Clear atomic buffer
-    const clearPass = splatEncoder.beginComputePass();
-    clearPass.setPipeline(this.splatClearPipeline);
-    clearPass.setBindGroup(0, this.splatClearBindGroup);
-    clearPass.dispatchWorkgroups(Math.ceil(totalVoxels / 256));
-    clearPass.end();
-
-    // Pass 2: Splat particles into atomic buffer
-    const splatPass = splatEncoder.beginComputePass();
-    splatPass.setPipeline(this.splatParticlesPipeline);
-    splatPass.setBindGroup(0, this.splatParticlesBindGroup);
-    splatPass.dispatchWorkgroups(
-      Math.ceil(buffers.particleCount / 256)
-    );
-    splatPass.end();
-
-    // Pass 3: Resolve atomic buffer to density texture
-    const resolvePass = splatEncoder.beginComputePass();
-    resolvePass.setPipeline(this.splatResolvePipeline);
-    resolvePass.setBindGroup(0, this.splatResolveBindGroup);
-    resolvePass.dispatchWorkgroups(
-      Math.ceil(this.densityTextureSize.x / this.densityWorkgroupSize.x),
-      Math.ceil(this.densityTextureSize.y / this.densityWorkgroupSize.y),
-      Math.ceil(this.densityTextureSize.z / this.densityWorkgroupSize.z)
-    );
-    resolvePass.end();
-
+    this.splatPipeline.dispatch(splatEncoder, buffers.particleCount, config);
     device.queue.submit([splatEncoder.finish()]);
   }
 
@@ -925,56 +745,6 @@ export class FluidSimulation {
       this.pipelines.uniformBuffers.density,
       0,
       this.densityParamsData
-    );
-  }
-
-  private updateSplatParams(): void {
-    const bounds = this.config.boundsSize;
-    const radius = this.config.smoothingRadius;
-    const spikyPow2Scale = 15 / (2 * Math.PI * Math.pow(radius, 5));
-    const fixedPointScale = 1000.0;
-    const totalVoxels =
-      this.densityTextureSize.x *
-      this.densityTextureSize.y *
-      this.densityTextureSize.z;
-
-    // Clear params: totalVoxels (u32) + 3x padding
-    const clearData = new Uint32Array(4);
-    clearData[0] = totalVoxels;
-    this.device.queue.writeBuffer(this.splatClearParamsBuffer, 0, clearData);
-
-    // Splat particles params
-    this.splatParticlesParamsF32[0] = radius;
-    this.splatParticlesParamsF32[1] = spikyPow2Scale;
-    this.splatParticlesParamsU32[2] = this.buffers.particleCount;
-    this.splatParticlesParamsF32[3] = fixedPointScale;
-    this.splatParticlesParamsF32[4] = bounds.x;
-    this.splatParticlesParamsF32[5] = bounds.y;
-    this.splatParticlesParamsF32[6] = bounds.z;
-    this.splatParticlesParamsF32[7] = 0;
-    this.splatParticlesParamsU32[8] = this.densityTextureSize.x;
-    this.splatParticlesParamsU32[9] = this.densityTextureSize.y;
-    this.splatParticlesParamsU32[10] = this.densityTextureSize.z;
-    this.splatParticlesParamsU32[11] = 0;
-    this.device.queue.writeBuffer(
-      this.splatParticlesParamsBuffer,
-      0,
-      this.splatParticlesParamsData
-    );
-
-    // Resolve params
-    this.splatResolveParamsF32[0] = fixedPointScale;
-    this.splatResolveParamsF32[1] = 0;
-    this.splatResolveParamsF32[2] = 0;
-    this.splatResolveParamsF32[3] = 0;
-    this.splatResolveParamsU32[4] = this.densityTextureSize.x;
-    this.splatResolveParamsU32[5] = this.densityTextureSize.y;
-    this.splatResolveParamsU32[6] = this.densityTextureSize.z;
-    this.splatResolveParamsU32[7] = 0;
-    this.device.queue.writeBuffer(
-      this.splatResolveParamsBuffer,
-      0,
-      this.splatResolveParamsData
     );
   }
 
