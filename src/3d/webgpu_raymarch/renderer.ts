@@ -1,15 +1,26 @@
 import raymarchShader from './shaders/raymarch.wgsl?raw';
+import blitShader from './shaders/blit.wgsl?raw';
 import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import type { RaymarchConfig } from './types.ts';
 
 export class RaymarchRenderer {
   private device: GPUDevice;
   private canvas: HTMLCanvasElement;
+  private format: GPUTextureFormat;
   private pipeline: GPURenderPipeline;
   private uniformBuffer: GPUBuffer;
   private sampler: GPUSampler;
   private bindGroup!: GPUBindGroup;
   private uniformData = new Float32Array(28);
+
+  // Blit / half-res rendering
+  private blitPipeline: GPURenderPipeline;
+  private blitBindGroup!: GPUBindGroup;
+  private blitSampler: GPUSampler;
+  private offscreenTexture!: GPUTexture;
+  private offscreenTextureView!: GPUTextureView;
+  private offscreenWidth = 0;
+  private offscreenHeight = 0;
 
   constructor(
     device: GPUDevice,
@@ -18,6 +29,7 @@ export class RaymarchRenderer {
   ) {
     this.device = device;
     this.canvas = canvas;
+    this.format = format;
 
     const module = device.createShaderModule({ code: raymarchShader });
 
@@ -36,6 +48,30 @@ export class RaymarchRenderer {
         topology: 'triangle-list',
         cullMode: 'none',
       },
+    });
+
+    // Blit pipeline
+    const blitModule = device.createShaderModule({ code: blitShader });
+    this.blitPipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: blitModule,
+        entryPoint: 'vs_main',
+      },
+      fragment: {
+        module: blitModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none',
+      },
+    });
+
+    this.blitSampler = device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
     });
 
     this.uniformData = new Float32Array(68); // Increased size for new params
@@ -65,12 +101,46 @@ export class RaymarchRenderer {
     });
   }
 
+  private ensureOffscreenTexture(canvasWidth: number, canvasHeight: number): void {
+    const halfW = Math.max(1, Math.floor(canvasWidth / 2));
+    const halfH = Math.max(1, Math.floor(canvasHeight / 2));
+
+    if (halfW === this.offscreenWidth && halfH === this.offscreenHeight) {
+      return;
+    }
+
+    if (this.offscreenTexture) {
+      this.offscreenTexture.destroy();
+    }
+
+    this.offscreenWidth = halfW;
+    this.offscreenHeight = halfH;
+
+    this.offscreenTexture = this.device.createTexture({
+      size: { width: halfW, height: halfH },
+      format: this.format,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
+    this.offscreenTextureView = this.offscreenTexture.createView();
+
+    this.blitBindGroup = this.device.createBindGroup({
+      layout: this.blitPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.offscreenTextureView },
+        { binding: 1, resource: this.blitSampler },
+      ],
+    });
+  }
+
   render(
     encoder: GPUCommandEncoder,
     targetView: GPUTextureView,
     camera: OrbitCamera,
     config: RaymarchConfig
   ): void {
+    this.ensureOffscreenTexture(this.canvas.width, this.canvas.height);
+
     const basis = camera.basis;
     const pos = camera.position;
 
@@ -166,7 +236,26 @@ export class RaymarchRenderer {
 
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);
 
-    const pass = encoder.beginRenderPass({
+    // Pass 1: Raymarch into half-res offscreen texture
+    const raymarchPass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: this.offscreenTextureView,
+          loadOp: 'clear',
+          storeOp: 'store',
+          clearValue: { r: 0.03, g: 0.05, b: 0.08, a: 1 },
+        },
+      ],
+    });
+
+    raymarchPass.setViewport(0, 0, this.offscreenWidth, this.offscreenHeight, 0, 1);
+    raymarchPass.setPipeline(this.pipeline);
+    raymarchPass.setBindGroup(0, this.bindGroup);
+    raymarchPass.draw(3, 1, 0, 0);
+    raymarchPass.end();
+
+    // Pass 2: Blit/upscale offscreen texture to canvas
+    const blitPass = encoder.beginRenderPass({
       colorAttachments: [
         {
           view: targetView,
@@ -177,9 +266,9 @@ export class RaymarchRenderer {
       ],
     });
 
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, this.bindGroup);
-    pass.draw(3, 1, 0, 0);
-    pass.end();
+    blitPass.setPipeline(this.blitPipeline);
+    blitPass.setBindGroup(0, this.blitBindGroup);
+    blitPass.draw(3, 1, 0, 0);
+    blitPass.end();
   }
 }
