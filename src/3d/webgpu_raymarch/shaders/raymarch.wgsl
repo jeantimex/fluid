@@ -178,7 +178,7 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
   let dstToTest = boundsDstInfo.y - 0.01; // TinyNudge
   
   var dst = 0.0;
-  for (var i = 0u; i < 512u; i = i + 1u) { // Hard limit loop
+  for (var i = 0u; i < 256u; i = i + 1u) { // Hard limit loop
     if (dst >= dstToTest) { break; }
     
     let isLastStep = (dst + stepSize) >= dstToTest;
@@ -273,20 +273,21 @@ fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) 
     let boundsMax = 0.5 * params.boundsSize;
     let hit = rayBoxIntersection(rayPos, rayDir, boundsMin, boundsMax);
     if (hit.y <= max(hit.x, 0.0)) { return 0.0; }
-    
+
     let tStart = max(hit.x, 0.0);
-    let tEnd = min(hit.y, maxDst); 
+    let tEnd = min(hit.y, maxDst);
     if (tStart >= tEnd) { return 0.0; }
-    
+
     var opticalDepth = 0.0;
-    let shadowStep = params.stepSize * 2.0; 
+    let shadowStep = params.stepSize * 3.0;
     var t = tStart;
-    
-    for (var i = 0; i < 64; i++) {
+
+    for (var i = 0; i < 32; i++) {
         if (t >= tEnd) { break; }
         let pos = rayPos + rayDir * t;
         let d = max(0.0, sampleDensityRaw(pos));
         opticalDepth = opticalDepth + d * params.densityMultiplier * shadowStep;
+        if (opticalDepth > 3.0) { break; }
         t = t + shadowStep;
     }
     return opticalDepth;
@@ -407,9 +408,9 @@ fn calculateDensityForRefraction(rayPos: vec3<f32>, rayDir: vec3<f32>, stepSize:
   let tStart = max(hit.x, 0.0);
   let tEnd = min(hit.y, 2.0);
   var density = 0.0;
-  let shortStep = (tEnd - tStart) / 4.0;
+  let shortStep = (tEnd - tStart) / 2.0;
 
-  for (var i = 0; i < 4; i++) {
+  for (var i = 0; i < 2; i++) {
     let t = tStart + (f32(i) + 0.5) * shortStep;
     density += max(0.0, sampleDensityRaw(rayPos + rayDir * t));
   }
