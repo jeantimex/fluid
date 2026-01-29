@@ -22,6 +22,7 @@ export class RaymarchRenderer {
   private offscreenWidth = 0;
   private offscreenHeight = 0;
 
+
   constructor(
     device: GPUDevice,
     canvas: HTMLCanvasElement,
@@ -174,15 +175,15 @@ export class RaymarchRenderer {
 
     this.uniformData[20] = config.densityMultiplier / 1000;
     this.uniformData[21] = config.stepSize;
-    this.uniformData[22] = aspect;
-    this.uniformData[23] = fovY;
+    this.uniformData[22] = config.lightStepSize;
+    this.uniformData[23] = aspect;
 
-    this.uniformData[24] = config.maxSteps;
-    this.uniformData[25] = config.tileScale;
-    this.uniformData[26] = config.tileDarkOffset;
-    this.uniformData[27] = 0; // padding
+    this.uniformData[24] = fovY;
+    this.uniformData[25] = config.maxSteps;
+    this.uniformData[26] = config.tileScale;
+    this.uniformData[27] = config.tileDarkOffset;
 
-    // Tile Colors
+    // Tile Colors (treated as linear values like Unity scene data)
     this.uniformData[28] = config.tileCol1.r;
     this.uniformData[29] = config.tileCol1.g;
     this.uniformData[30] = config.tileCol1.b;
@@ -207,7 +208,7 @@ export class RaymarchRenderer {
     this.uniformData[44] = config.tileColVariation.x;
     this.uniformData[45] = config.tileColVariation.y;
     this.uniformData[46] = config.tileColVariation.z;
-    this.uniformData[47] = 0;
+    this.uniformData[47] = config.debugFloorMode;
 
     this.uniformData[48] = 0.83; // dirToSun.x
     this.uniformData[49] = 0.42; // dirToSun.y
@@ -221,13 +222,13 @@ export class RaymarchRenderer {
 
     this.uniformData[56] = config.indexOfRefraction;
     this.uniformData[57] = config.numRefractions;
-    this.uniformData[58] = 0; // padding
-    this.uniformData[59] = 0; // padding
+    this.uniformData[58] = config.tileDarkFactor;
+    this.uniformData[59] = config.floorAmbient;
 
     this.uniformData[60] = config.floorSize.x;
     this.uniformData[61] = config.floorSize.y;
     this.uniformData[62] = config.floorSize.z;
-    this.uniformData[63] = 0;
+    this.uniformData[63] = config.sceneExposure;
 
     this.uniformData[64] = 0; // floorCenter.x
     this.uniformData[65] = -config.boundsSize.y * 0.5 - config.floorSize.y * 0.5; // floorCenter.y

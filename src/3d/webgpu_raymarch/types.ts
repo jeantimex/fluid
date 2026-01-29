@@ -5,6 +5,7 @@ export interface RaymarchConfig extends SimConfig {
   densityOffset: number;
   densityMultiplier: number;
   stepSize: number;
+  lightStepSize: number;
   maxSteps: number;
   tileCol1: { r: number; g: number; b: number };
   tileCol2: { r: number; g: number; b: number };
@@ -13,6 +14,10 @@ export interface RaymarchConfig extends SimConfig {
   tileColVariation: { x: number; y: number; z: number };
   tileScale: number;
   tileDarkOffset: number;
+  tileDarkFactor: number;
+  floorAmbient: number;
+  sceneExposure: number;
+  debugFloorMode: number;
   extinctionCoefficients: { x: number; y: number; z: number };
   indexOfRefraction: number;
   numRefractions: number;

@@ -11,12 +11,12 @@ struct RaymarchParams {
   densityOffset: f32,
   densityMultiplier: f32,
   stepSize: f32,
+  lightStepSize: f32,
   aspect: f32,
   fovY: f32,
   maxSteps: f32,
   tileScale: f32,
   tileDarkOffset: f32,
-  pad4: f32,
   tileCol1: vec3<f32>,
   pad5: f32,
   tileCol2: vec3<f32>,
@@ -26,16 +26,17 @@ struct RaymarchParams {
   tileCol4: vec3<f32>,
   pad8: f32,
   tileColVariation: vec3<f32>,
-  pad9: f32,
+  debugFloorMode: f32,
   dirToSun: vec3<f32>,
   pad10: f32,
   extinctionCoefficients: vec3<f32>,
   pad11: f32,
   indexOfRefraction: f32,
   numRefractions: f32,
-  pad12: vec2<f32>,
+  tileDarkFactor: f32,
+  floorAmbient: f32,
   floorSize: vec3<f32>,
-  pad13: f32,
+  sceneExposure: f32,
   floorCenter: vec3<f32>,
   pad14: f32,
 };
@@ -242,6 +243,12 @@ fn tweakHsv(colRGB: vec3<f32>, shift: vec3<f32>) -> vec3<f32> {
   return clamp(hsvToRgb(hsv + shift), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+fn srgbToLinear(col: vec3<f32>) -> vec3<f32> {
+  let lo = col / 12.92;
+  let hi = pow((col + vec3<f32>(0.055)) / 1.055, vec3<f32>(2.4));
+  return select(hi, lo, col <= vec3<f32>(0.04045));
+}
+
 fn hashInt2(v: vec2<i32>) -> u32 {
   return u32(v.x) * 5023u + u32(v.y) * 96456u;
 }
@@ -279,7 +286,7 @@ fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) 
     if (tStart >= tEnd) { return 0.0; }
 
     var opticalDepth = 0.0;
-    let shadowStep = params.stepSize * 3.0;
+    let shadowStep = params.lightStepSize * 2.0;
     var t = tStart;
 
     for (var i = 0; i < 32; i++) {
@@ -322,6 +329,19 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
   if (hit.y >= max(hit.x, 0.0)) {
     let t = select(hit.x, 0.0, hit.x < 0.0);
     let hitPos = origin + dir * t;
+
+    if (params.debugFloorMode >= 1.5) {
+      var debugTileCol = params.tileCol1;
+      if (hitPos.x >= 0.0) { debugTileCol = params.tileCol2; }
+      if (hitPos.z < 0.0) {
+        if (hitPos.x < 0.0) { debugTileCol = params.tileCol3; }
+        else { debugTileCol = params.tileCol4; }
+      }
+      return srgbToLinear(debugTileCol);
+    }
+    if (params.debugFloorMode >= 0.5) {
+      return vec3<f32>(1.0, 0.0, 0.0);
+    }
     
     // Choose tileCol based on quadrant
     var tileCol = params.tileCol1;
@@ -334,18 +354,22 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     let tileCoord = floor(hitPos.xz * params.tileScale);
     let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
 
-    var offset = 0.0;
-    if (isDarkTile) { offset = params.tileDarkOffset; }
-    tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, offset));
+    if (isDarkTile) {
+      tileCol = tileCol * params.tileDarkFactor;
+    }
 
-    var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
-    let randomVariation = randomSNorm3(&rngState) * params.tileColVariation * 0.1;
-    tileCol = tweakHsv(tileCol, randomVariation);
+    if (any(params.tileColVariation != vec3<f32>(0.0))) {
+      var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
+      let randomVariation = randomSNorm3(&rngState) * params.tileColVariation * 0.1;
+      tileCol = tweakHsv(tileCol, randomVariation);
+    }
 
     let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
     let shadowMap = transmittance(shadowDepth * 2.0);
+    let ambient = clamp(params.floorAmbient, 0.0, 1.0);
+    let lighting = shadowMap * (1.0 - ambient) + ambient;
 
-    return tileCol * shadowMap;
+    return tileCol * lighting;
   }
   
   return skyColor(dir);
@@ -517,8 +541,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let finalBg = sampleEnvironment(rayPos, rayDir);
   totalLight = totalLight + finalBg * totalTransmittance * transmittance(densityRemainder);
   
-  // Gamma correction (Linear -> sRGB)
-  let correctedColor = pow(totalLight, vec3<f32>(1.0 / 2.2));
-  
-  return vec4<f32>(correctedColor, 1.0);
+  let exposure = max(params.sceneExposure, 0.0);
+  return vec4<f32>(totalLight * exposure, 1.0);
 }

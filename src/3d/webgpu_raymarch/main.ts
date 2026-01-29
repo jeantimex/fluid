@@ -48,6 +48,27 @@
 import './style.css';
 import { createConfig } from '../common/config.ts';
 import { setupGui } from '../common/gui.ts';
+
+function rgbToHex(rgb: { r: number; g: number; b: number }): string {
+  const toByte = (value: number): number => Math.max(0, Math.min(255, Math.round(value * 255)));
+  const r = toByte(rgb.r).toString(16).padStart(2, '0');
+  const g = toByte(rgb.g).toString(16).padStart(2, '0');
+  const b = toByte(rgb.b).toString(16).padStart(2, '0');
+  return `#${r}${g}${b}`;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const normalized = hex.trim().replace('#', '');
+  if (normalized.length !== 6) {
+    return { r: 0, g: 0, b: 0 };
+  }
+  const value = Number.parseInt(normalized, 16);
+  return {
+    r: (value >> 16) & 0xff,
+    g: (value >> 8) & 0xff,
+    b: value & 0xff,
+  };
+}
 import { FluidSimulation } from './fluid_simulation.ts';
 import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import { rayBoxIntersection, vec3Add, vec3Scale } from '../webgpu_particles/math_utils.ts';
@@ -417,15 +438,20 @@ const config: RaymarchConfig = {
   densityOffset: 200,
   densityMultiplier: 0.05,
   stepSize: 0.08,
+  lightStepSize: 0.1,
   maxSteps: 512,
-  tileCol1: { r: 0.204, g: 0.518, b: 0.776 }, // Blue
-  tileCol2: { r: 0.608, g: 0.369, b: 0.858 }, // Purple
-  tileCol3: { r: 0.302, g: 0.736, b: 0.458 }, // Green
-  tileCol4: { r: 0.802, g: 0.643, b: 0.367 }, // Golden
-  tileColVariation: { x: 0.33, y: 0, z: 0.47 },
+  tileCol1: { r: 126 / 255, g: 183 / 255, b: 231 / 255 }, // Blue
+  tileCol2: { r: 210 / 255, g: 165 / 255, b: 240 / 255 }, // Purple
+  tileCol3: { r: 153 / 255, g: 229 / 255, b: 199 / 255 }, // Green
+  tileCol4: { r: 237 / 255, g: 225 / 255, b: 167 / 255 }, // Yellow
+  tileColVariation: { x: 0, y: 0, z: 0 },
   tileScale: 1,
-  tileDarkOffset: -0.15,
-  extinctionCoefficients: { x: 14, y: 6, z: 1.5 },
+  tileDarkOffset: -0.35,
+  tileDarkFactor: 0.5,
+  floorAmbient: 0.15,
+  sceneExposure: 1.1,
+  debugFloorMode: 0,
+  extinctionCoefficients: { x: 18, y: 8, z: 2 },
   indexOfRefraction: 1.33,
   numRefractions: 4,
   floorSize: { x: 80, y: 0.05, z: 80 },
@@ -466,6 +492,54 @@ raymarchFolder
   .name('Density Multiplier');
 raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
 raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
+raymarchFolder.add(config, 'tileDarkFactor', 0.1, 0.9, 0.01).name('Tile Dark Factor');
+
+const tileColorState = {
+  tileCol1: rgbToHex(config.tileCol1),
+  tileCol2: rgbToHex(config.tileCol2),
+  tileCol3: rgbToHex(config.tileCol3),
+  tileCol4: rgbToHex(config.tileCol4),
+};
+
+raymarchFolder
+  .addColor(tileColorState, 'tileCol1')
+  .name('Tile Color 1')
+  .onChange((value: string) => {
+    const rgb = hexToRgb(value);
+    config.tileCol1.r = rgb.r / 255;
+    config.tileCol1.g = rgb.g / 255;
+    config.tileCol1.b = rgb.b / 255;
+  });
+
+raymarchFolder
+  .addColor(tileColorState, 'tileCol2')
+  .name('Tile Color 2')
+  .onChange((value: string) => {
+    const rgb = hexToRgb(value);
+    config.tileCol2.r = rgb.r / 255;
+    config.tileCol2.g = rgb.g / 255;
+    config.tileCol2.b = rgb.b / 255;
+  });
+
+raymarchFolder
+  .addColor(tileColorState, 'tileCol3')
+  .name('Tile Color 3')
+  .onChange((value: string) => {
+    const rgb = hexToRgb(value);
+    config.tileCol3.r = rgb.r / 255;
+    config.tileCol3.g = rgb.g / 255;
+    config.tileCol3.b = rgb.b / 255;
+  });
+
+raymarchFolder
+  .addColor(tileColorState, 'tileCol4')
+  .name('Tile Color 4')
+  .onChange((value: string) => {
+    const rgb = hexToRgb(value);
+    config.tileCol4.r = rgb.r / 255;
+    config.tileCol4.g = rgb.g / 255;
+    config.tileCol4.b = rgb.b / 255;
+  });
 
 /**
  * Main Application Entry Point
