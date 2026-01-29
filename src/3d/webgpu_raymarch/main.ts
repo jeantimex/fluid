@@ -425,7 +425,7 @@ const config: RaymarchConfig = {
   tileColVariation: { x: 0.2, y: 0, z: 0.2 },
   tileScale: 0.25,
   tileDarkOffset: -0.15,
-  extinctionCoefficients: { x: 12, y: 4, z: 4 },
+  extinctionCoefficients: { x: 14, y: 6, z: 1.5 },
   indexOfRefraction: 1.33,
   numRefractions: 4,
   floorSize: { x: 80, y: 0.05, z: 80 },
