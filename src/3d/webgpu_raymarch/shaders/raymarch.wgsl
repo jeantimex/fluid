@@ -178,7 +178,7 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
   let dstToTest = boundsDstInfo.y - 0.01; // TinyNudge
   
   var dst = 0.0;
-  for (var i = 0u; i < 256u; i = i + 1u) { // Hard limit loop
+  for (var i = 0u; i < 512u; i = i + 1u) { // Hard limit loop
     if (dst >= dstToTest) { break; }
     
     let isLastStep = (dst + stepSize) >= dstToTest;

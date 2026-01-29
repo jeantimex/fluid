@@ -113,7 +113,7 @@ function setupInputHandlers(
   getInput: () => InputState | undefined,
   camera: OrbitCamera,
   config: SimConfig
-) {
+): () => void {
   // ==========================================================================
   // State Variables
   // ==========================================================================
@@ -129,6 +129,10 @@ function setupInputHandlers(
 
   /** Last mouse Y position for calculating drag delta */
   let lastY = 0;
+
+  /** Angular velocity for camera inertia */
+  let velocityTheta = 0;
+  let velocityPhi = 0;
 
   // ==========================================================================
   // Ray Casting Utilities
@@ -286,16 +290,16 @@ function setupInputHandlers(
     // Test if the ray intersects the simulation bounds
     const hit = rayBoxIntersection(ray.origin, ray.dir, boxMin, boxMax);
 
-    if (hit && e.button !== 1) {
-      // Left click (0) or Right click (2) inside the box → particle interaction
+    if (hit && e.shiftKey && e.button !== 1) {
+      // Shift + Left/Right click inside the box → particle interaction
       isInteractingParticle = true;
       updateInteraction(e);
 
       // Set push/pull based on which mouse button
-      if (e.button === 0) input.pull = true; // Left click = attract
-      if (e.button === 2) input.push = true; // Right click = repel
+      if (e.button === 0) input.pull = true; // Shift+Left click = attract
+      if (e.button === 2) input.push = true; // Shift+Right click = repel
     } else {
-      // Click outside box or middle mouse → camera control
+      // Click without Shift, or outside box → camera control
       isDraggingCamera = true;
       lastX = e.clientX;
       lastY = e.clientY;
@@ -323,7 +327,9 @@ function setupInputHandlers(
 
       // Apply rotation with sensitivity scaling
       const sensitivity = 0.005;
-      camera.rotate(-dx * sensitivity, -dy * sensitivity);
+      velocityTheta = -dx * sensitivity;
+      velocityPhi = -dy * sensitivity;
+      camera.rotate(velocityTheta, velocityPhi);
     }
   });
 
@@ -380,6 +386,17 @@ function setupInputHandlers(
    * allowing right-click to be used for push interaction.
    */
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Return inertia update function to be called each frame
+  const friction = 0.92;
+  const stopThreshold = 0.0001;
+  return function updateInertia() {
+    if (!isDraggingCamera && (Math.abs(velocityTheta) > stopThreshold || Math.abs(velocityPhi) > stopThreshold)) {
+      camera.rotate(velocityTheta, velocityPhi);
+      velocityTheta *= friction;
+      velocityPhi *= friction;
+    }
+  };
 }
 
 // =============================================================================
@@ -504,7 +521,7 @@ async function main() {
   simulation = new FluidSimulation(device, context, canvas, config, format);
 
   // Set up input handlers (camera control + particle interaction)
-  setupInputHandlers(
+  const updateInertia = setupInputHandlers(
     canvas,
     () => simulation?.simulationState.input,
     camera,
@@ -552,6 +569,9 @@ async function main() {
     // Cap at 33ms (~30 FPS minimum) to prevent instability from large time steps
     const dt = Math.min(0.033, (now - lastTime) / 1000);
     lastTime = now;
+
+    // Apply camera inertia (coasting after drag release)
+    updateInertia();
 
     if (simulation) {
       // Run physics simulation step(s)
