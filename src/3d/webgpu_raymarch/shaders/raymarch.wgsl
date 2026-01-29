@@ -333,7 +333,7 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
     let tileCoord = floor(hitPos.xz * params.tileScale);
     let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
-    
+
     var offset = 0.0;
     if (isDarkTile) { offset = params.tileDarkOffset; }
     tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, offset));
@@ -341,10 +341,10 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
     let randomVariation = randomSNorm3(&rngState) * params.tileColVariation * 0.1;
     tileCol = tweakHsv(tileCol, randomVariation);
-    
+
     let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
     let shadowMap = transmittance(shadowDepth * 2.0);
-    
+
     return tileCol * shadowMap;
   }
   

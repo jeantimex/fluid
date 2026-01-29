@@ -418,12 +418,12 @@ const config: RaymarchConfig = {
   densityMultiplier: 0.05,
   stepSize: 0.08,
   maxSteps: 512,
-  tileCol1: { r: 0.35, g: 0.65, b: 0.9 }, // Lighter blue
-  tileCol2: { r: 0.75, g: 0.55, b: 0.9 }, // Lighter purple
-  tileCol3: { r: 0.45, g: 0.85, b: 0.6 }, // Lighter green
-  tileCol4: { r: 0.9, g: 0.75, b: 0.45 }, // Lighter orange/yellow
-  tileColVariation: { x: 0.2, y: 0, z: 0.2 },
-  tileScale: 0.25,
+  tileCol1: { r: 0.204, g: 0.518, b: 0.776 }, // Blue
+  tileCol2: { r: 0.608, g: 0.369, b: 0.858 }, // Purple
+  tileCol3: { r: 0.302, g: 0.736, b: 0.458 }, // Green
+  tileCol4: { r: 0.802, g: 0.643, b: 0.367 }, // Golden
+  tileColVariation: { x: 0.33, y: 0, z: 0.47 },
+  tileScale: 1,
   tileDarkOffset: -0.15,
   extinctionCoefficients: { x: 14, y: 6, z: 1.5 },
   indexOfRefraction: 1.33,
