@@ -399,8 +399,21 @@ fn calculateReflectionAndRefraction(inDir: vec3<f32>, normal: vec3<f32>, iorA: f
 }
 
 fn calculateDensityForRefraction(rayPos: vec3<f32>, rayDir: vec3<f32>, stepSize: f32) -> f32 {
-   // Simplified trace for comparing paths
-   return calculateDensityForShadow(rayPos, rayDir, 100.0); 
+  let boundsMin = -0.5 * params.boundsSize;
+  let boundsMax = 0.5 * params.boundsSize;
+  let hit = rayBoxIntersection(rayPos, rayDir, boundsMin, boundsMax);
+  if (hit.y <= max(hit.x, 0.0)) { return 0.0; }
+
+  let tStart = max(hit.x, 0.0);
+  let tEnd = min(hit.y, 2.0);
+  var density = 0.0;
+  let shortStep = (tEnd - tStart) / 4.0;
+
+  for (var i = 0; i < 4; i++) {
+    let t = tStart + (f32(i) + 0.5) * shortStep;
+    density += max(0.0, sampleDensityRaw(rayPos + rayDir * t));
+  }
+  return density * params.densityMultiplier * shortStep;
 }
 
 // =============================================================================

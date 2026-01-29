@@ -18,12 +18,12 @@ These optimizations are already in place:
 
 ### 3. New Bottlenecks (Raymarch Specific)
 
-#### Issue #1: Voxel-Side Density Evaluation (P0)
-The `density_volume.wgsl` compute shader evaluates density at every voxel using a neighbor search (the "Pull" method).
-- **Location**: `density_volume.wgsl:46-85`
+#### Issue #1: Voxel-Side Density Evaluation (P0) — RESOLVED
+The `density_volume.wgsl` compute shader evaluated density at every voxel using a neighbor search (the "Pull" method).
+- **Location**: Previously `density_volume.wgsl:46-85`
 - **Complexity**: $O(Voxels \times AvgParticlesPerCell)$.
-- **Impact**: At a resolution of 150, we evaluate $\sim 3.4$ million voxels. Even with spatial hashing, this is extremely heavy and dominates the frame time.
-- **Proposed Fix**: Switch to **Particle Splatting** ("Push" method). Each particle iterates over its neighboring voxels and accumulates its density contribution using `atomicAdd`. This is generally much faster when the fluid occupies only a portion of the volume.
+- **Impact**: At a resolution of 150, we evaluated $\sim 3.4$ million voxels. Even with spatial hashing, this was extremely heavy and dominated the frame time.
+- **Fix Applied**: Switched to **Particle Splatting** ("Push" method) via a 3-pass pipeline: `splat_clear.wgsl` (zero atomic buffer) → `splat_particles.wgsl` (each particle splatts to ~27 neighboring voxels using `atomicAdd` with fixed-point encoding) → `splat_resolve.wgsl` (convert atomic `u32` back to `f32` and write to `rgba16float` texture). Cost is now $O(N\_{particles})$ instead of $O(Voxels)$. Wired up in `fluid_simulation.ts` replacing the old single-pass density volume dispatch.
 
 #### Issue #2: Fixed-Step Raymarching (P1)
 The `raymarch.wgsl` shader uses a fixed `stepSize` across the entire simulation bounds.
@@ -47,26 +47,21 @@ Shadows are calculated by marching toward the sun for every floor and background
 - **Impact**: 64 iterations per floor/background pixel.
 - **Proposed Fix**: Pre-calculate a 2D **Fluid Shadow Map** from the light's perspective and sample it during the environment pass.
 
-#### Issue #5: Expensive Refraction Heuristic (P1) — NEW
-The refraction path selection heuristic samples density along both reflection and refraction directions.
-- **Location**: `raymarch.wgsl:467-468`
-- **Impact**: `calculateDensityForRefraction` internally calls `calculateDensityForShadow` (64 steps each). With `numRefractions = 4`, this adds up to **512 extra raymarch steps per pixel**.
-- **Proposed Fix**:
-  - Use a cheaper heuristic (e.g., single sample or gradient-based direction estimation).
-  - Cache density values from previous surface finding pass.
-  - Consider a fixed refraction bias instead of per-pixel heuristic.
+#### Issue #5: Expensive Refraction Heuristic (P1) — RESOLVED
+The refraction path selection heuristic sampled density along both reflection and refraction directions.
+- **Location**: `raymarch.wgsl:401-417`
+- **Impact**: Previously called `calculateDensityForShadow` (64 steps each). With `numRefractions = 4`, this added up to **512 extra raymarch steps per pixel**.
+- **Fix Applied**: Replaced with a short 4-step march capped at distance 2.0. Uses `rayBoxIntersection` for bounds clipping, then 4 evenly-spaced samples with `sampleDensityRaw`. Per-bounce cost reduced from 128 texture samples (2 × 64) to 8 samples (2 × 4) — a **16× reduction** in the refraction path.
 
-#### Issue #6: Suboptimal Workgroup Size (P2) — NEW
-The density volume compute shader uses small workgroups.
-- **Location**: `density_volume.wgsl:87` — workgroup size is 4×4×4 = 64 threads
-- **Impact**: Modern GPUs prefer 256 threads per workgroup for better occupancy and latency hiding.
-- **Proposed Fix**: Increase to 8×8×4 = 256 or 4×4×16 = 256 threads.
+#### Issue #6: Suboptimal Workgroup Size (P2) — RESOLVED
+The density volume compute shader used small workgroups.
+- **Location**: Previously `density_volume.wgsl:87` — workgroup size was 4×4×4 = 64 threads
+- **Fix Applied**: Increased to 8×8×4 = 256 threads (commit `577428f`). Now superseded by the particle splatting pipeline which uses workgroup size 256 for clear/splat passes and 8×8×4 for the resolve pass.
 
-#### Issue #7: Missing Early Transmittance Cutoff (P2) — NEW
-The refraction loop continues even when the accumulated transmittance becomes negligible.
-- **Location**: `raymarch.wgsl:428-496`
-- **Impact**: Dense fluid regions waste cycles computing invisible contributions.
-- **Proposed Fix**: Add early exit when `max(totalTransmittance) < 0.01`.
+#### Issue #7: Missing Early Transmittance Cutoff (P2) — RESOLVED
+The refraction loop continued even when the accumulated transmittance became negligible.
+- **Location**: `raymarch.wgsl:429-431`
+- **Fix Applied**: Added early exit when `all(totalTransmittance < vec3(0.01))` (commit `546a83a`).
 
 #### Issue #8: Wasted Texture Bandwidth (P2 — Downgraded)
 The density volume uses `rgba16float` but only stores data in the R channel.
@@ -85,9 +80,9 @@ The density volume uses `rgba16float` but only stores data in the R channel.
 ### Phase 1: High Impact (P0-P1)
 | Priority | Optimization | Description | Status |
 | :--- | :--- | :--- | :--- |
-| **P0** | **Particle Splatting** | Change volume generation from "voxel search" to "particle splatting" via atomics. | ⏳ Pending |
+| **P0** | **Particle Splatting** | Change volume generation from "voxel search" to "particle splatting" via atomics. | ✅ Done |
 | **P2** | **R-only Texture** | Change `densityVolume` format to single-channel. Complex due to WebGPU format limitations (see Issue #8). | ⏳ Pending |
-| **P1** | **Fix Refraction Heuristic** | Replace expensive 64-step density sampling with cheaper single-sample or gradient-based heuristic. | ⏳ Pending |
+| **P1** | **Fix Refraction Heuristic** | Replace expensive 64-step density sampling with cheaper 4-step short march. | ✅ Done |
 | **P1** | **Occupancy Grid** | Implement a low-res occupancy grid to skip empty space during raymarching. | ⏳ Pending |
 
 ### Phase 2: Refinement (P2)
@@ -96,8 +91,8 @@ The density volume uses `rgba16float` but only stores data in the R channel.
 | **P2** | **Gradient Volume** | Pre-compute and store normals in a 3D texture to avoid 6× sampling cost. | ⏳ Pending |
 | **P2** | **Shadow Map** | Bake fluid shadows into a 2D depth/transmittance texture. | ⏳ Pending |
 | **P2** | **Temporal Upscaling** | Render the raymarched volume at a lower resolution and upscale with a bilateral filter. | ⏳ Pending |
-| **P2** | **Workgroup Size** | Increase density volume workgroup from 64 to 256 threads. | ⏳ Pending |
-| **P2** | **Early Transmittance Exit** | Skip refraction iterations when transmittance drops below threshold. | ⏳ Pending |
+| **P2** | **Workgroup Size** | Increase density volume workgroup from 64 to 256 threads. | ✅ Done |
+| **P2** | **Early Transmittance Exit** | Skip refraction iterations when transmittance drops below threshold. | ✅ Done |
 
 ---
 
@@ -113,12 +108,13 @@ The **R-only Texture** optimization (P1) and **Gradient Volume** (P2) are mutual
 2. Use separate textures: `r16float` for density, `rgba16float` for gradient (computed on demand or every N frames).
 3. Use `rg16float` to store density + packed 2D gradient (derive Z from normalization).
 
-### Particle Splatting Implementation
-When switching to particle splatting:
-- Use `atomicAdd` on `r32float` storage texture (or manual atomic on `r32uint`)
-- Each particle writes to ~27 neighboring voxels (within smoothing radius)
-- Requires clearing the volume texture each frame
-- May need double-buffering to avoid race conditions with raymarching
+### Particle Splatting Implementation — DONE
+Implemented as a 3-pass pipeline in `fluid_simulation.ts`:
+1. **Clear** (`splat_clear.wgsl`): Zeros a `u32` storage buffer (one entry per voxel) using `atomicStore`.
+2. **Splat** (`splat_particles.wgsl`): Each particle computes affected voxels within its smoothing radius, evaluates the SPH spiky kernel, and uses `atomicAdd` with fixed-point encoding (scale = 1000).
+3. **Resolve** (`splat_resolve.wgsl`): Reads `u32` values, divides by fixed-point scale, writes to `rgba16float` storage texture.
+
+No double-buffering needed — the 3 passes run sequentially within a single command encoder submission, and raymarching happens in a separate render pass afterward.
 
 ### Occupancy Grid Strategy
 For empty space skipping:
@@ -128,31 +124,27 @@ For empty space skipping:
 - Can use hierarchical structure (mipmap) for adaptive step sizes
 
 
-Phase 1: Easy Wins & Rendering Efficiency
-   * Sub-task 1.1: Optimize Compute Occupancy
-       * Change: Update density_volume.wgsl workgroup size from (4, 4, 4) (64 threads) to (8, 8, 4) (256
-         threads).
-       * Goal: Better GPU utilization.
-       * Verification: Ensure simulation still runs and the density volume looks identical.
-   * Sub-task 1.2: Early Transmittance Cutoff
-       * Change: Add an early exit in the raymarch.wgsl refraction loop if totalTransmittance falls below
-         a threshold (e.g., 0.01).
-       * Goal: Stop computing expensive refractions once the fluid is already opaque.
-       * Verification: No visual change in dense regions; slight FPS boost in deep water.
+Phase 1: Easy Wins & Rendering Efficiency — ✅ COMPLETE
+   * Sub-task 1.1: Optimize Compute Occupancy — ✅ Done (commit 577428f)
+       * Change: Updated density_volume.wgsl workgroup size from (4, 4, 4) to (8, 8, 4) = 256 threads.
+   * Sub-task 1.2: Early Transmittance Cutoff — ✅ Done (commit 546a83a)
+       * Change: Added early exit in raymarch.wgsl refraction loop when totalTransmittance < 0.01.
 
-  Phase 2: Refraction Heuristic
-   * Sub-task 2.1: Simplify `calculateDensityForRefraction`
-       * Change: Replace the 64-step shadow-marching trace in the refraction heuristic with a cheaper
-         single-sample or 4-step lookup.
-       * Goal: Remove the "512 steps per pixel" bottleneck.
-       * Verification: Compare refraction quality; significant FPS increase expected.
+  Phase 2: Refraction Heuristic — ✅ COMPLETE
+   * Sub-task 2.1: Simplify `calculateDensityForRefraction` — ✅ Done
+       * Change: Replaced the 64-step `calculateDensityForShadow` call with a 4-step short march
+         capped at distance 2.0. 16x reduction in texture samples per refraction bounce.
 
-  Phase 3: Particle Splatting (The "Push" Method)
-   * Sub-task 3.1: Atomic Buffer Infrastructure
-       * Change: Set up a u32 storage buffer for atomic density accumulation (fixed-point) and a "Clear"
-         pass.
-   * Sub-task 3.2: Splatting Kernel & Resolve
-       * Change: Implement the new splatting logic where particles write to the volume, plus a "Resolve"
-         pass to copy it to the filterable texture.
-       * Goal: Massive speedup in volume generation ($O(N\_particles)$ instead of $O(Voxels)$).
-       * Verification: The fluid volume should look the same as the current "Pull" method.
+  Phase 3: Particle Splatting (The "Push" Method) — ✅ COMPLETE
+   * Sub-task 3.1: Atomic Buffer Infrastructure — ✅ Done
+       * Change: Created `splat_clear.wgsl` and `u32` storage buffer for fixed-point atomic density
+         accumulation. Buffer sized at totalVoxels × 4 bytes.
+   * Sub-task 3.2: Splatting Kernel — ✅ Done
+       * Change: Created `splat_particles.wgsl`. Each thread processes one particle, splatting density
+         to nearby voxels within smoothing radius using `atomicAdd` with fixed-point scale of 1000.
+   * Sub-task 3.3: Resolve Pass — ✅ Done
+       * Change: Created `splat_resolve.wgsl`. Converts atomic `u32` values back to `f32` and writes
+         to the `rgba16float` storage texture.
+   * Sub-task 3.4: Pipeline Wiring — ✅ Done
+       * Change: Replaced single density volume dispatch in `fluid_simulation.ts` with 3-pass
+         Clear → Splat → Resolve pipeline. Removed old `density_volume.wgsl` import and pipeline.
