@@ -190,10 +190,21 @@ export class SplatPipeline {
   // Private Helpers
   // ===========================================================================
 
+  /**
+   * Creates the 3D density texture sized proportionally to the simulation bounds.
+   *
+   * The longest axis gets `densityTextureRes` voxels; shorter axes are scaled
+   * proportionally so voxels are roughly cubic. The texture format is
+   * `rgba16float` to allow both storage writes (from the resolve pass) and
+   * texture sampling (from the raymarch shader).
+   *
+   * @param config - Configuration providing bounds dimensions and target resolution
+   */
   private createDensityTexture(config: RaymarchConfig): void {
     const bounds = config.boundsSize;
     const maxAxis = Math.max(bounds.x, bounds.y, bounds.z);
 
+    // Scale each axis relative to the longest so voxels are approximately cubic
     const targetRes = Math.max(1, Math.round(config.densityTextureRes));
     const width = Math.max(1, Math.round((bounds.x / maxAxis) * targetRes));
     const height = Math.max(1, Math.round((bounds.y / maxAxis) * targetRes));
@@ -206,8 +217,8 @@ export class SplatPipeline {
       dimension: '3d',
       format: 'rgba16float',
       usage:
-        GPUTextureUsage.STORAGE_BINDING |
-        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.STORAGE_BINDING |  // Written by the resolve compute shader
+        GPUTextureUsage.TEXTURE_BINDING |  // Sampled by the raymarch fragment shader
         GPUTextureUsage.COPY_SRC,
     });
 
@@ -216,6 +227,15 @@ export class SplatPipeline {
     });
   }
 
+  /**
+   * Creates (or recreates) the atomic density buffer used for thread-safe
+   * accumulation during the splat pass.
+   *
+   * Each voxel gets one `u32` slot. The splat shader uses `atomicAdd` with
+   * fixed-point encoding to accumulate particle density contributions from
+   * multiple threads without data races. The resolve pass later converts
+   * these integer sums back to `f32` and writes the density texture.
+   */
   private createAtomicDensityBuffer(): void {
     if (this.atomicDensityBuffer) {
       this.atomicDensityBuffer.destroy();
@@ -225,13 +245,19 @@ export class SplatPipeline {
       this.densityTextureSize.y *
       this.densityTextureSize.z;
     this.atomicDensityBuffer = this.device.createBuffer({
-      size: totalVoxels * 4, // u32 per voxel
+      size: totalVoxels * 4, // 4 bytes (one u32) per voxel
       usage: GPUBufferUsage.STORAGE,
     });
   }
 
+  /**
+   * Creates all three bind groups for the clear, splat, and resolve passes.
+   *
+   * @param predictedBuffer - GPU buffer of predicted particle positions
+   *                          (vec4<f32> per particle, xyz = position)
+   */
   private createBindGroups(predictedBuffer: GPUBuffer): void {
-    // Clear bind group
+    // Clear bind group: atomic buffer (read_write) + clear params (uniform)
     this.clearBindGroup = this.device.createBindGroup({
       layout: this.clearPipeline.getBindGroupLayout(0),
       entries: [
@@ -240,7 +266,7 @@ export class SplatPipeline {
       ],
     });
 
-    // Splat particles bind group
+    // Splat particles bind group: positions (read) + atomic buffer (read_write) + params (uniform)
     this.particlesBindGroup = this.device.createBindGroup({
       layout: this.particlesPipeline.getBindGroupLayout(0),
       entries: [
@@ -250,7 +276,7 @@ export class SplatPipeline {
       ],
     });
 
-    // Resolve bind group
+    // Resolve bind group: atomic buffer (read) + density texture (write) + params (uniform)
     this.resolveBindGroup = this.device.createBindGroup({
       layout: this.resolvePipeline.getBindGroupLayout(0),
       entries: [
@@ -261,11 +287,26 @@ export class SplatPipeline {
     });
   }
 
+  /**
+   * Uploads the per-frame parameters for all three passes to the GPU.
+   *
+   * Computes the Spiky kernel normalization factor and encodes all values
+   * into the typed array views, then writes them to the respective uniform
+   * buffers via `device.queue.writeBuffer`.
+   *
+   * @param particleCount - Number of active particles this frame
+   * @param config - Current simulation configuration (bounds, smoothing radius)
+   */
   private updateParams(particleCount: number, config: RaymarchConfig): void {
     const bounds = config.boundsSize;
     const radius = config.smoothingRadius;
+
+    // Normalization constant for the Spiky² kernel: 15 / (2π r⁵)
     const spikyPow2Scale = 15 / (2 * Math.PI * Math.pow(radius, 5));
+
+    // Scale factor for fixed-point encoding (float → u32 via atomicAdd)
     const fixedPointScale = 1000.0;
+
     const totalVoxels =
       this.densityTextureSize.x *
       this.densityTextureSize.y *

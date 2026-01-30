@@ -49,6 +49,15 @@ import './style.css';
 import { createConfig } from '../common/config.ts';
 import { setupGui } from '../common/gui.ts';
 
+/**
+ * Converts a normalized RGB color (components in [0, 1]) to a hex string.
+ *
+ * Used to bridge the config's normalized color values with lil-gui's
+ * `addColor` control, which expects CSS hex strings like `"#7eb7e7"`.
+ *
+ * @param rgb - Color with r, g, b in [0, 1]
+ * @returns Hex string in the form `"#rrggbb"`
+ */
 function rgbToHex(rgb: { r: number; g: number; b: number }): string {
   const toByte = (value: number): number => Math.max(0, Math.min(255, Math.round(value * 255)));
   const r = toByte(rgb.r).toString(16).padStart(2, '0');
@@ -57,6 +66,15 @@ function rgbToHex(rgb: { r: number; g: number; b: number }): string {
   return `#${r}${g}${b}`;
 }
 
+/**
+ * Converts a CSS hex color string to an RGB object with byte values (0–255).
+ *
+ * The caller divides each component by 255 before writing back to the config
+ * to restore the normalized [0, 1] range used by the shader uniforms.
+ *
+ * @param hex - Hex string, with or without leading `#` (e.g. `"#7eb7e7"`)
+ * @returns RGB object with r, g, b in [0, 255]
+ */
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const normalized = hex.trim().replace('#', '');
   if (normalized.length !== 6) {
@@ -111,7 +129,10 @@ if (!app) throw new Error('Missing #app container');
 // Create the rendering canvas
 const canvas = createCanvas(app);
 
-// Initialize simulation configuration with default values
+// Initialize simulation configuration with default values.
+// Spreads the base SPH config (particle count, bounds, gravity, etc.) then
+// adds raymarch-specific parameters: density volume resolution, ray step sizes,
+// floor tile colors, extinction coefficients, and refraction settings.
 const config: RaymarchConfig = {
   ...createConfig(),
   densityTextureRes: 150,
@@ -160,6 +181,13 @@ const { stats, gui } = setupGui(
   }
 );
 
+// ---------------------------------------------------------------------------
+// Raymarch GUI Controls
+// ---------------------------------------------------------------------------
+// Adds a collapsible folder to the lil-gui panel exposing raymarch-specific
+// parameters (density texture resolution, step size, max steps, tile colors).
+// Color pickers use hex strings, bridged to normalized [0,1] via rgbToHex/hexToRgb.
+
 const raymarchFolder = gui.addFolder('Raymarch');
 raymarchFolder.close();
 raymarchFolder
@@ -174,6 +202,9 @@ raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
 raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
 raymarchFolder.add(config, 'tileDarkFactor', 0.1, 0.9, 0.01).name('Tile Dark Factor');
 
+// Proxy state object holding hex-string versions of the tile colors.
+// lil-gui's addColor binds to these strings; onChange callbacks convert
+// back to normalized [0,1] and write into the config for the shader.
 const tileColorState = {
   tileCol1: rgbToHex(config.tileCol1),
   tileCol2: rgbToHex(config.tileCol2),
