@@ -42,5 +42,20 @@ export function createConfig(): SimConfig {
       { position: { x: -8.3, y: -1.3, z: 3.65 }, size: { x: 7, y: 7, z: 7 } },
       { position: { x: -8.3, y: -1.3, z: -3.65 }, size: { x: 7, y: 7, z: 7 } },
     ],
+
+    // Foam Settings (matching Unity exact values)
+    foamSpawnRate: 70,
+    trappedAirVelocityMin: 5,
+    trappedAirVelocityMax: 25,
+    foamKineticEnergyMin: 15,
+    foamKineticEnergyMax: 80,
+    bubbleBuoyancy: 1.4,
+    bubbleScale: 0.3,
+    foamLifetimeMin: 5,
+    foamLifetimeMax: 15,
+    foamColor: { r: 0.95, g: 0.98, b: 1.0 },
+    foamOpacity: 2.5,
+    sprayClassifyMaxNeighbours: 5,
+    bubbleClassifyMinNeighbours: 15,
   };
 }

@@ -213,6 +213,8 @@ export class ScreenSpaceRenderer {
       particleRadius: this.config.particleRadius * dpr,
       near,
       far,
+      foamColor: this.config.foamColor,
+      foamOpacity: this.config.foamOpacity,
     };
 
     const resources: ScreenSpaceTextures & { buffers: SimBuffers } = {

@@ -6,6 +6,8 @@ struct FullscreenOut {
 struct Uniforms {
   inverseViewProjection: mat4x4<f32>,
   lightViewProjection: mat4x4<f32>,
+  foamColor: vec3<f32>,
+  foamOpacity: f32,
 };
 
 @vertex
@@ -108,7 +110,7 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   var color = mix(floorCol, diffuse + specular, alpha);
   color = mix(color, refracted, 0.4 * fresnel);
   let foam = textureSample(foamTex, samp, in.uv).r;
-  color = mix(color, vec3<f32>(0.95, 0.98, 1.0), clamp(foam * 2.5, 0.0, 1.0));
+  color = mix(color, uniforms.foamColor, clamp(foam * uniforms.foamOpacity, 0.0, 1.0));
 
   return vec4<f32>(color, 1.0);
 }

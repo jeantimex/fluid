@@ -506,22 +506,24 @@ export class FluidSimulation {
     this.foamFrameCount++;
 
     // ========================================================================
-    // Update foam spawn uniforms - MATCHING UNITY EXACTLY
+    // Update foam spawn uniforms - MATCHING CONFIG/UNITY
     // ========================================================================
     this.foamSpawnData[0] = frameTime;
-    this.foamSpawnData[1] = 70.0;  // trappedAirSpawnRate
-    this.foamSpawnData[2] = 5.0;   // trappedAirVelocityMinMax.x
-    this.foamSpawnData[3] = 25.0;  // trappedAirVelocityMinMax.y
-    this.foamSpawnData[4] = 15.0;  // foamKineticEnergyMinMax.x
-    this.foamSpawnData[5] = 80.0;  // foamKineticEnergyMinMax.y
+    this.foamSpawnData[1] = config.foamSpawnRate;
+    this.foamSpawnData[2] = config.trappedAirVelocityMin;
+    this.foamSpawnData[3] = config.trappedAirVelocityMax;
+    this.foamSpawnData[4] = config.foamKineticEnergyMin;
+    this.foamSpawnData[5] = config.foamKineticEnergyMax;
     
     const u32SpawnView = new Uint32Array(this.foamSpawnData.buffer);
     u32SpawnView[6] = maxFoam;
     u32SpawnView[7] = this.foamFrameCount;
-    u32SpawnView[8] = buffers.particleCount;
+    this.foamSpawnData[8] = buffers.particleCount;
     
     this.foamSpawnData[9] = config.smoothingRadius;
-    // Padding at 10, 11 (alignment for vec3)
+    this.foamSpawnData[10] = config.foamLifetimeMin;
+    this.foamSpawnData[11] = config.foamLifetimeMax;
+    
     this.foamSpawnData[12] = -config.boundsSize.x * 0.5;
     this.foamSpawnData[13] = -config.boundsSize.y * 0.5;
     this.foamSpawnData[14] = -config.boundsSize.z * 0.5;
@@ -529,7 +531,7 @@ export class FluidSimulation {
     this.foamSpawnData[16] = this.gridRes.x;
     this.foamSpawnData[17] = this.gridRes.y;
     this.foamSpawnData[18] = this.gridRes.z;
-    this.foamSpawnData[19] = 0.3; // bubbleScale (Unity value)
+    this.foamSpawnData[19] = config.bubbleScale;
 
     device.queue.writeBuffer(
       pipelines.uniformBuffers.foamSpawn,
@@ -538,12 +540,12 @@ export class FluidSimulation {
     );
 
     // ========================================================================
-    // Update foam update uniforms - MATCHING UNITY EXACTLY
+    // Update foam update uniforms - MATCHING CONFIG/UNITY
     // ========================================================================
     this.foamUpdateData[0] = frameTime;
-    this.foamUpdateData[1] = -10.0; // gravity
-    this.foamUpdateData[2] = 0.04;  // dragCoeff (Unity default)
-    this.foamUpdateData[3] = 1.4;   // bubbleBuoyancy (Unity value)
+    this.foamUpdateData[1] = config.gravity;
+    this.foamUpdateData[2] = 0.04;  // dragCoeff (internal constant in Unity shader)
+    this.foamUpdateData[3] = config.bubbleBuoyancy;
     
     this.foamUpdateData[4] = config.boundsSize.x * 0.5;
     this.foamUpdateData[5] = config.boundsSize.y * 0.5;
@@ -562,8 +564,8 @@ export class FluidSimulation {
 
     // Classification counts: [minBubble, maxSpray]
     const u32Update = new Uint32Array(this.foamUpdateData.buffer);
-    u32Update[16] = 15; // bubbleClassifyMinNeighbours (Unity value)
-    u32Update[17] = 5;  // sprayClassifyMaxNeighbours (Unity value)
+    u32Update[16] = config.bubbleClassifyMinNeighbours;
+    u32Update[17] = config.sprayClassifyMaxNeighbours;
     
     device.queue.writeBuffer(
       pipelines.uniformBuffers.foamUpdate,

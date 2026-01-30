@@ -37,7 +37,8 @@ struct FoamSpawnParams {
   frameCount: u32,
   particleCount: u32,
   radius: f32,
-  pad0: vec2<f32>,
+  lifeMin: f32,
+  lifeMax: f32,
   minBounds: vec3<f32>,
   pad1: f32,
   gridRes: vec3<f32>,
@@ -150,7 +151,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let spawnPos = pos + vel * params.dt * randomFloat(s + 4u);
     let foamVel = vel + vec3<f32>(randomFloat(s+5u)-0.5, randomFloat(s+6u), randomFloat(s+7u)-0.5) * 2.0;
     
-    let lifetime = mix(5.0, 15.0, randomFloat(s + 8u));
+    let lifetime = mix(params.lifeMin, params.lifeMax, randomFloat(s + 8u));
     let scale = (params.bubbleScale + 1.0) / 2.0;
 
     foamPositions[slot] = vec4<f32>(spawnPos, lifetime);
