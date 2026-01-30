@@ -209,6 +209,7 @@ export function setupGui(
     .add(config, 'screenSpaceDebugMode', {
       Depth: 0,
       Thickness: 1,
+      Normal: 2,
     })
     .name('Screen-Space View');
 

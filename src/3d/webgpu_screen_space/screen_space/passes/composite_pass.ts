@@ -3,6 +3,7 @@
  */
 
 import debugShader from '../shaders/debug_composite.wgsl?raw';
+import debugColorShader from '../shaders/debug_composite_color.wgsl?raw';
 import type {
   CompositePassResources,
   ScreenSpaceFrame,
@@ -12,6 +13,7 @@ export class CompositePass {
   private device: GPUDevice;
   private format: GPUTextureFormat;
   private pipeline: GPURenderPipeline;
+  private colorPipeline: GPURenderPipeline;
   private bindGroupLayout: GPUBindGroupLayout;
   private bindGroup: GPUBindGroup | null = null;
   private sampler: GPUSampler;
@@ -50,6 +52,20 @@ export class CompositePass {
       },
       primitive: { topology: 'triangle-list' },
     });
+
+    const colorModule = device.createShaderModule({ code: debugColorShader });
+    this.colorPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [this.bindGroupLayout],
+      }),
+      vertex: { module: colorModule, entryPoint: 'vs_main' },
+      fragment: {
+        module: colorModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'triangle-list' },
+    });
   }
 
   resize(_width: number, _height: number) {
@@ -57,7 +73,14 @@ export class CompositePass {
   }
 
   createBindGroup(resources: CompositePassResources, mode: number) {
-    const source = mode === 1 ? resources.thicknessTexture : resources.smoothTextureA;
+    let source: GPUTexture | null = null;
+    if (mode === 1) {
+      source = resources.thicknessTexture;
+    } else if (mode === 2) {
+      source = resources.normalTexture;
+    } else {
+      source = resources.smoothTextureA;
+    }
     if (!source) {
       this.bindGroup = null;
       this.lastMode = null;
@@ -99,7 +122,7 @@ export class CompositePass {
       ],
     });
 
-    pass.setPipeline(this.pipeline);
+    pass.setPipeline(mode === 2 ? this.colorPipeline : this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.draw(6, 1);
     pass.end();

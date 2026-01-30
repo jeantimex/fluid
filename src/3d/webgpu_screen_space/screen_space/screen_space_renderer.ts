@@ -188,6 +188,7 @@ export class ScreenSpaceRenderer {
 
     this.depthPass.encode(encoder, resources, frame);
     this.thicknessPass.encode(encoder, resources, frame);
+    this.normalPass.encode(encoder, resources, frame);
 
     const compositeInputs: CompositePassInputs = {
       targetView: swapchainView,
