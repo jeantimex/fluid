@@ -148,3 +148,161 @@ Phase 1: Easy Wins & Rendering Efficiency — ✅ COMPLETE
    * Sub-task 3.4: Pipeline Wiring — ✅ Done
        * Change: Replaced single density volume dispatch in `fluid_simulation.ts` with 3-pass
          Clear → Splat → Resolve pipeline. Removed old `density_volume.wgsl` import and pipeline.
+
+
+        Performance Analysis: webgpu_raymarch
+
+  The rendering pipeline has two expensive stages: density splatting (compute) and raymarching (fragment).
+   The raymarch shader is the dominant bottleneck — every pixel walks through the volume with up to 512
+  steps, and each refraction bounce multiplies that cost.
+
+  1. Empty-Space Skipping (High Impact)
+
+  File: raymarch.wgsl:295 — findNextSurface
+
+  The primary ray loop steps through the entire bounding box at a uniform stepSize, even when most of the
+  volume is empty air (e.g. fluid settled at the bottom). Every step calls sampleDensity, which is a 3D
+  texture fetch plus a boundary check.
+
+  Optimization: Generate a mipmap chain (or a separate low-res "occupancy" volume) of the density texture.
+   Before stepping, sample a coarse mip to skip large empty regions. This is the classic "hierarchical
+  empty-space skipping" technique. It could reduce the average step count from ~512 to ~50–100 for typical
+   scenes where fluid occupies a small fraction of the volume.
+
+  Alternative (simpler): Adaptive step size — start with a large step (4× stepSize), and when density is
+  detected, back up and refine with the normal stepSize. This is easier to implement and still cuts step
+  count significantly for empty regions.
+
+  2. Redundant Boundary Check in sampleDensity (Medium-High Impact)
+
+  File: raymarch.wgsl:157–164
+
+  sampleDensity performs 6 float comparisons on every call:
+
+  if (any(uvw >= vec3<f32>(1.0 - epsilon)) || any(uvw <= vec3<f32>(epsilon))) {
+      return -params.densityOffset;
+  }
+
+  This function is called:
+  - Once per step in findNextSurface (up to 512 times per bounce)
+  - 6 times in calculateNormal (central differences)
+  - Multiple times in shadow/refraction density probes
+
+  That's easily 2000+ boundary checks per pixel.
+
+  Optimization: Pad the density texture by 1 voxel on each side during the resolve pass, filling border
+  voxels with 0. Then use sampleDensityRaw everywhere and remove sampleDensity entirely. The clamp-to-edge
+   sampler already handles out-of-bounds UVs; the padding ensures edge samples return zero density
+  naturally.
+
+  3. isInsideFluid Uses Ray-Box Intersection (Low-Effort Fix)
+
+  File: raymarch.wgsl:168–173
+
+  fn isInsideFluid(pos: vec3<f32>) -> bool {
+      let hit = rayBoxIntersection(pos, vec3<f32>(0.0, 0.0, 1.0), boundsMin, boundsMax);
+      return (hit.x <= 0.0 && hit.y > 0.0) && sampleDensity(pos) > 0.0;
+  }
+
+  This fires a ray-box intersection (reciprocals, 6 min/max operations) just to check if a point is inside
+   a box. A simple point-in-AABB test is cheaper:
+
+  let inside = all(pos >= boundsMin) && all(pos <= boundsMax);
+  return inside && sampleDensity(pos) > 0.0;
+
+  4. Density Texture Format Waste (Medium Impact)
+
+  File: splat_pipeline.ts:215 and splat_resolve.wgsl:52
+
+  The density texture uses rgba16float (64 bits/voxel) but only the R channel carries data:
+
+  textureStore(densityVolume, vec3<i32>(id), vec4<f32>(density, 0.0, 0.0, 1.0));
+
+  And the raymarch shader only reads .r:
+
+  textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r
+
+  This wastes 75% of texture memory and bandwidth. Unfortunately, r16float doesn't support STORAGE_BINDING
+   in base WebGPU. Options:
+
+  - r32float — supports storage binding. 32 bits/voxel (2× savings). Requires the float32-filterable
+  feature for trilinear filtering, which is widely supported on desktop GPUs.
+  - Keep rgba16float but pack 4 density values per texel (tile the volume) — complex but 4× effective
+  compression.
+
+  5. calculateNormal — 6 Texture Samples (Medium Impact)
+
+  File: raymarch.wgsl:200–211
+
+  Central differences require 6 samples per normal. Called at every refraction surface hit. With
+  numRefractions = 4, that's up to 24 density texture samples just for normals.
+
+  Optimization: Use forward differences (4 samples: 1 center + 3 axis offsets) instead of central
+  differences. Costs 33% fewer samples. Slightly less accurate but imperceptible at typical density
+  resolutions:
+
+  let d0 = sampleDensity(pos);
+  let dx = sampleDensity(pos + offsetX) - d0;
+  let dy = sampleDensity(pos + offsetY) - d0;
+  let dz = sampleDensity(pos + offsetZ) - d0;
+
+  6. Shadow Ray Over-Sampling (Medium Impact)
+
+  File: raymarch.wgsl:424
+
+  calculateDensityForShadow steps at lightStepSize * 2.0 but allows up to 32 iterations. This is called:
+  - Once per floor pixel hit (sampleEnvironment, line 544, maxDst=100)
+  - Once per discarded ray at each refraction bounce (via sampleEnvironment)
+  - Once as the final density remainder (line 772, maxDst=1000)
+
+  That's potentially 4–6 shadow ray evaluations per pixel, each doing up to 32 steps = ~160 texture
+  samples.
+
+  Optimization: Use a coarser step size (3–4× lightStepSize) for shadow rays. Shadow quality is
+  low-frequency and soft shadows are visually forgiving. Also, lower the early-exit threshold from 3.0 to
+  2.0 — exp(-2) ≈ 0.135, already very dark.
+
+  7. Splat Particle Kernel — sqrt in Inner Loop (Low Impact)
+
+  File: splat_particles.wgsl:99
+
+  The triple-nested voxel loop computes sqrt(sqrDst) for every voxel in the AABB. The sqrt is needed
+  because the Spiky² kernel is defined in terms of distance, not squared distance. However, for the
+  specific case of (h - r)², you could reformulate using squared distance directly if you pre-compute the
+  kernel in terms of sqrDst. This is a micro-optimization with minimal visual impact.
+
+  8. Offscreen Texture Precision (Low Impact, Quality Improvement)
+
+  File: renderer.ts:250
+
+  The half-res offscreen texture uses the swap chain format (typically bgra8unorm, 8 bits per channel).
+  Exposure is applied in the fragment shader before output, so HDR values are clamped. This can cause
+  banding in dark regions.
+
+  Using rgba16float for the offscreen texture and moving exposure/tone-mapping to the blit pass would
+  preserve dynamic range. The performance difference of the format change itself is minimal on modern
+  GPUs.
+
+  ---
+  Summary by Priority
+  ┌──────────┬──────────────────────────────────────────────────────┬───────────────────────┬─────────┐
+  │ Priority │                     Optimization                     │     Est. Speedup      │ Effort  │
+  ├──────────┼──────────────────────────────────────────────────────┼───────────────────────┼─────────┤
+  │ 1        │ Empty-space skipping (adaptive stepping)             │ 2–5× for rays         │ Medium  │
+  ├──────────┼──────────────────────────────────────────────────────┼───────────────────────┼─────────┤
+  │ 2        │ Remove sampleDensity boundary check (padded texture) │ 10–20% overall        │ Low     │
+  ├──────────┼──────────────────────────────────────────────────────┼───────────────────────┼─────────┤
+  │ 3        │ Simplify isInsideFluid to point-in-box               │ Small                 │ Trivial │
+  ├──────────┼──────────────────────────────────────────────────────┼───────────────────────┼─────────┤
+  │ 4        │ r32float density texture                             │ 10–15% bandwidth      │ Low     │
+  ├──────────┼──────────────────────────────────────────────────────┼───────────────────────┼─────────┤
+  │ 5        │ Forward-difference normals (6→4 samples)             │ 5–10% per bounce      │ Trivial │
+  ├──────────┼──────────────────────────────────────────────────────┼───────────────────────┼─────────┤
+  │ 6        │ Coarser shadow rays                                  │ 10–20% on shadow cost │ Trivial │
+  ├──────────┼──────────────────────────────────────────────────────┼───────────────────────┼─────────┤
+  │ 7        │ Avoid sqrt in splat kernel                           │ ~5% on splat pass     │ Low     │
+  ├──────────┼──────────────────────────────────────────────────────┼───────────────────────┼─────────┤
+  │ 8        │ rgba16float offscreen texture                        │ Quality improvement   │ Low     │
+  └──────────┴──────────────────────────────────────────────────────┴───────────────────────┴─────────┘
+  The biggest single win would be empty-space skipping (#1). For a typical scene where fluid occupies ~20%
+   of the volume, this could reduce the per-pixel ray cost by 3–5×.

@@ -291,18 +291,36 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
   // Maximum distance to test inside the box (with tiny nudge to avoid edge cases)
   let dstToTest = boundsDstInfo.y - 0.01;
 
+  // Adaptive stepping: skip empty space at coarse resolution
+  const COARSE_MULTIPLIER = 4.0;
+  const FINE_RETURN_THRESHOLD = 3u;  // consecutive empty samples before going coarse
+
+  var useCoarseStep = true;
+  var prevDst = 0.0;
+  var consecutiveEmpty = 0u;
+
   var dst = 0.0;
   for (var i = 0u; i < 512u; i = i + 1u) {
     if (dst >= dstToTest) { break; }
 
-    let isLastStep = (dst + stepSize) >= dstToTest;
+    let currentStep = select(stepSize, stepSize * COARSE_MULTIPLIER, useCoarseStep);
+    let isLastStep = (dst + currentStep) >= dstToTest;
     let samplePos = currentOrigin + rayDir * dst;
-    let thickness = sampleDensity(samplePos) * params.densityMultiplier * stepSize;
+    let thickness = sampleDensity(samplePos) * params.densityMultiplier * currentStep;
     let insideFluid = thickness > 0.0;
+
+    // If coarse stepping found density, back up and refine
+    if (useCoarseStep && insideFluid) {
+      dst = prevDst;
+      useCoarseStep = false;
+      consecutiveEmpty = 0u;
+      continue;
+    }
 
     if (insideFluid) {
       hasEnteredFluid = true;
       lastPosInFluid = samplePos;
+      consecutiveEmpty = 0u;
       // Accumulate optical thickness for transmittance calculation
       if (dst <= maxDst) {
          info.densityAlongRay = info.densityAlongRay + thickness;
@@ -311,6 +329,11 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
 
     if (!insideFluid) {
       hasExittedFluid = true;
+      consecutiveEmpty++;
+      // After enough empty samples in fine mode, switch back to coarse
+      if (!useCoarseStep && consecutiveEmpty >= FINE_RETURN_THRESHOLD && !hasEnteredFluid) {
+        useCoarseStep = true;
+      }
     }
 
     // Determine if we found the desired surface transition
@@ -329,7 +352,8 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
       break;
     }
 
-    dst = dst + stepSize;
+    prevDst = dst;
+    dst = dst + currentStep;
   }
 
   return info;
