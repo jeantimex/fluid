@@ -210,6 +210,8 @@ export function setupGui(
       Depth: 0,
       Thickness: 1,
       Normal: 2,
+      Smooth: 3,
+      Shaded: 4,
     })
     .name('Screen-Space View');
 

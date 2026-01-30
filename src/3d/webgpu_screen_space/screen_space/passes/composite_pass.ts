@@ -4,6 +4,7 @@
 
 import debugShader from '../shaders/debug_composite.wgsl?raw';
 import debugColorShader from '../shaders/debug_composite_color.wgsl?raw';
+import compositeShader from '../shaders/composite_final.wgsl?raw';
 import type {
   CompositePassResources,
   ScreenSpaceFrame,
@@ -14,8 +15,11 @@ export class CompositePass {
   private format: GPUTextureFormat;
   private pipeline: GPURenderPipeline;
   private colorPipeline: GPURenderPipeline;
+  private compositePipeline: GPURenderPipeline;
   private bindGroupLayout: GPUBindGroupLayout;
   private bindGroup: GPUBindGroup | null = null;
+  private compositeBindGroupLayout: GPUBindGroupLayout;
+  private compositeBindGroup: GPUBindGroup | null = null;
   private sampler: GPUSampler;
   private lastMode: number | null = null;
 
@@ -36,6 +40,22 @@ export class CompositePass {
           texture: { sampleType: 'float' },
         },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      ],
+    });
+
+    this.compositeBindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float' },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float' },
+        },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
     });
 
@@ -66,6 +86,20 @@ export class CompositePass {
       },
       primitive: { topology: 'triangle-list' },
     });
+
+    const compositeModule = device.createShaderModule({ code: compositeShader });
+    this.compositePipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [this.compositeBindGroupLayout],
+      }),
+      vertex: { module: compositeModule, entryPoint: 'vs_main' },
+      fragment: {
+        module: compositeModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'triangle-list' },
+    });
   }
 
   resize(_width: number, _height: number) {
@@ -78,6 +112,8 @@ export class CompositePass {
       source = resources.thicknessTexture;
     } else if (mode === 2) {
       source = resources.normalTexture;
+    } else if (mode === 3) {
+      source = resources.smoothTextureB;
     } else {
       source = resources.smoothTextureA;
     }
@@ -97,6 +133,22 @@ export class CompositePass {
     this.lastMode = mode;
   }
 
+  createCompositeBindGroup(resources: CompositePassResources) {
+    if (!resources.smoothTextureB || !resources.normalTexture) {
+      this.compositeBindGroup = null;
+      return;
+    }
+
+    this.compositeBindGroup = this.device.createBindGroup({
+      layout: this.compositeBindGroupLayout,
+      entries: [
+        { binding: 0, resource: resources.smoothTextureB.createView() },
+        { binding: 1, resource: resources.normalTexture.createView() },
+        { binding: 2, resource: this.sampler },
+      ],
+    });
+  }
+
   encode(
     encoder: GPUCommandEncoder,
     resources: CompositePassResources,
@@ -104,11 +156,20 @@ export class CompositePass {
     targetView: GPUTextureView,
     mode: number
   ) {
-    if (this.lastMode !== mode) {
-      this.createBindGroup(resources, mode);
-    }
-    if (!this.bindGroup) {
-      return;
+    if (mode === 4) {
+      if (!this.compositeBindGroup) {
+        this.createCompositeBindGroup(resources);
+      }
+      if (!this.compositeBindGroup) {
+        return;
+      }
+    } else {
+      if (this.lastMode !== mode) {
+        this.createBindGroup(resources, mode);
+      }
+      if (!this.bindGroup) {
+        return;
+      }
     }
 
     const pass = encoder.beginRenderPass({
@@ -122,8 +183,13 @@ export class CompositePass {
       ],
     });
 
-    pass.setPipeline(mode === 2 ? this.colorPipeline : this.pipeline);
-    pass.setBindGroup(0, this.bindGroup);
+    if (mode === 4) {
+      pass.setPipeline(this.compositePipeline);
+      pass.setBindGroup(0, this.compositeBindGroup!);
+    } else {
+      pass.setPipeline(mode === 2 ? this.colorPipeline : this.pipeline);
+      pass.setBindGroup(0, this.bindGroup!);
+    }
     pass.draw(6, 1);
     pass.end();
   }
