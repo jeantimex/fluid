@@ -59,7 +59,8 @@ import { setupGui } from '../common/gui.ts';
  * @returns Hex string in the form `"#rrggbb"`
  */
 function rgbToHex(rgb: { r: number; g: number; b: number }): string {
-  const toByte = (value: number): number => Math.max(0, Math.min(255, Math.round(value * 255)));
+  const toByte = (value: number): number =>
+    Math.max(0, Math.min(255, Math.round(value * 255)));
   const r = toByte(rgb.r).toString(16).padStart(2, '0');
   const g = toByte(rgb.g).toString(16).padStart(2, '0');
   const b = toByte(rgb.b).toString(16).padStart(2, '0');
@@ -200,7 +201,9 @@ raymarchFolder
   .name('Density Multiplier');
 raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
 raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
-raymarchFolder.add(config, 'tileDarkFactor', 0.1, 0.9, 0.01).name('Tile Dark Factor');
+raymarchFolder
+  .add(config, 'tileDarkFactor', 0.1, 0.9, 0.01)
+  .name('Tile Dark Factor');
 
 // Proxy state object holding hex-string versions of the tile colors.
 // lil-gui's addColor binds to these strings; onChange callbacks convert

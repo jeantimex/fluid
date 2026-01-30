@@ -93,7 +93,7 @@ export class SimulationBuffersLinear {
 
   /**
    * Grid cell start offsets (Histogram / Prefix Sum).
-   * 
+   *
    * Layout: u32 per grid cell
    * Size: (gridTotalCells + 1) * 4 bytes
    *
@@ -217,40 +217,94 @@ export class SimulationBuffersLinear {
     this.particleCount = spawn.count;
 
     // Particle Data
-    this.positions = this.createBufferFromArray(spawn.positions, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.predicted = this.createBufferFromArray(new Float32Array(spawn.positions), GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.velocities = this.createBufferFromArray(spawn.velocities, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC);
-    this.densities = this.createEmptyBuffer(spawn.count * 2 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC);
+    this.positions = this.createBufferFromArray(
+      spawn.positions,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.predicted = this.createBufferFromArray(
+      new Float32Array(spawn.positions),
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.velocities = this.createBufferFromArray(
+      spawn.velocities,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
+    );
+    this.densities = this.createEmptyBuffer(
+      spawn.count * 2 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
+    );
 
     // Linear Grid & Sorting
-    this.keys = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.indices = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.particleCellOffsets = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    
+    this.keys = this.createEmptyBuffer(
+      spawn.count * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.indices = this.createEmptyBuffer(
+      spawn.count * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.particleCellOffsets = this.createEmptyBuffer(
+      spawn.count * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+
     // sortOffsets covers all cells + 1 sentinel
-    this.sortOffsets = this.createEmptyBuffer((gridTotalCells + 1) * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.sortOffsets = this.createEmptyBuffer(
+      (gridTotalCells + 1) * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
 
     // Scan Buffers (Sized for gridTotalCells, not particleCount, because we scan the histogram)
     // We scan the sortOffsets array which has size gridTotalCells.
     const blocksL0 = Math.ceil((gridTotalCells + 1) / 512); // +1 for safety with sentinel
     const blocksL1 = Math.ceil(blocksL0 / 512);
 
-    this.groupSumsL1 = this.createEmptyBuffer(blocksL0 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.groupSumsL2 = this.createEmptyBuffer(blocksL1 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.scanScratch = this.createEmptyBuffer(4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.groupSumsL1 = this.createEmptyBuffer(
+      blocksL0 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.groupSumsL2 = this.createEmptyBuffer(
+      blocksL1 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.scanScratch = this.createEmptyBuffer(
+      4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
 
     // Culling
-    this.visibleIndices = this.createEmptyBuffer(spawn.count * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.indirectDraw = this.createEmptyBuffer(4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.INDIRECT);
+    this.visibleIndices = this.createEmptyBuffer(
+      spawn.count * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.indirectDraw = this.createEmptyBuffer(
+      4 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.INDIRECT
+    );
 
     // Sorted Data
-    this.positionsSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.predictedSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-    this.velocitiesSorted = this.createEmptyBuffer(spawn.count * 4 * 4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+    this.positionsSorted = this.createEmptyBuffer(
+      spawn.count * 4 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.predictedSorted = this.createEmptyBuffer(
+      spawn.count * 4 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.velocitiesSorted = this.createEmptyBuffer(
+      spawn.count * 4 * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
 
     // Readback
-    this.velocityReadback = device.createBuffer({ size: spawn.count * 4 * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
-    this.densityReadback = device.createBuffer({ size: spawn.count * 2 * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+    this.velocityReadback = device.createBuffer({
+      size: spawn.count * 4 * 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+    this.densityReadback = device.createBuffer({
+      size: spawn.count * 2 * 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
   }
 
   /**
@@ -263,9 +317,19 @@ export class SimulationBuffersLinear {
    * @param usage - GPUBufferUsage flags (e.g. STORAGE | COPY_DST)
    * @returns The newly created and populated GPU buffer
    */
-  private createBufferFromArray(data: Float32Array | Uint32Array, usage: GPUBufferUsageFlags): GPUBuffer {
-    const buffer = this.device.createBuffer({ size: data.byteLength, usage, mappedAtCreation: true });
-    const mapping = data instanceof Float32Array ? new Float32Array(buffer.getMappedRange()) : new Uint32Array(buffer.getMappedRange());
+  private createBufferFromArray(
+    data: Float32Array | Uint32Array,
+    usage: GPUBufferUsageFlags
+  ): GPUBuffer {
+    const buffer = this.device.createBuffer({
+      size: data.byteLength,
+      usage,
+      mappedAtCreation: true,
+    });
+    const mapping =
+      data instanceof Float32Array
+        ? new Float32Array(buffer.getMappedRange())
+        : new Uint32Array(buffer.getMappedRange());
     mapping.set(data);
     buffer.unmap();
     return buffer;
@@ -278,7 +342,10 @@ export class SimulationBuffersLinear {
    * @param usage      - GPUBufferUsage flags
    * @returns The newly created GPU buffer
    */
-  private createEmptyBuffer(byteLength: number, usage: GPUBufferUsageFlags): GPUBuffer {
+  private createEmptyBuffer(
+    byteLength: number,
+    usage: GPUBufferUsageFlags
+  ): GPUBuffer {
     return this.device.createBuffer({ size: byteLength, usage });
   }
 

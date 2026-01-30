@@ -115,7 +115,6 @@ export class RaymarchRenderer {
   /** Current height of the offscreen texture (canvas.height / 2). */
   private offscreenHeight = 0;
 
-
   /**
    * Creates the raymarch and blit pipelines, samplers, and uniform buffer.
    *
@@ -231,7 +230,10 @@ export class RaymarchRenderer {
    * @param canvasWidth  - Current canvas pixel width
    * @param canvasHeight - Current canvas pixel height
    */
-  private ensureOffscreenTexture(canvasWidth: number, canvasHeight: number): void {
+  private ensureOffscreenTexture(
+    canvasWidth: number,
+    canvasHeight: number
+  ): void {
     const halfW = Math.max(1, Math.floor(canvasWidth / 2));
     const halfH = Math.max(1, Math.floor(canvasHeight / 2));
 
@@ -250,7 +252,8 @@ export class RaymarchRenderer {
     this.offscreenTexture = this.device.createTexture({
       size: { width: halfW, height: halfH },
       format: this.format,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
     this.offscreenTextureView = this.offscreenTexture.createView();
@@ -359,7 +362,7 @@ export class RaymarchRenderer {
     this.uniformData[48] = 0.83; // dirToSun.x
     this.uniformData[49] = 0.42; // dirToSun.y
     this.uniformData[50] = 0.36; // dirToSun.z
-    this.uniformData[51] = 0;    // pad
+    this.uniformData[51] = 0; // pad
 
     // --- Extinction coefficients for Beer–Lambert transmittance ---
     this.uniformData[52] = config.extinctionCoefficients.x;
@@ -381,7 +384,8 @@ export class RaymarchRenderer {
 
     // Floor center: horizontally centered, positioned just below the fluid bounds
     this.uniformData[64] = 0; // floorCenter.x
-    this.uniformData[65] = -config.boundsSize.y * 0.5 - config.floorSize.y * 0.5; // floorCenter.y
+    this.uniformData[65] =
+      -config.boundsSize.y * 0.5 - config.floorSize.y * 0.5; // floorCenter.y
     this.uniformData[66] = 0; // floorCenter.z
     this.uniformData[67] = 0; // pad
 
@@ -403,7 +407,14 @@ export class RaymarchRenderer {
       ],
     });
 
-    raymarchPass.setViewport(0, 0, this.offscreenWidth, this.offscreenHeight, 0, 1);
+    raymarchPass.setViewport(
+      0,
+      0,
+      this.offscreenWidth,
+      this.offscreenHeight,
+      0,
+      1
+    );
     raymarchPass.setPipeline(this.pipeline);
     raymarchPass.setBindGroup(0, this.bindGroup);
     raymarchPass.draw(3, 1, 0, 0); // Full-screen triangle (3 vertices)

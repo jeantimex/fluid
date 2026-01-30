@@ -173,7 +173,7 @@ export function setupGui(
   obstacleFolder.add(config.obstacleSize, 'x', 0, 10, 0.1).name('Size X');
   obstacleFolder.add(config.obstacleSize, 'y', 0, 10, 0.1).name('Size Y');
   obstacleFolder.add(config.obstacleSize, 'z', 0, 10, 0.1).name('Size Z');
-  
+
   obstacleFolder.add(config.obstacleCentre, 'x', -10, 10, 0.1).name('Center X');
   obstacleFolder.add(config.obstacleCentre, 'y', -10, 10, 0.1).name('Center Y');
   obstacleFolder.add(config.obstacleCentre, 'z', -10, 10, 0.1).name('Center Z');

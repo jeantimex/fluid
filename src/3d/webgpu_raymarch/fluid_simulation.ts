@@ -215,7 +215,6 @@ export class FluidSimulation {
    */
   private viscosityParamsData = new Float32Array(12);
 
-
   // ===========================================================================
   // Constructor
   // ===========================================================================
@@ -820,11 +819,12 @@ export class FluidSimulation {
   private updateIntegrateUniforms(timeStep: number): void {
     this.integrateData[0] = timeStep;
     this.integrateData[1] = this.config.collisionDamping;
-    
+
     // Check if obstacle is active (has volume)
-    const hasObstacle = this.config.obstacleSize.x > 0 && 
-                       this.config.obstacleSize.y > 0 && 
-                       this.config.obstacleSize.z > 0;
+    const hasObstacle =
+      this.config.obstacleSize.x > 0 &&
+      this.config.obstacleSize.y > 0 &&
+      this.config.obstacleSize.z > 0;
     this.integrateData[2] = hasObstacle ? 1 : 0;
 
     // Calculate half-extents of simulation bounds

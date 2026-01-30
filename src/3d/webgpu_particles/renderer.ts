@@ -385,7 +385,11 @@ export class Renderer {
   resize() {
     const width = this.canvas.width;
     const height = this.canvas.height;
-    if (this.depthTexture && width === this.depthWidth && height === this.depthHeight) {
+    if (
+      this.depthTexture &&
+      width === this.depthWidth &&
+      height === this.depthHeight
+    ) {
       return;
     }
 

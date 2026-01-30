@@ -78,7 +78,9 @@ export class SplatPipeline {
     });
 
     // Splat particles pipeline
-    const splatModule = device.createShaderModule({ code: splatParticlesShader });
+    const splatModule = device.createShaderModule({
+      code: splatParticlesShader,
+    });
     this.particlesPipeline = device.createComputePipeline({
       layout: 'auto',
       compute: { module: splatModule, entryPoint: 'main' },
@@ -94,7 +96,9 @@ export class SplatPipeline {
     });
 
     // Splat resolve pipeline
-    const resolveModule = device.createShaderModule({ code: splatResolveShader });
+    const resolveModule = device.createShaderModule({
+      code: splatResolveShader,
+    });
     this.resolvePipeline = device.createComputePipeline({
       layout: 'auto',
       compute: { module: resolveModule, entryPoint: 'main' },
@@ -140,7 +144,11 @@ export class SplatPipeline {
    * @param particleCount - Number of particles to splat
    * @param config - Current simulation configuration
    */
-  dispatch(encoder: GPUCommandEncoder, particleCount: number, config: RaymarchConfig): void {
+  dispatch(
+    encoder: GPUCommandEncoder,
+    particleCount: number,
+    config: RaymarchConfig
+  ): void {
     this.updateParams(particleCount, config);
 
     const totalVoxels =
@@ -217,8 +225,8 @@ export class SplatPipeline {
       dimension: '3d',
       format: 'rgba16float',
       usage:
-        GPUTextureUsage.STORAGE_BINDING |  // Written by the resolve compute shader
-        GPUTextureUsage.TEXTURE_BINDING |  // Sampled by the raymarch fragment shader
+        GPUTextureUsage.STORAGE_BINDING | // Written by the resolve compute shader
+        GPUTextureUsage.TEXTURE_BINDING | // Sampled by the raymarch fragment shader
         GPUTextureUsage.COPY_SRC,
     });
 

@@ -17,7 +17,11 @@
  * @module input_handler
  */
 
-import { rayBoxIntersection, vec3Add, vec3Scale } from '../webgpu_particles/math_utils.ts';
+import {
+  rayBoxIntersection,
+  vec3Add,
+  vec3Scale,
+} from '../webgpu_particles/math_utils.ts';
 import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import type { InputState, SimConfig } from '../common/types.ts';
 
@@ -333,7 +337,11 @@ export function setupInputHandlers(
   const friction = 0.92;
   const stopThreshold = 0.0001;
   return function updateInertia() {
-    if (!isDraggingCamera && (Math.abs(velocityTheta) > stopThreshold || Math.abs(velocityPhi) > stopThreshold)) {
+    if (
+      !isDraggingCamera &&
+      (Math.abs(velocityTheta) > stopThreshold ||
+        Math.abs(velocityPhi) > stopThreshold)
+    ) {
       camera.rotate(velocityTheta, velocityPhi);
       velocityTheta *= friction;
       velocityPhi *= friction;

@@ -206,17 +206,50 @@ export class ComputePipelinesLinear {
     this.device = device;
 
     this.uniformBuffers = {
-      compute: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      integrate: device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      hash: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), // Updated size 32
-      sort: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      scanParamsL0: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      scanParamsL1: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      scanParamsL2: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      cull: device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      density: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), // Updated size 48
-      pressure: device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), // Updated size 64
-      viscosity: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      compute: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      integrate: device.createBuffer({
+        size: 64,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      hash: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }), // Updated size 32
+      sort: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      scanParamsL0: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      scanParamsL1: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      scanParamsL2: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      cull: device.createBuffer({
+        size: 80,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      density: device.createBuffer({
+        size: 48,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }), // Updated size 48
+      pressure: device.createBuffer({
+        size: 64,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }), // Updated size 64
+      viscosity: device.createBuffer({
+        size: 48,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
     };
 
     this.externalForces = this.createPipeline(externalForcesShader, 'main');
