@@ -203,5 +203,14 @@ export function setupGui(
       stats.dom.style.display = value ? 'block' : 'none';
     });
 
+  const debugFolder = gui.addFolder('Debug');
+  debugFolder.close();
+  debugFolder
+    .add(config, 'screenSpaceDebugMode', {
+      Depth: 0,
+      Thickness: 1,
+    })
+    .name('Screen-Space View');
+
   return { gui, stats, uiState };
 }

@@ -43,6 +43,7 @@ export interface SimConfig {
   initialVelocity: Vec3;
   jitterStr: number;
   velocityDisplayMax: number;
+  screenSpaceDebugMode: number;
   gradientResolution: number;
   colorKeys: ColorKey[];
   spawnRegions: SpawnRegion[];

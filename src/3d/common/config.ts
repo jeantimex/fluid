@@ -2,16 +2,16 @@ import type { SimConfig } from './types.ts';
 
 export function createConfig(): SimConfig {
   return {
-    timeScale: 2,
+    timeScale: 1,
     maxTimestepFPS: 60,
-    iterationsPerFrame: 2,
+    iterationsPerFrame: 3,
     gravity: -10,
     collisionDamping: 0.95,
     smoothingRadius: 0.2,
     targetDensity: 630,
     pressureMultiplier: 288,
     nearPressureMultiplier: 2.16,
-    viscosityStrength: 0,
+    viscosityStrength: 0.001,
 
     boundsSize: { x: 24, y: 10, z: 15 },
     obstacleSize: { x: 0, y: 0, z: 0 },
@@ -24,6 +24,7 @@ export function createConfig(): SimConfig {
     // Unity Fluid Particles scene: particleSpawnDensity = 600
     spawnDensity: 600,
     velocityDisplayMax: 6.5,
+    screenSpaceDebugMode: 0,
     gradientResolution: 64,
 
     colorKeys: [
