@@ -2,7 +2,7 @@ import type { SimConfig } from './types.ts';
 
 export function createConfig(): SimConfig {
   return {
-    timeScale: 1.5,
+    timeScale: 2,
     maxTimestepFPS: 60,
     iterationsPerFrame: 2,
     gravity: -10,
