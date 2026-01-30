@@ -121,6 +121,15 @@ export class FluidSimulation {
   /** Indirect draw arguments: [vertexCount=6, instanceCount=0, firstVertex=0, firstInstance=0]. */
   private indirectArgs = new Uint32Array([6, 0, 0, 0]);
 
+  /** Foam spawn params: [dt, spawnRate, speedMin, speedMax, densityThreshold, maxFoam(u32), frameCount(u32), particleCount(u32), boundsHalf(3), pad]. */
+  private foamSpawnData = new Float32Array(12);
+
+  /** Foam update params: [dt, gravity, dragCoeff, pad, boundsHalf(3), pad]. */
+  private foamUpdateData = new Float32Array(8);
+
+  /** Frame counter for foam RNG seed (increments each step call). */
+  private foamFrameCount = 0;
+
   /**
    * Creates a new fluid simulation instance.
    *
@@ -321,6 +330,9 @@ export class FluidSimulation {
 
       device.queue.submit([encoder.finish()]);
     }
+
+    // Foam simulation (once per frame, not per iteration)
+    this.dispatchFoam(frameTime);
   }
 
   /**
@@ -475,6 +487,89 @@ export class FluidSimulation {
     copyBackPass.setBindGroup(0, pipelines.copyBackBindGroup);
     copyBackPass.dispatchWorkgroups(workgroups);
     copyBackPass.end();
+  }
+
+  /**
+   * Dispatches the foam particle system compute passes.
+   *
+   * Runs three passes per frame:
+   *   1. Clear foam spawn counter (single thread)
+   *   2. Spawn foam particles from high-velocity surface fluid particles
+   *   3. Update foam particle physics (gravity, drag, lifetime, boundaries)
+   *
+   * @param frameTime - Total frame delta time in seconds
+   */
+  private dispatchFoam(frameTime: number): void {
+    const { pipelines, buffers, device, config } = this;
+    const maxFoam = SimulationBuffersLinear.MAX_FOAM_PARTICLES;
+
+    this.foamFrameCount++;
+
+    // Update foam spawn uniforms
+    this.foamSpawnData[0] = frameTime;
+    this.foamSpawnData[1] = 70.0;  // spawnRate
+    this.foamSpawnData[2] = 5.0;   // speedMin
+    this.foamSpawnData[3] = 25.0;  // speedMax
+    this.foamSpawnData[4] = 400.0; // densityThreshold
+    const u32SpawnView = new Uint32Array(this.foamSpawnData.buffer);
+    u32SpawnView[5] = maxFoam;
+    u32SpawnView[6] = this.foamFrameCount;
+    u32SpawnView[7] = buffers.particleCount;
+    this.foamSpawnData[8] = config.boundsSize.x * 0.5;
+    this.foamSpawnData[9] = config.boundsSize.y * 0.5;
+    this.foamSpawnData[10] = config.boundsSize.z * 0.5;
+    this.foamSpawnData[11] = 0; // pad
+
+    device.queue.writeBuffer(
+      pipelines.uniformBuffers.foamSpawn,
+      0,
+      this.foamSpawnData
+    );
+
+    // Update foam update uniforms
+    this.foamUpdateData[0] = frameTime;
+    this.foamUpdateData[1] = -10.0; // gravity
+    this.foamUpdateData[2] = 0.04;  // dragCoeff
+    this.foamUpdateData[3] = 0;     // pad
+    this.foamUpdateData[4] = config.boundsSize.x * 0.5;
+    this.foamUpdateData[5] = config.boundsSize.y * 0.5;
+    this.foamUpdateData[6] = config.boundsSize.z * 0.5;
+    this.foamUpdateData[7] = 0; // pad
+
+    device.queue.writeBuffer(
+      pipelines.uniformBuffers.foamUpdate,
+      0,
+      this.foamUpdateData
+    );
+
+    const encoder = device.createCommandEncoder();
+
+    // 1. Clear foam spawn counter
+    const clearPass = encoder.beginComputePass();
+    clearPass.setPipeline(pipelines.foamClearCounter);
+    clearPass.setBindGroup(0, pipelines.foamClearCounterBindGroup);
+    clearPass.dispatchWorkgroups(1);
+    clearPass.end();
+
+    // 2. Spawn foam particles (per fluid particle)
+    const spawnPass = encoder.beginComputePass();
+    spawnPass.setPipeline(pipelines.foamSpawn);
+    spawnPass.setBindGroup(0, pipelines.foamSpawnBindGroup);
+    spawnPass.dispatchWorkgroups(
+      Math.ceil(buffers.particleCount / this.workgroupSize)
+    );
+    spawnPass.end();
+
+    // 3. Update foam particles (per MAX_FOAM)
+    const updatePass = encoder.beginComputePass();
+    updatePass.setPipeline(pipelines.foamUpdate);
+    updatePass.setBindGroup(0, pipelines.foamUpdateBindGroup);
+    updatePass.dispatchWorkgroups(
+      Math.ceil(maxFoam / this.workgroupSize)
+    );
+    updatePass.end();
+
+    device.queue.submit([encoder.finish()]);
   }
 
   /**

@@ -48,6 +48,13 @@ export interface CompositePassResources extends ScreenSpaceTextures {
   buffers: SimBuffers;
 }
 
+export interface FoamPassResources extends ScreenSpaceTextures {
+  buffers: SimBuffers;
+  foamPositions: GPUBuffer;
+  foamVelocities: GPUBuffer;
+  maxFoamParticles: number;
+}
+
 export interface CompositePassInputs {
   targetView: GPUTextureView;
 }

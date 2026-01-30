@@ -37,6 +37,8 @@ import type { SpawnData } from '../common/types.ts';
  * Manages all GPU buffers for the fluid simulation using Linear Grid.
  */
 export class SimulationBuffersLinear {
+  static readonly MAX_FOAM_PARTICLES = 200_000;
+
   // ===========================================================================
   // Particle Data Buffers (Structure of Arrays)
   // ===========================================================================
@@ -175,6 +177,30 @@ export class SimulationBuffersLinear {
   indirectDraw: GPUBuffer;
 
   // ===========================================================================
+  // Foam Particle Buffers (GPU Foam Particle System)
+  // ===========================================================================
+
+  /**
+   * Foam particle positions and lifetimes.
+   * Layout: vec4<f32> per foam particle (xyz = position, w = lifetime).
+   * Size: MAX_FOAM_PARTICLES × 16 bytes.
+   */
+  foamPositions: GPUBuffer;
+
+  /**
+   * Foam particle velocities and scales.
+   * Layout: vec4<f32> per foam particle (xyz = velocity, w = scale).
+   * Size: MAX_FOAM_PARTICLES × 16 bytes.
+   */
+  foamVelocities: GPUBuffer;
+
+  /**
+   * Atomic counter used as write head for foam ring buffer.
+   * Layout: u32 × 1. Reset to 0 each frame before spawn pass.
+   */
+  foamCounter: GPUBuffer;
+
+  // ===========================================================================
   // Readback Buffers (CPU Debugging / Visualisation)
   // ===========================================================================
 
@@ -296,6 +322,21 @@ export class SimulationBuffersLinear {
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     );
 
+    // Foam Particle Buffers
+    const maxFoam = SimulationBuffersLinear.MAX_FOAM_PARTICLES;
+    this.foamPositions = this.createEmptyBuffer(
+      maxFoam * 16,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.foamVelocities = this.createEmptyBuffer(
+      maxFoam * 16,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+    this.foamCounter = this.createEmptyBuffer(
+      4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    );
+
     // Readback
     this.velocityReadback = device.createBuffer({
       size: spawn.count * 4 * 4,
@@ -367,6 +408,9 @@ export class SimulationBuffersLinear {
     this.positionsSorted.destroy();
     this.predictedSorted.destroy();
     this.velocitiesSorted.destroy();
+    this.foamPositions.destroy();
+    this.foamVelocities.destroy();
+    this.foamCounter.destroy();
     this.velocityReadback.destroy();
     this.densityReadback.destroy();
   }

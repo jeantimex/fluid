@@ -106,9 +106,9 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let refracted = mix(floorCol, base, 1.0 - absorption);
 
   var color = mix(floorCol, diffuse + specular, alpha);
-  let foam = textureSample(foamTex, samp, in.uv).r;
-  color = mix(color, vec3<f32>(0.95, 0.98, 1.0), clamp(foam * 1.2, 0.0, 1.0));
   color = mix(color, refracted, 0.4 * fresnel);
+  let foam = textureSample(foamTex, samp, in.uv).r;
+  color = mix(color, vec3<f32>(0.95, 0.98, 1.0), clamp(foam * 2.0, 0.0, 1.0));
 
   return vec4<f32>(color, 1.0);
 }

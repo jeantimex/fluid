@@ -1,5 +1,5 @@
 import foamShader from '../shaders/foam.wgsl?raw';
-import type { ScreenSpaceFrame, ScreenSpaceTextures, SimBuffers } from '../screen_space_types.ts';
+import type { ScreenSpaceFrame, ScreenSpaceTextures } from '../screen_space_types.ts';
 
 export class FoamPass {
   private device: GPUDevice;
@@ -7,12 +7,13 @@ export class FoamPass {
   private bindGroupLayout: GPUBindGroupLayout;
   private bindGroup: GPUBindGroup | null = null;
   private uniformBuffer: GPUBuffer;
+  private maxFoamParticles = 0;
 
   constructor(device: GPUDevice) {
     this.device = device;
 
     this.uniformBuffer = device.createBuffer({
-      size: 96,
+      size: 80, // mat4(64) + vec2(8) + f32(4) + pad(4) = 80
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -20,8 +21,7 @@ export class FoamPass {
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
         { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
-        { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
-        { binding: 3, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+        { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
       ],
     });
 
@@ -51,44 +51,34 @@ export class FoamPass {
     });
   }
 
-  createBindGroup(buffers: SimBuffers) {
-    if (!('densities' in buffers)) {
-      this.bindGroup = null;
-      return;
-    }
+  createBindGroup(foamPositions: GPUBuffer, foamVelocities: GPUBuffer, maxFoamParticles: number) {
+    this.maxFoamParticles = maxFoamParticles;
     this.bindGroup = this.device.createBindGroup({
       layout: this.bindGroupLayout,
       entries: [
-        { binding: 0, resource: { buffer: buffers.positions } },
-        { binding: 1, resource: { buffer: buffers.velocities } },
-        { binding: 2, resource: { buffer: buffers.densities } },
-        { binding: 3, resource: { buffer: this.uniformBuffer } },
+        { binding: 0, resource: { buffer: foamPositions } },
+        { binding: 1, resource: { buffer: foamVelocities } },
+        { binding: 2, resource: { buffer: this.uniformBuffer } },
       ],
     });
   }
 
   encode(
     encoder: GPUCommandEncoder,
-    resources: ScreenSpaceTextures & { buffers: SimBuffers },
+    resources: ScreenSpaceTextures,
     frame: ScreenSpaceFrame,
     foamTexture: GPUTexture
   ) {
-    if (!this.bindGroup) {
-      this.createBindGroup(resources.buffers);
-    }
-    if (!this.bindGroup) {
+    if (!this.bindGroup || this.maxFoamParticles === 0) {
       return;
     }
 
-    const uniforms = new Float32Array(24);
+    const uniforms = new Float32Array(20);
     uniforms.set(frame.viewProjection);
     uniforms[16] = frame.canvasWidth;
     uniforms[17] = frame.canvasHeight;
     uniforms[18] = frame.particleRadius;
-    uniforms[19] = 2.5;  // foamMinSpeed
-    uniforms[20] = 12.0; // foamMaxSpeed
-    uniforms[21] = 450.0; // foamMinDensity
-    uniforms[22] = 700.0; // foamMaxDensity
+    uniforms[19] = 0; // pad
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
     const pass = encoder.beginRenderPass({
@@ -111,7 +101,7 @@ export class FoamPass {
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
-    pass.draw(6, resources.buffers.particleCount);
+    pass.draw(6, this.maxFoamParticles);
     pass.end();
   }
 }

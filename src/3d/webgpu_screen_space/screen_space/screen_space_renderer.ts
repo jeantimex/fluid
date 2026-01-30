@@ -12,6 +12,7 @@ import type {
   ScreenSpaceTextures,
   SimBuffers,
 } from './screen_space_types.ts';
+import { SimulationBuffersLinear } from '../simulation_buffers_linear.ts';
 import { mat4Invert, mat4LookAt, mat4Multiply, mat4Ortho, mat4Perspective } from '../math_utils.ts';
 import { DepthPass } from './passes/depth_pass.ts';
 import { FoamPass } from './passes/foam_pass.ts';
@@ -89,6 +90,15 @@ export class ScreenSpaceRenderer {
     // smooth pass bind groups are created on-demand per source texture
     this.shadowPass.createBindGroup(resources);
     this.compositePass.createBindGroup(resources);
+
+    // Foam pass uses foam particle buffers (only available on SimulationBuffersLinear)
+    if (buffers instanceof SimulationBuffersLinear) {
+      this.foamPass.createBindGroup(
+        buffers.foamPositions,
+        buffers.foamVelocities,
+        SimulationBuffersLinear.MAX_FOAM_PARTICLES
+      );
+    }
   }
 
   resize(width: number, height: number) {
@@ -222,6 +232,7 @@ export class ScreenSpaceRenderer {
     if (resources.foamTexture) {
       this.foamPass.encode(encoder, resources, frame, resources.foamTexture);
     }
+
     if (
       resources.thicknessTexture &&
       resources.smoothTextureA &&

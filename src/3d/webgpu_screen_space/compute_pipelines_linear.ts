@@ -51,6 +51,9 @@ import integrateShader from './shaders/integrate.wgsl?raw';
 import prefixSumShader from './shaders/prefix_sum.wgsl?raw';
 import reorderShader from './shaders/reorder.wgsl?raw';
 import cullShader from './shaders/cull.wgsl?raw';
+import foamSpawnShader from './shaders/foam_spawn.wgsl?raw';
+import foamUpdateShader from './shaders/foam_update.wgsl?raw';
+import foamClearCounterShader from './shaders/foam_clear_counter.wgsl?raw';
 
 /**
  * Collection of GPU uniform buffers used to upload per-frame parameters
@@ -82,6 +85,10 @@ export interface UniformBuffers {
   viscosity: GPUBuffer;
   /** Frustum culling params — 80 bytes (CullParams struct: VP matrix + radius). */
   cull: GPUBuffer;
+  /** Foam spawn params — 48 bytes (FoamSpawnParams struct). */
+  foamSpawn: GPUBuffer;
+  /** Foam update params — 32 bytes (FoamUpdateParams struct). */
+  foamUpdate: GPUBuffer;
 }
 
 /**
@@ -136,6 +143,17 @@ export class ComputePipelinesLinear {
   cull: GPUComputePipeline;
 
   // ===========================================================================
+  // Foam Particle Pipelines
+  // ===========================================================================
+
+  /** Resets foam spawn counter to zero each frame. */
+  foamClearCounter: GPUComputePipeline;
+  /** Spawns foam particles from high-velocity surface fluid particles. */
+  foamSpawn: GPUComputePipeline;
+  /** Updates foam particle physics (gravity, drag, boundaries, lifetime). */
+  foamUpdate: GPUComputePipeline;
+
+  // ===========================================================================
   // Bind Groups — SPH Physics
   // ===========================================================================
 
@@ -183,6 +201,17 @@ export class ComputePipelinesLinear {
 
   /** Bind group for the cull pass (positions, visibleIndices, indirectDraw, params). */
   cullBindGroup!: GPUBindGroup;
+
+  // ===========================================================================
+  // Bind Groups — Foam Particles
+  // ===========================================================================
+
+  /** Bind group for the foam clear counter pass. */
+  foamClearCounterBindGroup!: GPUBindGroup;
+  /** Bind group for the foam spawn pass. */
+  foamSpawnBindGroup!: GPUBindGroup;
+  /** Bind group for the foam update pass. */
+  foamUpdateBindGroup!: GPUBindGroup;
 
   // ===========================================================================
   // Shared Resources
@@ -250,6 +279,14 @@ export class ComputePipelinesLinear {
         size: 48,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
+      foamSpawn: device.createBuffer({
+        size: 48,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      foamUpdate: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
     };
 
     this.externalForces = this.createPipeline(externalForcesShader, 'main');
@@ -266,6 +303,9 @@ export class ComputePipelinesLinear {
     this.reorder = this.createPipeline(reorderShader, 'reorder');
     this.copyBack = this.createPipeline(reorderShader, 'copyBack');
     this.cull = this.createPipeline(cullShader, 'main');
+    this.foamClearCounter = this.createPipeline(foamClearCounterShader, 'main');
+    this.foamSpawn = this.createPipeline(foamSpawnShader, 'main');
+    this.foamUpdate = this.createPipeline(foamUpdateShader, 'main');
   }
 
   /**
@@ -466,5 +506,37 @@ export class ComputePipelinesLinear {
         { binding: 4, resource: { buffer: this.uniformBuffers.viscosity } },
       ],
     });
+
+    // Foam bind groups (only for SimulationBuffersLinear which has foam buffers)
+    if ('foamPositions' in buffers) {
+      this.foamClearCounterBindGroup = this.device.createBindGroup({
+        layout: this.foamClearCounter.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: buffers.foamCounter } },
+        ],
+      });
+
+      this.foamSpawnBindGroup = this.device.createBindGroup({
+        layout: this.foamSpawn.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: buffers.positions } },
+          { binding: 1, resource: { buffer: buffers.velocities } },
+          { binding: 2, resource: { buffer: buffers.densities } },
+          { binding: 3, resource: { buffer: buffers.foamPositions } },
+          { binding: 4, resource: { buffer: buffers.foamVelocities } },
+          { binding: 5, resource: { buffer: buffers.foamCounter } },
+          { binding: 6, resource: { buffer: this.uniformBuffers.foamSpawn } },
+        ],
+      });
+
+      this.foamUpdateBindGroup = this.device.createBindGroup({
+        layout: this.foamUpdate.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: buffers.foamPositions } },
+          { binding: 1, resource: { buffer: buffers.foamVelocities } },
+          { binding: 2, resource: { buffer: this.uniformBuffers.foamUpdate } },
+        ],
+      });
+    }
   }
 }
