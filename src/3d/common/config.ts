@@ -2,7 +2,7 @@ import type { SimConfig } from './types.ts';
 
 export function createConfig(): SimConfig {
   return {
-    timeScale: 1,
+    timeScale: 2,
     maxTimestepFPS: 60,
     iterationsPerFrame: 3,
     gravity: -10,
@@ -24,7 +24,7 @@ export function createConfig(): SimConfig {
     // Unity Fluid Particles scene: particleSpawnDensity = 600
     spawnDensity: 600,
     velocityDisplayMax: 6.5,
-    screenSpaceDebugMode: 0,
+    screenSpaceDebugMode: 4,
     gradientResolution: 64,
 
     colorKeys: [

@@ -13,6 +13,8 @@ export class SmoothPass {
   private pipeline: GPURenderPipeline;
   private bindGroupLayout: GPUBindGroupLayout;
   private bindGroup: GPUBindGroup | null = null;
+  private lastSource: GPUTexture | null = null;
+  private lastDepth: GPUTexture | null = null;
   private sampler: GPUSampler;
 
   constructor(device: GPUDevice) {
@@ -30,7 +32,12 @@ export class SmoothPass {
           visibility: GPUShaderStage.FRAGMENT,
           texture: { sampleType: 'float' },
         },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float' },
+        },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ],
     });
 
@@ -53,31 +60,29 @@ export class SmoothPass {
     // Placeholder.
   }
 
-  createBindGroup(resources: SmoothPassResources) {
-    if (!resources.thicknessTexture) {
-      this.bindGroup = null;
-      return;
-    }
-
+  createBindGroup(source: GPUTexture, depth: GPUTexture) {
     this.bindGroup = this.device.createBindGroup({
       layout: this.bindGroupLayout,
       entries: [
-        { binding: 0, resource: resources.thicknessTexture.createView() },
-        { binding: 1, resource: this.sampler },
+        { binding: 0, resource: source.createView() },
+        { binding: 1, resource: depth.createView() },
+        { binding: 2, resource: this.sampler },
       ],
     });
+    this.lastSource = source;
+    this.lastDepth = depth;
   }
 
   encode(
     encoder: GPUCommandEncoder,
     resources: SmoothPassResources,
-    _frame: ScreenSpaceFrame
+    _frame: ScreenSpaceFrame,
+    source: GPUTexture,
+    target: GPUTexture,
+    depth: GPUTexture
   ) {
-    if (!resources.smoothTextureB) {
-      return;
-    }
-    if (!this.bindGroup) {
-      this.createBindGroup(resources);
+    if (!this.bindGroup || this.lastSource !== source || this.lastDepth !== depth) {
+      this.createBindGroup(source, depth);
     }
     if (!this.bindGroup) {
       return;
@@ -86,7 +91,7 @@ export class SmoothPass {
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: resources.smoothTextureB.createView(),
+          view: target.createView(),
           clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
           loadOp: 'clear',
           storeOp: 'store',
@@ -98,5 +103,26 @@ export class SmoothPass {
     pass.setBindGroup(0, this.bindGroup);
     pass.draw(6, 1);
     pass.end();
+  }
+
+  encodeLegacy(
+    encoder: GPUCommandEncoder,
+    resources: SmoothPassResources,
+    _frame: ScreenSpaceFrame
+  ) {
+    if (!resources.thicknessTexture || !resources.smoothTextureB) {
+      this.bindGroup = null;
+      return;
+    }
+
+    this.createBindGroup(resources.thicknessTexture, resources.smoothTextureA);
+    this.encode(
+      encoder,
+      resources,
+      _frame,
+      resources.thicknessTexture,
+      resources.smoothTextureB,
+      resources.smoothTextureA
+    );
   }
 }

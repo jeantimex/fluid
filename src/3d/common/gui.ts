@@ -207,11 +207,11 @@ export function setupGui(
   debugFolder.close();
   debugFolder
     .add(config, 'screenSpaceDebugMode', {
+      Shaded: 4,
       Depth: 0,
       Thickness: 1,
       Normal: 2,
       Smooth: 3,
-      Shaded: 4,
     })
     .name('Screen-Space View');
 

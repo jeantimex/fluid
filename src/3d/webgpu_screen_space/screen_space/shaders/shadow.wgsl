@@ -3,7 +3,6 @@ struct Uniforms {
   canvasSize: vec2<f32>,
   particleRadius: f32,
   _pad: f32,
-  nearFar: vec2<f32>,
 };
 
 @group(0) @binding(0) var<storage, read> positions: array<vec4<f32>>;
@@ -12,7 +11,6 @@ struct Uniforms {
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
   @location(0) uv: vec2<f32>,
-  @location(1) depth: f32,
 };
 
 @vertex
@@ -43,15 +41,13 @@ fn vs_main(
   var out: VertexOutput;
   out.position = clipPos + vec4<f32>(offset, 0.0, 0.0);
   out.uv = quadPos;
-  out.depth = clipPos.z / clipPos.w;
   return out;
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) f32 {
+fn fs_main(in: VertexOutput) {
   let d = length(in.uv);
   if (d > 1.0) {
     discard;
   }
-  return clamp(in.depth, 0.0, 1.0);
 }

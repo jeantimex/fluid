@@ -10,10 +10,13 @@ export interface ScreenSpaceTextures {
   smoothTextureA: GPUTexture | null;
   smoothTextureB: GPUTexture | null;
   shadowTexture: GPUTexture | null;
+  foamTexture: GPUTexture | null;
 }
 
 export interface ScreenSpaceFrame {
   viewProjection: Float32Array;
+  inverseViewProjection: Float32Array;
+  lightViewProjection: Float32Array;
   canvasWidth: number;
   canvasHeight: number;
   particleRadius: number;

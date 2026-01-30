@@ -21,6 +21,8 @@ export class CompositePass {
   private compositeBindGroupLayout: GPUBindGroupLayout;
   private compositeBindGroup: GPUBindGroup | null = null;
   private sampler: GPUSampler;
+  private shadowSampler: GPUSampler;
+  private uniformBuffer: GPUBuffer;
   private lastMode: number | null = null;
 
   constructor(device: GPUDevice, format: GPUTextureFormat) {
@@ -30,6 +32,13 @@ export class CompositePass {
     this.sampler = device.createSampler({
       magFilter: 'linear',
       minFilter: 'linear',
+    });
+    this.shadowSampler = device.createSampler({
+      compare: 'less',
+    });
+    this.uniformBuffer = device.createBuffer({
+      size: 128,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     this.bindGroupLayout = device.createBindGroupLayout({
@@ -55,7 +64,24 @@ export class CompositePass {
           visibility: GPUShaderStage.FRAGMENT,
           texture: { sampleType: 'float' },
         },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float' },
+        },
+        {
+          binding: 3,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'depth' },
+        },
+        {
+          binding: 4,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float' },
+        },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 6, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
+        { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
       ],
     });
 
@@ -134,7 +160,13 @@ export class CompositePass {
   }
 
   createCompositeBindGroup(resources: CompositePassResources) {
-    if (!resources.smoothTextureB || !resources.normalTexture) {
+    if (
+      !resources.smoothTextureB ||
+      !resources.normalTexture ||
+      !resources.smoothTextureA ||
+      !resources.shadowTexture ||
+      !resources.foamTexture
+    ) {
       this.compositeBindGroup = null;
       return;
     }
@@ -144,7 +176,12 @@ export class CompositePass {
       entries: [
         { binding: 0, resource: resources.smoothTextureB.createView() },
         { binding: 1, resource: resources.normalTexture.createView() },
-        { binding: 2, resource: this.sampler },
+        { binding: 2, resource: resources.smoothTextureA.createView() },
+        { binding: 3, resource: resources.shadowTexture.createView() },
+        { binding: 4, resource: resources.foamTexture.createView() },
+        { binding: 5, resource: this.sampler },
+        { binding: 6, resource: this.shadowSampler },
+        { binding: 7, resource: { buffer: this.uniformBuffer } },
       ],
     });
   }
@@ -152,7 +189,7 @@ export class CompositePass {
   encode(
     encoder: GPUCommandEncoder,
     resources: CompositePassResources,
-    _frame: ScreenSpaceFrame,
+    frame: ScreenSpaceFrame,
     targetView: GPUTextureView,
     mode: number
   ) {
@@ -163,6 +200,10 @@ export class CompositePass {
       if (!this.compositeBindGroup) {
         return;
       }
+      const uniforms = new Float32Array(32);
+      uniforms.set(frame.inverseViewProjection, 0);
+      uniforms.set(frame.lightViewProjection, 16);
+      this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
     } else {
       if (this.lastMode !== mode) {
         this.createBindGroup(resources, mode);

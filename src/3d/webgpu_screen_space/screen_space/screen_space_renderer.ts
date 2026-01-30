@@ -12,8 +12,9 @@ import type {
   ScreenSpaceTextures,
   SimBuffers,
 } from './screen_space_types.ts';
-import { mat4Multiply, mat4Perspective } from '../math_utils.ts';
+import { mat4Invert, mat4LookAt, mat4Multiply, mat4Ortho, mat4Perspective } from '../math_utils.ts';
 import { DepthPass } from './passes/depth_pass.ts';
+import { FoamPass } from './passes/foam_pass.ts';
 import { ThicknessPass } from './passes/thickness_pass.ts';
 import { NormalPass } from './passes/normal_pass.ts';
 import { SmoothPass } from './passes/smooth_pass.ts';
@@ -35,6 +36,7 @@ export class ScreenSpaceRenderer {
   private smoothTextureA: GPUTexture | null = null;
   private smoothTextureB: GPUTexture | null = null;
   private shadowTexture: GPUTexture | null = null;
+  private foamTexture: GPUTexture | null = null;
 
   private buffers: SimBuffers | null = null;
 
@@ -43,6 +45,7 @@ export class ScreenSpaceRenderer {
   private normalPass: NormalPass;
   private smoothPass: SmoothPass;
   private shadowPass: ShadowPass;
+  private foamPass: FoamPass;
   private compositePass: CompositePass;
 
   constructor(
@@ -61,6 +64,7 @@ export class ScreenSpaceRenderer {
     this.normalPass = new NormalPass(device);
     this.smoothPass = new SmoothPass(device);
     this.shadowPass = new ShadowPass(device);
+    this.foamPass = new FoamPass(device);
     this.compositePass = new CompositePass(device, format);
   }
 
@@ -75,13 +79,14 @@ export class ScreenSpaceRenderer {
       smoothTextureA: this.smoothTextureA,
       smoothTextureB: this.smoothTextureB,
       shadowTexture: this.shadowTexture,
+      foamTexture: this.foamTexture,
     };
 
     // Placeholder for per-pass bind group creation.
     this.depthPass.createBindGroup(resources);
     this.thicknessPass.createBindGroup(resources);
     this.normalPass.createBindGroup(resources);
-    this.smoothPass.createBindGroup(resources);
+    // smooth pass bind groups are created on-demand per source texture
     this.shadowPass.createBindGroup(resources);
     this.compositePass.createBindGroup(resources);
   }
@@ -131,7 +136,14 @@ export class ScreenSpaceRenderer {
     this.shadowTexture = this.device.createTexture({
       size: { width: this.width, height: this.height },
       format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
+    this.foamTexture = this.device.createTexture({
+      size: { width: this.width, height: this.height },
+      format: 'r16float',
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
     this.depthPass.resize(this.width, this.height);
@@ -165,10 +177,27 @@ export class ScreenSpaceRenderer {
     const far = 100.0;
     const projection = mat4Perspective(Math.PI / 3, aspect, near, far);
     const viewProj = mat4Multiply(projection, viewMatrix);
+    const invViewProj = mat4Invert(viewProj);
     const dpr = window.devicePixelRatio || 1;
+
+    const bounds = this.config.boundsSize;
+    const halfX = bounds.x * 0.6;
+    const halfY = bounds.y * 0.6;
+    const halfZ = bounds.z * 0.6;
+    const lightDir = { x: 0.3, y: 1.0, z: 0.4 };
+    const lightPos = {
+      x: -lightDir.x * (bounds.x + bounds.z),
+      y: -lightDir.y * (bounds.x + bounds.z),
+      z: -lightDir.z * (bounds.x + bounds.z),
+    };
+    const lightView = mat4LookAt(lightPos, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
+    const lightProj = mat4Ortho(-halfX, halfX, -halfY, halfY, 0.1, bounds.x + bounds.z);
+    const lightViewProj = mat4Multiply(lightProj, lightView);
 
     const frame: ScreenSpaceFrame = {
       viewProjection: viewProj,
+      inverseViewProjection: invViewProj,
+      lightViewProjection: lightViewProj,
       canvasWidth: this.canvas.width,
       canvasHeight: this.canvas.height,
       particleRadius: this.config.particleRadius * dpr,
@@ -184,11 +213,62 @@ export class ScreenSpaceRenderer {
       smoothTextureA: this.smoothTextureA,
       smoothTextureB: this.smoothTextureB,
       shadowTexture: this.shadowTexture,
+      foamTexture: this.foamTexture,
     };
 
     this.depthPass.encode(encoder, resources, frame);
     this.thicknessPass.encode(encoder, resources, frame);
-    this.smoothPass.encode(encoder, resources, frame);
+    this.shadowPass.encode(encoder, resources, frame);
+    if (resources.foamTexture) {
+      this.foamPass.encode(encoder, resources, frame, resources.foamTexture);
+    }
+    if (
+      resources.thicknessTexture &&
+      resources.smoothTextureA &&
+      resources.smoothTextureB
+    ) {
+      // Run multiple blur passes to reduce particle granularity.
+      this.smoothPass.encode(
+        encoder,
+        resources,
+        frame,
+        resources.thicknessTexture,
+        resources.smoothTextureB,
+        resources.smoothTextureA
+      );
+      this.smoothPass.encode(
+        encoder,
+        resources,
+        frame,
+        resources.smoothTextureB,
+        resources.thicknessTexture,
+        resources.smoothTextureA
+      );
+      this.smoothPass.encode(
+        encoder,
+        resources,
+        frame,
+        resources.thicknessTexture,
+        resources.smoothTextureB,
+        resources.smoothTextureA
+      );
+      this.smoothPass.encode(
+        encoder,
+        resources,
+        frame,
+        resources.smoothTextureB,
+        resources.thicknessTexture,
+        resources.smoothTextureA
+      );
+      this.smoothPass.encode(
+        encoder,
+        resources,
+        frame,
+        resources.thicknessTexture,
+        resources.smoothTextureB,
+        resources.smoothTextureA
+      );
+    }
     this.normalPass.encode(encoder, resources, frame);
 
     const compositeInputs: CompositePassInputs = {

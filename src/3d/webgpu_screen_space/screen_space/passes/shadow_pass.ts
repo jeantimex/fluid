@@ -2,6 +2,7 @@
  * Shadow pass skeleton: render shadow map and optional smoothing.
  */
 
+import shadowShader from '../shaders/shadow.wgsl?raw';
 import type {
   ScreenSpaceFrame,
   ShadowPassResources,
@@ -9,24 +10,94 @@ import type {
 
 export class ShadowPass {
   private device: GPUDevice;
+  private pipeline: GPURenderPipeline;
+  private uniformBuffer: GPUBuffer;
+  private bindGroupLayout: GPUBindGroupLayout;
+  private bindGroup: GPUBindGroup | null = null;
 
   constructor(device: GPUDevice) {
     this.device = device;
+
+    this.uniformBuffer = device.createBuffer({
+      size: 80,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    this.bindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage' },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'uniform' },
+        },
+      ],
+    });
+
+    const module = device.createShaderModule({ code: shadowShader });
+    this.pipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [this.bindGroupLayout],
+      }),
+      vertex: { module, entryPoint: 'vs_main' },
+      fragment: { module, entryPoint: 'fs_main', targets: [] },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
   }
 
   resize(_width: number, _height: number) {
     // Placeholder.
   }
 
-  createBindGroup(_resources: ShadowPassResources) {
-    // Placeholder.
+  createBindGroup(resources: ShadowPassResources) {
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.bindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: resources.buffers.positions } },
+        { binding: 1, resource: { buffer: this.uniformBuffer } },
+      ],
+    });
   }
 
   encode(
-    _encoder: GPUCommandEncoder,
-    _resources: ShadowPassResources,
-    _frame: ScreenSpaceFrame
+    encoder: GPUCommandEncoder,
+    resources: ShadowPassResources,
+    frame: ScreenSpaceFrame
   ) {
-    // Placeholder.
+    if (!resources.shadowTexture || !this.bindGroup) {
+      return;
+    }
+
+    const uniforms = new Float32Array(20);
+    uniforms.set(frame.lightViewProjection);
+    uniforms[16] = frame.canvasWidth;
+    uniforms[17] = frame.canvasHeight;
+    uniforms[18] = frame.particleRadius;
+    uniforms[19] = 0.0;
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
+
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: resources.shadowTexture.createView(),
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    });
+
+    pass.setPipeline(this.pipeline);
+    pass.setBindGroup(0, this.bindGroup);
+    pass.draw(6, resources.buffers.particleCount);
+    pass.end();
   }
 }
