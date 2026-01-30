@@ -280,11 +280,11 @@ export class ComputePipelinesLinear {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
       foamSpawn: device.createBuffer({
-        size: 48,
+        size: 112, // Expanded for neighbor search params
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
       foamUpdate: device.createBuffer({
-        size: 32,
+        size: 112, // Expanded for neighbor search params
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
     };
@@ -519,13 +519,13 @@ export class ComputePipelinesLinear {
       this.foamSpawnBindGroup = this.device.createBindGroup({
         layout: this.foamSpawn.getBindGroupLayout(0),
         entries: [
-          { binding: 0, resource: { buffer: buffers.positions } },
+          { binding: 0, resource: { buffer: buffers.predicted } },
           { binding: 1, resource: { buffer: buffers.velocities } },
-          { binding: 2, resource: { buffer: buffers.densities } },
           { binding: 3, resource: { buffer: buffers.foamPositions } },
           { binding: 4, resource: { buffer: buffers.foamVelocities } },
           { binding: 5, resource: { buffer: buffers.foamCounter } },
           { binding: 6, resource: { buffer: this.uniformBuffers.foamSpawn } },
+          { binding: 7, resource: { buffer: buffers.sortOffsets } },
         ],
       });
 
@@ -535,6 +535,9 @@ export class ComputePipelinesLinear {
           { binding: 0, resource: { buffer: buffers.foamPositions } },
           { binding: 1, resource: { buffer: buffers.foamVelocities } },
           { binding: 2, resource: { buffer: this.uniformBuffers.foamUpdate } },
+          { binding: 3, resource: { buffer: buffers.predicted } },
+          { binding: 4, resource: { buffer: buffers.velocities } },
+          { binding: 5, resource: { buffer: buffers.sortOffsets } },
         ],
       });
     }

@@ -121,11 +121,11 @@ export class FluidSimulation {
   /** Indirect draw arguments: [vertexCount=6, instanceCount=0, firstVertex=0, firstInstance=0]. */
   private indirectArgs = new Uint32Array([6, 0, 0, 0]);
 
-  /** Foam spawn params: [dt, spawnRate, speedMin, speedMax, densityThreshold, maxFoam(u32), frameCount(u32), particleCount(u32), boundsHalf(3), pad]. */
-  private foamSpawnData = new Float32Array(12);
+  /** Foam spawn params: [dt, airRate, airMin, airMax, kinMin, kinMax, maxFoam(u32), frameCount(u32), count(u32), radius, minBounds(3), gridRes(3), bubbleScale, pad(7)]. Total 28 floats = 112 bytes. */
+  private foamSpawnData = new Float32Array(28);
 
-  /** Foam update params: [dt, gravity, dragCoeff, pad, boundsHalf(3), pad]. */
-  private foamUpdateData = new Float32Array(8);
+  /** Foam update params: [dt, gravity, dragCoeff, buoyancy, boundsHalf(3), radius, minBounds(3), pad, gridRes(3), pad, minBubble(u32), maxSpray(u32), pad(2)]. Total 28 floats = 112 bytes. */
+  private foamUpdateData = new Float32Array(28);
 
   /** Frame counter for foam RNG seed (increments each step call). */
   private foamFrameCount = 0;
@@ -505,20 +505,31 @@ export class FluidSimulation {
 
     this.foamFrameCount++;
 
-    // Update foam spawn uniforms
+    // ========================================================================
+    // Update foam spawn uniforms - MATCHING UNITY EXACTLY
+    // ========================================================================
     this.foamSpawnData[0] = frameTime;
-    this.foamSpawnData[1] = 70.0;  // spawnRate
-    this.foamSpawnData[2] = 5.0;   // speedMin
-    this.foamSpawnData[3] = 25.0;  // speedMax
-    this.foamSpawnData[4] = 400.0; // densityThreshold
+    this.foamSpawnData[1] = 70.0;  // trappedAirSpawnRate
+    this.foamSpawnData[2] = 5.0;   // trappedAirVelocityMinMax.x
+    this.foamSpawnData[3] = 25.0;  // trappedAirVelocityMinMax.y
+    this.foamSpawnData[4] = 15.0;  // foamKineticEnergyMinMax.x
+    this.foamSpawnData[5] = 80.0;  // foamKineticEnergyMinMax.y
+    
     const u32SpawnView = new Uint32Array(this.foamSpawnData.buffer);
-    u32SpawnView[5] = maxFoam;
-    u32SpawnView[6] = this.foamFrameCount;
-    u32SpawnView[7] = buffers.particleCount;
-    this.foamSpawnData[8] = config.boundsSize.x * 0.5;
-    this.foamSpawnData[9] = config.boundsSize.y * 0.5;
-    this.foamSpawnData[10] = config.boundsSize.z * 0.5;
-    this.foamSpawnData[11] = 0; // pad
+    u32SpawnView[6] = maxFoam;
+    u32SpawnView[7] = this.foamFrameCount;
+    u32SpawnView[8] = buffers.particleCount;
+    
+    this.foamSpawnData[9] = config.smoothingRadius;
+    // Padding at 10, 11 (alignment for vec3)
+    this.foamSpawnData[12] = -config.boundsSize.x * 0.5;
+    this.foamSpawnData[13] = -config.boundsSize.y * 0.5;
+    this.foamSpawnData[14] = -config.boundsSize.z * 0.5;
+    // Padding at 15 (alignment for vec3)
+    this.foamSpawnData[16] = this.gridRes.x;
+    this.foamSpawnData[17] = this.gridRes.y;
+    this.foamSpawnData[18] = this.gridRes.z;
+    this.foamSpawnData[19] = 0.3; // bubbleScale (Unity value)
 
     device.queue.writeBuffer(
       pipelines.uniformBuffers.foamSpawn,
@@ -526,16 +537,34 @@ export class FluidSimulation {
       this.foamSpawnData
     );
 
-    // Update foam update uniforms
+    // ========================================================================
+    // Update foam update uniforms - MATCHING UNITY EXACTLY
+    // ========================================================================
     this.foamUpdateData[0] = frameTime;
     this.foamUpdateData[1] = -10.0; // gravity
-    this.foamUpdateData[2] = 0.04;  // dragCoeff
-    this.foamUpdateData[3] = 0;     // pad
+    this.foamUpdateData[2] = 0.04;  // dragCoeff (Unity default)
+    this.foamUpdateData[3] = 1.4;   // bubbleBuoyancy (Unity value)
+    
     this.foamUpdateData[4] = config.boundsSize.x * 0.5;
     this.foamUpdateData[5] = config.boundsSize.y * 0.5;
     this.foamUpdateData[6] = config.boundsSize.z * 0.5;
-    this.foamUpdateData[7] = 0; // pad
+    this.foamUpdateData[7] = config.smoothingRadius;
 
+    this.foamUpdateData[8] = -config.boundsSize.x * 0.5;
+    this.foamUpdateData[9] = -config.boundsSize.y * 0.5;
+    this.foamUpdateData[10] = -config.boundsSize.z * 0.5;
+    this.foamUpdateData[11] = 0; // pad
+
+    this.foamUpdateData[12] = this.gridRes.x;
+    this.foamUpdateData[13] = this.gridRes.y;
+    this.foamUpdateData[14] = this.gridRes.z;
+    this.foamUpdateData[15] = 0; // pad
+
+    // Classification counts: [minBubble, maxSpray]
+    const u32Update = new Uint32Array(this.foamUpdateData.buffer);
+    u32Update[16] = 15; // bubbleClassifyMinNeighbours (Unity value)
+    u32Update[17] = 5;  // sprayClassifyMaxNeighbours (Unity value)
+    
     device.queue.writeBuffer(
       pipelines.uniformBuffers.foamUpdate,
       0,
@@ -544,13 +573,9 @@ export class FluidSimulation {
 
     const encoder = device.createCommandEncoder();
 
-    // 1. Clear foam spawn counter
-    const clearPass = encoder.beginComputePass();
-    clearPass.setPipeline(pipelines.foamClearCounter);
-    clearPass.setBindGroup(0, pipelines.foamClearCounterBindGroup);
-    clearPass.dispatchWorkgroups(1);
-    clearPass.end();
-
+    // 1. Clear foam spawn counter - REMOVED to allow ring buffer accumulation
+    // The counter should wrap around MAX_FOAM naturally
+    
     // 2. Spawn foam particles (per fluid particle)
     const spawnPass = encoder.beginComputePass();
     spawnPass.setPipeline(pipelines.foamSpawn);

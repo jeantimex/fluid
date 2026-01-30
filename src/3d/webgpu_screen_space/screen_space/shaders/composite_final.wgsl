@@ -92,9 +92,9 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let spec = pow(max(dot(normal, halfDir), 0.0), 64.0) * shadow;
   let fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
 
-  let base = vec3<f32>(0.08, 0.32, 0.18);
+  let base = vec3<f32>(0.02, 0.15, 0.45);
   let diffuse = base * (0.35 + 0.65 * ndotl);
-  let specular = vec3<f32>(0.8, 0.9, 1.0) * spec * (0.2 + 0.8 * fresnel);
+  let specular = vec3<f32>(0.9, 0.95, 1.0) * spec * (0.2 + 0.8 * fresnel);
 
   let alpha = clamp(thickness * 4.0, 0.0, 1.0);
 
@@ -108,7 +108,7 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   var color = mix(floorCol, diffuse + specular, alpha);
   color = mix(color, refracted, 0.4 * fresnel);
   let foam = textureSample(foamTex, samp, in.uv).r;
-  color = mix(color, vec3<f32>(0.95, 0.98, 1.0), clamp(foam * 2.0, 0.0, 1.0));
+  color = mix(color, vec3<f32>(0.95, 0.98, 1.0), clamp(foam * 2.5, 0.0, 1.0));
 
   return vec4<f32>(color, 1.0);
 }

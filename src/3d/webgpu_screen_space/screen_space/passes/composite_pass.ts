@@ -129,7 +129,9 @@ export class CompositePass {
   }
 
   resize(_width: number, _height: number) {
-    // Placeholder.
+    this.compositeBindGroup = null;
+    this.bindGroup = null;
+    this.lastMode = null;
   }
 
   createBindGroup(resources: CompositePassResources, mode: number) {

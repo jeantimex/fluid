@@ -50,7 +50,7 @@ export class NormalPass {
   }
 
   resize(_width: number, _height: number) {
-    // Placeholder.
+    this.bindGroup = null;
   }
 
   createBindGroup(resources: NormalPassResources) {

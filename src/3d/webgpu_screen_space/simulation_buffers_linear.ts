@@ -37,7 +37,7 @@ import type { SpawnData } from '../common/types.ts';
  * Manages all GPU buffers for the fluid simulation using Linear Grid.
  */
 export class SimulationBuffersLinear {
-  static readonly MAX_FOAM_PARTICLES = 200_000;
+  static readonly MAX_FOAM_PARTICLES = 1_280_000;
 
   // ===========================================================================
   // Particle Data Buffers (Structure of Arrays)
