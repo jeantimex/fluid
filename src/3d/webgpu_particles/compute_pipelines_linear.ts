@@ -2,6 +2,39 @@
  * =============================================================================
  * Compute Pipeline Management for 3D SPH Fluid Simulation (Linear Grid)
  * =============================================================================
+ *
+ * This module creates and manages all GPU compute pipelines and their bind
+ * groups for the Linear Grid variant of the SPH simulation.
+ *
+ * ## Pipeline Inventory (14 pipelines)
+ *
+ * | Pipeline        | Shader               | Entry Point     | Purpose                                    |
+ * |-----------------|----------------------|-----------------|--------------------------------------------|
+ * | externalForces  | external_forces.wgsl | main            | Gravity, interaction, position prediction  |
+ * | hash            | hash_linear.wgsl     | main            | Assign particles to linear grid indices    |
+ * | clearOffsets    | sort_linear.wgsl     | clearOffsets     | Zero the histogram buffer                  |
+ * | countOffsets    | sort_linear.wgsl     | countOffsets     | Build histogram & compute cell-local ranks |
+ * | prefixScan      | prefix_sum.wgsl      | blockScan       | Blelloch exclusive scan (per block)        |
+ * | prefixCombine   | prefix_sum.wgsl      | blockCombine    | Add scanned group sums back into blocks    |
+ * | scatter         | scatter_linear.wgsl  | scatter         | Place particles at sorted positions        |
+ * | reorder         | reorder.wgsl         | reorder         | Gather particle data into sorted buffers   |
+ * | copyBack        | reorder.wgsl         | copyBack        | Copy sorted data back to primary buffers   |
+ * | density         | density_linear.wgsl  | main            | SPH density estimation (strip-optimised)   |
+ * | pressure        | pressure_linear.wgsl | main            | Pressure forces (strip-optimised)          |
+ * | viscosity       | viscosity_linear.wgsl| main            | Viscosity damping (strip-optimised)        |
+ * | integrate       | integrate.wgsl       | main            | Euler integration & boundary collision     |
+ * | cull            | cull.wgsl            | main            | GPU frustum culling for indirect draw      |
+ *
+ * ## Bind Group Strategy
+ *
+ * Each pipeline has a corresponding bind group that references the simulation
+ * buffers and the relevant uniform buffer. Bind groups are (re-)created via
+ * {@link createBindGroups} whenever the simulation resets.
+ *
+ * The hierarchical prefix-sum uses three pairs of scan/combine bind groups
+ * (L0, L1, L2) to handle grids that exceed a single 512-element workgroup.
+ *
+ * @module compute_pipelines_linear
  */
 
 import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
@@ -19,57 +52,156 @@ import prefixSumShader from './shaders/prefix_sum.wgsl?raw';
 import reorderShader from './shaders/reorder.wgsl?raw';
 import cullShader from './shaders/cull.wgsl?raw';
 
+/**
+ * Collection of GPU uniform buffers used to upload per-frame parameters
+ * to each compute pipeline.
+ *
+ * Each buffer is created with `UNIFORM | COPY_DST` usage so the CPU can
+ * write parameter data via `device.queue.writeBuffer()` every frame.
+ */
 export interface UniformBuffers {
+  /** External forces params — 32 bytes (SimParams struct). */
   compute: GPUBuffer;
+  /** Integration params — 64 bytes (IntegrateParams struct). */
   integrate: GPUBuffer;
+  /** Hash params — 32 bytes (HashParams struct with grid resolution). */
   hash: GPUBuffer;
+  /** Sort params — 32 bytes (SortParams struct: particleCount + gridTotalCells). */
   sort: GPUBuffer;
+  /** Prefix-sum level-0 params — 32 bytes (element count for sortOffsets scan). */
   scanParamsL0: GPUBuffer;
+  /** Prefix-sum level-1 params — 32 bytes (element count for L1 group sums). */
   scanParamsL1: GPUBuffer;
+  /** Prefix-sum level-2 params — 32 bytes (element count for L2 group sums). */
   scanParamsL2: GPUBuffer;
+  /** Density params — 48 bytes (DensityParams struct with grid bounds). */
   density: GPUBuffer;
+  /** Pressure params — 64 bytes (PressureParams struct with grid bounds). */
   pressure: GPUBuffer;
+  /** Viscosity params — 48 bytes (ViscosityParams struct with grid bounds). */
   viscosity: GPUBuffer;
+  /** Frustum culling params — 80 bytes (CullParams struct: VP matrix + radius). */
   cull: GPUBuffer;
 }
 
+/**
+ * Owns all compute pipelines and bind groups for the Linear Grid simulation.
+ *
+ * Pipelines are created once in the constructor and reused across resets.
+ * Bind groups are recreated by {@link createBindGroups} whenever the
+ * simulation buffers are reallocated (e.g. on particle count change).
+ */
 export class ComputePipelinesLinear {
+  // ===========================================================================
+  // SPH Physics Pipelines
+  // ===========================================================================
+
+  /** Applies gravity and user interaction, produces predicted positions. */
   externalForces: GPUComputePipeline;
+  /** Computes SPH density at each particle using Spiky²/Spiky³ kernels. */
   density: GPUComputePipeline;
+  /** Computes pressure forces from density (symmetric EOS). */
   pressure: GPUComputePipeline;
+  /** Applies viscosity damping using Poly6 kernel. */
   viscosity: GPUComputePipeline;
+  /** Euler integration of velocity→position and boundary collision. */
   integrate: GPUComputePipeline;
+
+  // ===========================================================================
+  // Linear Grid Sorting Pipelines
+  // ===========================================================================
+
+  /** Assigns linear grid indices to particles based on predicted position. */
   hash: GPUComputePipeline;
+  /** Zeros the histogram (sortOffsets) buffer. */
   clearOffsets: GPUComputePipeline;
+  /** Builds histogram of particles per grid cell and computes cell-local ranks. */
   countOffsets: GPUComputePipeline;
+  /** Blelloch exclusive scan — processes one 512-element block per workgroup. */
   prefixScan: GPUComputePipeline;
+  /** Adds scanned group sums back into each block's local scan. */
   prefixCombine: GPUComputePipeline;
+  /** Places particles at sorted positions using rank + start (contention-free). */
   scatter: GPUComputePipeline;
+  /** Gathers particle data from original order into spatially-sorted buffers. */
   reorder: GPUComputePipeline;
+  /** Copies sorted particle data back to primary buffers. */
   copyBack: GPUComputePipeline;
+
+  // ===========================================================================
+  // Rendering Pipeline
+  // ===========================================================================
+
+  /** GPU frustum culling — builds compact visible-index list for indirect draw. */
   cull: GPUComputePipeline;
 
+  // ===========================================================================
+  // Bind Groups — SPH Physics
+  // ===========================================================================
+
+  /** Bind group for the external forces pass (positions, velocities, predicted, params). */
   externalForcesBindGroup!: GPUBindGroup;
+  /** Bind group for the integration pass (positions, velocities, params). */
   integrateBindGroup!: GPUBindGroup;
-  hashBindGroup!: GPUBindGroup;
-  clearOffsetsBindGroup!: GPUBindGroup;
-  countOffsetsBindGroup!: GPUBindGroup;
-  scanPass0BindGroup!: GPUBindGroup;
-  scanPass1BindGroup!: GPUBindGroup;
-  scanPass2BindGroup!: GPUBindGroup;
-  combinePass1BindGroup!: GPUBindGroup;
-  combinePass0BindGroup!: GPUBindGroup;
-  scatterBindGroup!: GPUBindGroup;
-  reorderBindGroup!: GPUBindGroup;
-  copyBackBindGroup!: GPUBindGroup;
-  cullBindGroup!: GPUBindGroup;
+  /** Bind group for the density pass (predicted, sortOffsets, densities, params). */
   densityBindGroup!: GPUBindGroup;
+  /** Bind group for the pressure pass (predicted, velocities, densities, sortOffsets, params). */
   pressureBindGroup!: GPUBindGroup;
+  /** Bind group for the viscosity pass (predicted, velocities, sortOffsets, params). */
   viscosityBindGroup!: GPUBindGroup;
 
+  // ===========================================================================
+  // Bind Groups — Linear Grid Sorting
+  // ===========================================================================
+
+  /** Bind group for the hash pass (predicted, keys, indices, params). */
+  hashBindGroup!: GPUBindGroup;
+  /** Bind group 0 for clearOffsets (sortOffsets, params). */
+  clearOffsetsBindGroup!: GPUBindGroup;
+  /** Bind group 1 for countOffsets (keys, sortOffsets, params, particleCellOffsets). */
+  countOffsetsBindGroup!: GPUBindGroup;
+  /** Level-0 scan bind group (sortOffsets, groupSumsL1, scanParamsL0). */
+  scanPass0BindGroup!: GPUBindGroup;
+  /** Level-1 scan bind group (groupSumsL1, groupSumsL2, scanParamsL1). */
+  scanPass1BindGroup!: GPUBindGroup;
+  /** Level-2 scan bind group (groupSumsL2, scanScratch, scanParamsL2). */
+  scanPass2BindGroup!: GPUBindGroup;
+  /** Level-1 combine bind group (groupSumsL1, scanParamsL1, groupSumsL2). */
+  combinePass1BindGroup!: GPUBindGroup;
+  /** Level-0 combine bind group (sortOffsets, scanParamsL0, groupSumsL1). */
+  combinePass0BindGroup!: GPUBindGroup;
+  /** Bind group for the scatter pass (keys, sortOffsets, indices, params, particleCellOffsets). */
+  scatterBindGroup!: GPUBindGroup;
+  /** Bind group for the reorder pass (indices, positions/vel/pred → sorted copies, params). */
+  reorderBindGroup!: GPUBindGroup;
+  /** Bind group for the copyBack pass (sorted → primary buffers, params). */
+  copyBackBindGroup!: GPUBindGroup;
+
+  // ===========================================================================
+  // Bind Groups — Rendering
+  // ===========================================================================
+
+  /** Bind group for the cull pass (positions, visibleIndices, indirectDraw, params). */
+  cullBindGroup!: GPUBindGroup;
+
+  // ===========================================================================
+  // Shared Resources
+  // ===========================================================================
+
+  /** Pre-allocated GPU uniform buffers for all compute passes. */
   readonly uniformBuffers: UniformBuffers;
+  /** GPU device handle used for pipeline / bind group creation. */
   private device: GPUDevice;
 
+  /**
+   * Creates all compute pipelines and uniform buffers.
+   *
+   * Pipelines are created from WGSL shader source imported at build time.
+   * Uniform buffers are pre-allocated to their required sizes (matching
+   * the corresponding WGSL struct layouts).
+   *
+   * @param device - WebGPU device for resource creation
+   */
   constructor(device: GPUDevice) {
     this.device = device;
 
@@ -103,6 +235,16 @@ export class ComputePipelinesLinear {
     this.cull = this.createPipeline(cullShader, 'main');
   }
 
+  /**
+   * Creates a single compute pipeline from WGSL source and entry point.
+   *
+   * Uses `layout: 'auto'` so WebGPU infers the bind group layout from
+   * the shader's `@group` / `@binding` declarations.
+   *
+   * @param code       - WGSL shader source string
+   * @param entryPoint - Name of the `@compute` entry function
+   * @returns The created compute pipeline
+   */
   private createPipeline(code: string, entryPoint: string): GPUComputePipeline {
     const module = this.device.createShaderModule({ code });
     return this.device.createComputePipeline({
@@ -111,6 +253,15 @@ export class ComputePipelinesLinear {
     });
   }
 
+  /**
+   * Creates (or recreates) all bind groups by binding simulation buffers
+   * and uniform buffers to each pipeline's layout.
+   *
+   * This must be called after every simulation reset because buffer
+   * handles change when the simulation is re-initialised.
+   *
+   * @param buffers - The simulation's GPU buffer manager
+   */
   createBindGroups(buffers: SimulationBuffersLinear): void {
     this.externalForcesBindGroup = this.device.createBindGroup({
       layout: this.externalForces.getBindGroupLayout(0),

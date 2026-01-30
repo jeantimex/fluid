@@ -32,6 +32,23 @@
  * ============================================================================
  */
 
+/**
+ * Density Parameters Uniform Buffer
+ *
+ * Memory Layout (48 bytes):
+ * Offset  Size  Field
+ * ------  ----  -----
+ *   0      4    radius          - Smoothing radius h (= grid cell size)
+ *   4      4    spikyPow2Scale  - Normalisation for (h-r)² kernel: 15/(2πh⁵)
+ *   8      4    spikyPow3Scale  - Normalisation for (h-r)³ kernel: 15/(πh⁶)
+ *  12      4    particleCountF  - Particle count as f32 (for GPU convenience)
+ *  16     12    minBounds       - Minimum corner of simulation domain (xyz)
+ *  28      4    pad0            - Padding
+ *  32     12    gridRes         - Grid resolution per axis (xyz as f32)
+ *  44      4    pad1            - Padding
+ * ------
+ * Total: 48 bytes
+ */
 struct DensityParams {
   radius: f32,
   spikyPow2Scale: f32,
@@ -43,16 +60,40 @@ struct DensityParams {
   pad1: f32,
 };
 
+// ============================================================================
+// BUFFER BINDINGS
+// ============================================================================
+// Group 0: Density compute pass (Linear Grid)
+//
+//   Binding 0: predicted[]   - Predicted particle positions (spatially sorted)
+//              Used for distance calculations during neighbor iteration
+//
+//   Binding 1: sortOffsets[] - Cell start/end offsets from prefix sum
+//              Used for strip-optimised neighbor lookup
+//
+//   Binding 2: densities[]   - Output: (density, nearDensity) per particle
+//              vec2<f32>: x = standard density, y = near-density
+//
+//   Binding 3: params        - Uniform density parameters
+// ============================================================================
+
 @group(0) @binding(0) var<storage, read> predicted: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> sortOffsets: array<u32>;
 @group(0) @binding(2) var<storage, read_write> densities: array<vec2<f32>>;
 @group(0) @binding(3) var<uniform> params: DensityParams;
 
+/**
+ * Converts 3D integer cell coordinates to a linear grid index.
+ *
+ * Uses row-major linearisation: index = x + width × (y + height × z).
+ * The caller must ensure coordinates are within [0, gridRes - 1].
+ */
 fn getGridIndex(x: i32, y: i32, z: i32) -> u32 {
     let gridRes = vec3<u32>(params.gridRes);
     return u32(x) + gridRes.x * (u32(y) + gridRes.y * u32(z));
 }
 
+/** Spiky² kernel: W(r,h) = (h-r)² × scale. Compact support: 0 for r ≥ h. */
 fn spikyPow2(dst: f32, radius: f32, scale: f32) -> f32 {
   if (dst < radius) {
     let v = radius - dst;
@@ -61,6 +102,7 @@ fn spikyPow2(dst: f32, radius: f32, scale: f32) -> f32 {
   return 0.0;
 }
 
+/** Spiky³ kernel: W(r,h) = (h-r)³ × scale. Sharper falloff for near-density. */
 fn spikyPow3(dst: f32, radius: f32, scale: f32) -> f32 {
   if (dst < radius) {
     let v = radius - dst;
@@ -69,6 +111,20 @@ fn spikyPow3(dst: f32, radius: f32, scale: f32) -> f32 {
   return 0.0;
 }
 
+/**
+ * Main Density Compute Kernel (Strip-Optimised)
+ *
+ * For each particle, iterates over the 3×3 neighborhood of Y-Z rows.
+ * Within each row, the X-cells are contiguous in the linear grid, so we
+ * fetch the particle range for the entire 3-cell strip in one go:
+ *   start = sortOffsets[getGridIndex(minX, y, z)]
+ *   end   = sortOffsets[getGridIndex(maxX, y, z) + 1]
+ *
+ * This reduces 27 separate cell lookups to 9 strips and eliminates the
+ * per-particle key comparison in the inner loop.
+ *
+ * Dispatch: ceil(particleCount / 256) workgroups
+ */
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let i = id.x;

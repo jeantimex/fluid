@@ -19,34 +19,117 @@ import { ComputePipelinesLinear } from './compute_pipelines_linear.ts';
 import { Renderer } from './renderer.ts';
 import { mat4Perspective, mat4Multiply } from './math_utils.ts';
 
+/**
+ * Orchestrates the full SPH fluid simulation pipeline on the GPU.
+ *
+ * Each simulation frame executes the following compute passes (per iteration):
+ *   1. External forces & position prediction
+ *   2. Spatial hashing (Linear Grid: hash → clear → count → prefix sum → scatter → reorder → copy back)
+ *   3. Density estimation (Spiky² / Spiky³ kernels)
+ *   4. Pressure forces (symmetric EOS with near-pressure)
+ *   5. Viscosity damping (Poly6 kernel)
+ *   6. Integration & boundary collision
+ *
+ * Rendering adds a frustum-culling pass followed by indirect instanced drawing.
+ */
 export class FluidSimulation {
+  // ===========================================================================
+  // Core References
+  // ===========================================================================
+
+  /** GPU device handle used for buffer writes and command submission. */
   private device: GPUDevice;
+
+  /** Canvas context used to obtain the current swap-chain texture for rendering. */
   private context: GPUCanvasContext;
+
+  /** Simulation configuration (bounds, radii, multipliers, etc.). */
   private config: SimConfig;
 
+  // ===========================================================================
+  // Subsystems
+  // ===========================================================================
+
+  /** GPU buffer manager — owns all particle and sorting buffers. */
   private buffers!: SimulationBuffersLinear;
+
+  /** Compute pipeline manager — owns all pipelines and bind groups. */
   private pipelines: ComputePipelinesLinear;
+
+  /** Render pipeline manager — owns the particle / wireframe render passes. */
   private renderer: Renderer;
+
+  /** CPU-side snapshot of simulation state (positions, velocities, input). */
   private state!: SimState;
 
+  // ===========================================================================
+  // Grid Configuration
+  // ===========================================================================
+
+  /** Number of threads per compute workgroup (matches shader @workgroup_size). */
   private workgroupSize = 256;
+
+  /** Linear grid resolution along each axis: ceil(boundsSize / smoothingRadius). */
   private gridRes = { x: 0, y: 0, z: 0 };
+
+  /** Total number of cells in the linear grid (gridRes.x × gridRes.y × gridRes.z). */
   private gridTotalCells = 0;
 
-  // Uniform Data Arrays
+  // ===========================================================================
+  // CPU-Side Uniform Staging Buffers
+  // ===========================================================================
+  // Pre-allocated typed arrays used to stage uniform data before uploading to
+  // the GPU via `device.queue.writeBuffer()`. Sizes match the corresponding
+  // WGSL struct layouts (including padding for 16-byte alignment).
+
+  /** External forces params: [dt, gravity, interactionRadius, strength, inputX, inputY, inputZ, pad]. */
   private computeData = new Float32Array(8);
+
+  /** Integration params: [dt, damping, hasObstacle, pad, halfBounds(3), pad, obstacleCenter(3), pad, obstacleHalf(3), pad]. */
   private integrateData = new Float32Array(16);
-  private hashParamsData = new Float32Array(8); // Increased size
+
+  /** Hash params: [radius, particleCount, minBoundsX/Y/Z, gridResX/Y/Z]. */
+  private hashParamsData = new Float32Array(8);
+
+  /** Sort params: [particleCount, gridTotalCells, pad, pad]. */
   private sortParamsData = new Uint32Array(8);
+
+  /** Prefix-sum scan params for level 0: [elementCount, pad, pad, pad]. */
   private scanParamsDataL0 = new Uint32Array(4);
+
+  /** Prefix-sum scan params for level 1: [elementCount, pad, pad, pad]. */
   private scanParamsDataL1 = new Uint32Array(4);
+
+  /** Prefix-sum scan params for level 2: [elementCount, pad, pad, pad]. */
   private scanParamsDataL2 = new Uint32Array(4);
-  private densityParamsData = new Float32Array(12); // Increased size
-  private pressureParamsData = new Float32Array(16); // Increased size
-  private viscosityParamsData = new Float32Array(12); // Increased size
+
+  /** Density params: [radius, spikyPow2Scale, spikyPow3Scale, particleCount, minBounds(3), pad, gridRes(3), pad]. */
+  private densityParamsData = new Float32Array(12);
+
+  /** Pressure params: [dt, targetDensity, pressureMul, nearPressureMul, radius, pow2DerivScale, pow3DerivScale, count, minBounds(3), pad, gridRes(3), pad]. */
+  private pressureParamsData = new Float32Array(16);
+
+  /** Viscosity params: [dt, viscosity, radius, poly6Scale, count, minBounds(3), gridRes(3), pad]. */
+  private viscosityParamsData = new Float32Array(12);
+
+  /** Cull params: [viewProj(16 floats), particleRadius, particleCount(u32), pad, pad]. */
   private cullParamsData = new Float32Array(20);
+
+  /** Indirect draw arguments: [vertexCount=6, instanceCount=0, firstVertex=0, firstInstance=0]. */
   private indirectArgs = new Uint32Array([6, 0, 0, 0]);
 
+  /**
+   * Creates a new fluid simulation instance.
+   *
+   * Initialises compute pipelines and the renderer, then calls {@link reset}
+   * to spawn particles and allocate GPU buffers.
+   *
+   * @param device  - WebGPU device for resource creation
+   * @param context - Canvas context for swap-chain texture access
+   * @param canvas  - HTML canvas element (used by Renderer for sizing)
+   * @param config  - Simulation parameters (bounds, radii, multipliers, etc.)
+   * @param format  - Preferred swap-chain texture format (e.g. `'bgra8unorm'`)
+   */
   constructor(
     device: GPUDevice,
     context: GPUCanvasContext,
@@ -64,14 +147,23 @@ export class FluidSimulation {
     this.reset();
   }
 
+  /** Total number of active particles in the simulation. */
   get particleCount(): number {
     return this.buffers.particleCount;
   }
 
+  /** CPU-side snapshot of the simulation state (positions, velocities, input). */
   get simulationState(): SimState {
     return this.state;
   }
 
+  /**
+   * Resets the simulation to its initial state.
+   *
+   * Re-computes the linear grid resolution from the current config, spawns new
+   * particle data, re-creates all GPU buffers, and rebuilds bind groups for
+   * both compute and render pipelines.
+   */
   reset(): void {
     if (this.buffers) {
       this.buffers.destroy();
@@ -97,6 +189,12 @@ export class FluidSimulation {
     // It should be compatible structurally for what Renderer uses.
   }
 
+  /**
+   * Builds the CPU-side {@link SimState} from freshly spawned particle data.
+   *
+   * Allocates typed arrays for all per-particle properties and initialises the
+   * user-input struct to a neutral state (no interaction).
+   */
   private createStateFromSpawn(spawn: {
     positions: Float32Array;
     velocities: Float32Array;
@@ -120,6 +218,16 @@ export class FluidSimulation {
     };
   }
 
+  /**
+   * Advances the simulation by one frame.
+   *
+   * Runs {@link SimConfig.iterationsPerFrame} sub-steps, each executing the
+   * full SPH pipeline: external forces → spatial hash → density → pressure →
+   * viscosity → integration. The effective timestep is clamped by
+   * `config.maxTimestepFPS` and scaled by `config.timeScale`.
+   *
+   * @param dt - Wall-clock delta time in seconds since the last frame
+   */
   async step(dt: number): Promise<void> {
     const { config, buffers, pipelines, device, state } = this;
 
@@ -193,6 +301,25 @@ export class FluidSimulation {
     }
   }
 
+  /**
+   * Dispatches the full Linear Grid spatial hashing pipeline.
+   *
+   * Encodes seven sequential compute passes into the given command encoder:
+   *   1. **Hash** — assign each particle a linear grid index
+   *   2. **Clear** — zero the histogram (sortOffsets) buffer
+   *   3. **Count** — build a histogram of particles per grid cell
+   *   4. **Prefix Sum** — convert histogram to exclusive scan (start offsets),
+   *      using a 3-level hierarchical Blelloch scan when the grid exceeds 512 cells
+   *   5. **Scatter** — place each particle at its sorted position (contention-free)
+   *   6. **Reorder** — gather particle data into spatially sorted buffers
+   *   7. **Copy Back** — write sorted data back to primary buffers
+   *
+   * After this method returns, particle buffers (positions, velocities,
+   * predicted) are physically reordered so that particles in the same grid
+   * cell are contiguous in memory, enabling cache-efficient neighbor search.
+   *
+   * @param encoder - Active command encoder to record compute passes into
+   */
   private dispatchSpatialHash(encoder: GPUCommandEncoder): void {
     const { pipelines, buffers } = this;
     const workgroups = Math.ceil(buffers.particleCount / this.workgroupSize);
@@ -308,6 +435,17 @@ export class FluidSimulation {
     copyBackPass.end();
   }
 
+  /**
+   * Uploads density shader uniforms to the GPU.
+   *
+   * Computes the Spiky² and Spiky³ kernel normalisation constants from the
+   * current smoothing radius and writes them along with grid parameters
+   * into the density uniform buffer.
+   *
+   * Kernel normalisations (3D):
+   *   - spikyPow2Scale = 15 / (2π h⁵)
+   *   - spikyPow3Scale = 15 / (π h⁶)
+   */
   private updateDensityUniforms(): void {
     const radius = this.config.smoothingRadius;
     const spikyPow2Scale = 15 / (2 * Math.PI * Math.pow(radius, 5));
@@ -329,6 +467,18 @@ export class FluidSimulation {
     this.device.queue.writeBuffer(this.pipelines.uniformBuffers.density, 0, this.densityParamsData);
   }
 
+  /**
+   * Uploads pressure shader uniforms to the GPU.
+   *
+   * Computes the Spiky kernel *gradient* normalisation constants and writes
+   * them along with the equation-of-state parameters and grid layout.
+   *
+   * Gradient normalisations (3D):
+   *   - spikyPow2DerivScale = 15 / (π h⁵)
+   *   - spikyPow3DerivScale = 45 / (π h⁶)
+   *
+   * @param timeStep - Sub-step delta time for velocity integration
+   */
   private updatePressureUniforms(timeStep: number): void {
     const radius = this.config.smoothingRadius;
     const spikyPow2DerivScale = 15 / (Math.PI * Math.pow(radius, 5));
@@ -354,6 +504,17 @@ export class FluidSimulation {
     this.device.queue.writeBuffer(this.pipelines.uniformBuffers.pressure, 0, this.pressureParamsData);
   }
 
+  /**
+   * Uploads viscosity shader uniforms to the GPU.
+   *
+   * Computes the Poly6 kernel normalisation constant and writes it along
+   * with viscosity strength, grid resolution, and bounds.
+   *
+   * Poly6 normalisation (3D):
+   *   - poly6Scale = 315 / (64π h⁹)
+   *
+   * @param timeStep - Sub-step delta time for velocity integration
+   */
   private updateViscosityUniforms(timeStep: number): void {
     const radius = this.config.smoothingRadius;
     const poly6Scale = 315 / (64 * Math.PI * Math.pow(radius, 9));
@@ -374,6 +535,18 @@ export class FluidSimulation {
     this.device.queue.writeBuffer(this.pipelines.uniformBuffers.viscosity, 0, this.viscosityParamsData);
   }
 
+  /**
+   * Uploads integration shader uniforms to the GPU.
+   *
+   * Packs the timestep, collision damping, boundary half-extents, and
+   * optional obstacle parameters into the integration uniform buffer.
+   *
+   * The buffer layout matches the `IntegrateParams` WGSL struct (64 bytes):
+   *   [dt, damping, hasObstacle, pad, halfBoundsXYZ, pad,
+   *    obstacleCenterXYZ, pad, obstacleHalfXYZ, pad]
+   *
+   * @param timeStep - Sub-step delta time for position integration
+   */
   private updateIntegrateUniforms(timeStep: number): void {
     this.integrateData[0] = timeStep;
     this.integrateData[1] = this.config.collisionDamping;
@@ -395,6 +568,17 @@ export class FluidSimulation {
     this.device.queue.writeBuffer(this.pipelines.uniformBuffers.integrate, 0, this.integrateData);
   }
 
+  /**
+   * Dispatches the GPU frustum-culling compute pass.
+   *
+   * Resets the indirect draw argument buffer, computes the view-projection
+   * matrix, uploads cull parameters, and dispatches the cull shader. After
+   * execution the `visibleIndices` buffer contains a compact list of visible
+   * particle indices and `indirectDraw.instanceCount` reflects the count.
+   *
+   * @param encoder    - Active command encoder to record the compute pass into
+   * @param viewMatrix - 4×4 camera view matrix (column-major Float32Array)
+   */
   private dispatchCull(encoder: GPUCommandEncoder, viewMatrix: Float32Array): void {
     const { pipelines, buffers, config } = this;
     this.device.queue.writeBuffer(buffers.indirectDraw, 0, this.indirectArgs);
@@ -413,6 +597,15 @@ export class FluidSimulation {
     pass.end();
   }
 
+  /**
+   * Renders the current simulation state.
+   *
+   * Handles canvas resize, dispatches the frustum-culling pass, and then
+   * delegates to the {@link Renderer} for the actual draw calls (particle
+   * billboards and wireframe bounding box).
+   *
+   * @param viewMatrix - 4×4 camera view matrix (column-major Float32Array)
+   */
   render(viewMatrix: Float32Array): void {
     this.renderer.resize();
     const encoder = this.device.createCommandEncoder();

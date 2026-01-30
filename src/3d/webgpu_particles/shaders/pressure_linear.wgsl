@@ -2,8 +2,46 @@
  * ============================================================================
  * PRESSURE KERNEL (LINEAR GRID + STRIP OPTIMIZATION)
  * ============================================================================
+ *
+ * Pipeline Stage: Stage 6 (Second SPH physics pass)
+ * Entry Point: main
+ * Workgroup Size: 256 threads
+ *
+ * Purpose:
+ * --------
+ * Computes pressure forces using the Linear Grid for O(1) neighbor search,
+ * with the strip optimisation for contiguous X-row iteration.
+ *
+ * This is the Linear Grid variant of pressure.wgsl. The physics are identical
+ * (symmetric dual-pressure EOS), but neighbor iteration uses sortOffsets
+ * with strip ranges instead of spatial hash key matching.
+ *
+ * See pressure.wgsl for detailed physics documentation (equation of state,
+ * kernel gradient derivation, symmetric pressure averaging).
+ * ============================================================================
  */
 
+/**
+ * Pressure Parameters Uniform Buffer
+ *
+ * Memory Layout (64 bytes):
+ * Offset  Size  Field
+ * ------  ----  -----
+ *   0      4    dt                     - Sub-step timestep
+ *   4      4    targetDensity          - Rest density ρ₀
+ *   8      4    pressureMultiplier     - Stiffness k for standard pressure
+ *  12      4    nearPressureMultiplier - Stiffness for near-pressure
+ *  16      4    radius                 - Smoothing radius h
+ *  20      4    spikyPow2DerivScale    - Gradient normalisation for Spiky² kernel
+ *  24      4    spikyPow3DerivScale    - Gradient normalisation for Spiky³ kernel
+ *  28      4    particleCountF         - Particle count as f32
+ *  32     12    minBounds              - Minimum corner of simulation domain
+ *  44      4    pad0                   - Padding
+ *  48     12    gridRes                - Grid resolution per axis (f32)
+ *  60      4    pad1                   - Padding
+ * ------
+ * Total: 64 bytes
+ */
 struct PressureParams {
   dt: f32,
   targetDensity: f32,
@@ -19,17 +57,35 @@ struct PressureParams {
   pad1: f32,
 };
 
+// ============================================================================
+// BUFFER BINDINGS
+// ============================================================================
+// Group 0: Pressure compute pass (Linear Grid)
+//
+//   Binding 0: predicted[]   - Predicted positions (for neighbor distances)
+//   Binding 1: velocities[]  - Velocities (updated with pressure acceleration)
+//   Binding 2: densities[]   - Computed densities from density pass
+//              vec2: x = density, y = near-density
+//   Binding 3: sortOffsets[] - Cell start/end offsets for strip iteration
+//   Binding 4: params        - Pressure parameters
+// ============================================================================
+
 @group(0) @binding(0) var<storage, read> predicted: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read_write> velocities: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read> densities: array<vec2<f32>>;
 @group(0) @binding(3) var<storage, read> sortOffsets: array<u32>;
 @group(0) @binding(4) var<uniform> params: PressureParams;
 
+/**
+ * Converts 3D integer cell coordinates to a linear grid index.
+ * index = x + width × (y + height × z)
+ */
 fn getGridIndex(x: i32, y: i32, z: i32) -> u32 {
     let gridRes = vec3<u32>(params.gridRes);
     return u32(x) + gridRes.x * (u32(y) + gridRes.y * u32(z));
 }
 
+/** Gradient of Spiky² kernel: dW/dr = -(h-r) × scale. */
 fn derivativeSpikyPow2(dst: f32, radius: f32, scale: f32) -> f32 {
   if (dst <= radius) {
     let v = radius - dst;
@@ -38,6 +94,7 @@ fn derivativeSpikyPow2(dst: f32, radius: f32, scale: f32) -> f32 {
   return 0.0;
 }
 
+/** Gradient of Spiky³ kernel: dW/dr = -(h-r)² × scale. Stronger at close range. */
 fn derivativeSpikyPow3(dst: f32, radius: f32, scale: f32) -> f32 {
   if (dst <= radius) {
     let v = radius - dst;
@@ -46,6 +103,17 @@ fn derivativeSpikyPow3(dst: f32, radius: f32, scale: f32) -> f32 {
   return 0.0;
 }
 
+/**
+ * Main Pressure Force Kernel (Strip-Optimised)
+ *
+ * For each particle:
+ *   1. Compute pressure from EOS: P = k × (ρ - ρ₀)
+ *   2. Iterate over 3×3 Y-Z row strips using sortOffsets ranges
+ *   3. For each neighbor, compute symmetric averaged pressure force
+ *   4. Update velocity: v += (force / density) × dt
+ *
+ * Dispatch: ceil(particleCount / 256) workgroups
+ */
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let i = id.x;
