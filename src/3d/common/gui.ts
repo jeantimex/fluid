@@ -227,6 +227,22 @@ export function setupGui(
     .add(config, 'bubbleChangeScaleSpeed', 0, 20, 0.1)
     .name('Bubble Scale Speed');
 
+  const renderingFolder = gui.addFolder('Rendering');
+  renderingFolder.close();
+
+  renderingFolder
+    .add(config.extinctionCoeff, 'x', 0, 5, 0.01)
+    .name('Extinction R');
+  renderingFolder
+    .add(config.extinctionCoeff, 'y', 0, 5, 0.01)
+    .name('Extinction G');
+  renderingFolder
+    .add(config.extinctionCoeff, 'z', 0, 5, 0.01)
+    .name('Extinction B');
+  renderingFolder
+    .add(config, 'extinctionMultiplier', 0, 10, 0.01)
+    .name('Extinction Multiplier');
+
   const performanceFolder = gui.addFolder('Performance');
   performanceFolder.close();
 

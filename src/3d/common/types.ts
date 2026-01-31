@@ -62,6 +62,8 @@ export interface SimConfig {
   foamOpacity: number;
   sprayClassifyMaxNeighbours: number;
   bubbleClassifyMinNeighbours: number;
+  extinctionCoeff: Vec3;
+  extinctionMultiplier: number;
   foamParticleRadius: number;
   spawnRateFadeInTime: number;
   spawnRateFadeStartTime: number;

@@ -8,6 +8,8 @@ struct Uniforms {
   lightViewProjection: mat4x4<f32>,
   foamColor: vec3<f32>,
   foamOpacity: f32,
+  extinctionCoeff: vec3<f32>,
+  extinctionMultiplier: f32,
 };
 
 @vertex
@@ -104,7 +106,7 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let offset = normal.xy * refractionStrength;
   let refractThickness = textureSample(thicknessTex, samp, in.uv + offset).r;
 
-  let absorption = exp(-refractThickness * 2.0);
+  let absorption = exp(-refractThickness * uniforms.extinctionCoeff * uniforms.extinctionMultiplier);
   let refracted = mix(floorCol, base, 1.0 - absorption);
 
   var color = mix(floorCol, diffuse + specular, alpha);

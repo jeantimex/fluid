@@ -1,6 +1,6 @@
 import type { SimulationBuffers } from '../simulation_buffers.ts';
 import type { SimulationBuffersLinear } from '../simulation_buffers_linear.ts';
-import type { RGB } from '../../common/types.ts';
+import type { RGB, Vec3 } from '../../common/types.ts';
 
 export type SimBuffers = SimulationBuffers | SimulationBuffersLinear;
 
@@ -26,6 +26,8 @@ export interface ScreenSpaceFrame {
   far: number;
   foamColor: RGB;
   foamOpacity: number;
+  extinctionCoeff: Vec3;
+  extinctionMultiplier: number;
 }
 
 export interface DepthPassResources extends ScreenSpaceTextures {

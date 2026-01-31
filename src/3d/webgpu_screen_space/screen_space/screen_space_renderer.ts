@@ -235,6 +235,8 @@ export class ScreenSpaceRenderer {
       far,
       foamColor: this.config.foamColor,
       foamOpacity: this.config.foamOpacity,
+      extinctionCoeff: this.config.extinctionCoeff,
+      extinctionMultiplier: this.config.extinctionMultiplier,
     };
 
     const resources: ScreenSpaceTextures & { buffers: SimBuffers } = {
