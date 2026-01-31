@@ -185,17 +185,46 @@ fn rotateWorldToLocal(v: vec3<f32>, rot: vec3<f32>) -> vec3<f32> {
   return r;
 }
 
-/// Returns vec2(tmin, tmax) for the obstacle OBB, or vec2(-1, -1) if no hit.
-fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> vec2<f32> {
-  if (any(params.obstacleHalfSize <= vec3<f32>(0.0))) { return vec2<f32>(-1.0, -1.0); }
+struct ObstacleHit {
+  tEntry: f32,
+  tExit: f32,
+  normal: vec3<f32>,
+  hit: bool,
+};
+
+fn obstacleFaceNormal(localPos: vec3<f32>) -> vec3<f32> {
+  let dist = params.obstacleHalfSize - abs(localPos);
+  if (dist.x < dist.y && dist.x < dist.z) {
+    return vec3<f32>(sign(localPos.x), 0.0, 0.0);
+  } else if (dist.y < dist.z) {
+    return vec3<f32>(0.0, sign(localPos.y), 0.0);
+  }
+  return vec3<f32>(0.0, 0.0, sign(localPos.z));
+}
+
+/// Returns obstacle hit info for the OBB, or hit=false if no hit.
+fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> ObstacleHit {
+  var res: ObstacleHit;
+  res.hit = false;
+  res.tEntry = -1.0;
+  res.tExit = -1.0;
+  res.normal = vec3<f32>(0.0);
+  if (any(params.obstacleHalfSize <= vec3<f32>(0.0))) { return res; }
   let rot = toRadians(params.obstacleRotation);
   let localOrigin = rotateWorldToLocal(origin - params.obstacleCenter, rot);
   let localDir = rotateWorldToLocal(dir, rot);
   let obstacleMin = -params.obstacleHalfSize;
   let obstacleMax = params.obstacleHalfSize;
   let hit = rayBoxIntersection(localOrigin, localDir, obstacleMin, obstacleMax);
-  if (hit.y < max(hit.x, 0.0)) { return vec2<f32>(-1.0, -1.0); }
-  return hit;
+  if (hit.y < max(hit.x, 0.0)) { return res; }
+  let tEntry = select(hit.x, 0.0, hit.x < 0.0);
+  let localHitPos = localOrigin + localDir * tEntry;
+  let localNormal = obstacleFaceNormal(localHitPos);
+  res.tEntry = tEntry;
+  res.tExit = hit.y;
+  res.normal = normalize(rotateLocalToWorld(localNormal, rot));
+  res.hit = true;
+  return res;
 }
 
 // =============================================================================
@@ -644,13 +673,16 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
   // Test ray against obstacle AABB (if enabled)
   let obstacleHit = obstacleHitInfo(origin, dir);
-  let hasObstacleHit = obstacleHit.x >= 0.0;
-  let obstacleT = select(obstacleHit.x, 0.0, obstacleHit.x < 0.0);
+  let hasObstacleHit = obstacleHit.hit;
+  let obstacleT = obstacleHit.tEntry;
 
   // If the obstacle is the closest hit, alpha-blend it over the background
   if (hasObstacleHit && (!hasFloorHit || obstacleT < floorT)) {
     let a = clamp(params.obstacleAlpha, 0.0, 1.0);
-    return mix(bgCol, params.obstacleColor, a);
+    let ambient = clamp(params.floorAmbient, 0.0, 1.0);
+    let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
+    let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient));
+    return mix(bgCol, lit, a);
   }
 
   return bgCol;
@@ -804,28 +836,34 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
      // Find the next fluid surface along the current ray
      let obstacleHit = obstacleHitInfo(rayPos, rayDir);
-     let hasObstacleHit = obstacleHit.x >= 0.0;
+     let hasObstacleHit = obstacleHit.hit;
      let surfaceInfo = findNextSurface(rayPos, rayDir, searchForNextFluidEntryPoint, &rngState, 1000.0);
 
      // If we're in air and the obstacle is closer than the next fluid surface,
      // alpha-blend the obstacle and continue marching behind it.
      if (!travellingThroughFluid && hasObstacleHit) {
-        let obstacleT = select(obstacleHit.x, 0.0, obstacleHit.x < 0.0);
+        let obstacleT = obstacleHit.tEntry;
         if (!surfaceInfo.foundSurface) {
           let a = clamp(params.obstacleAlpha, 0.0, 1.0);
-          totalLight = totalLight + params.obstacleColor * totalTransmittance * a;
+          let ambient = clamp(params.floorAmbient, 0.0, 1.0);
+          let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
+          let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient));
+          totalLight = totalLight + lit * totalTransmittance * a;
           totalTransmittance = totalTransmittance * (1.0 - a);
           // Move ray past the obstacle to avoid repeated hits
-          let exitT = max(obstacleHit.y, obstacleT);
+          let exitT = max(obstacleHit.tExit, obstacleT);
           rayPos = rayPos + rayDir * (exitT + 0.001);
           continue;
         }
         let surfaceT = dot(surfaceInfo.pos - rayPos, rayDir);
         if (obstacleT < surfaceT) {
           let a = clamp(params.obstacleAlpha, 0.0, 1.0);
-          totalLight = totalLight + params.obstacleColor * totalTransmittance * a;
+          let ambient = clamp(params.floorAmbient, 0.0, 1.0);
+          let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
+          let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient));
+          totalLight = totalLight + lit * totalTransmittance * a;
           totalTransmittance = totalTransmittance * (1.0 - a);
-          let exitT = max(obstacleHit.y, obstacleT);
+          let exitT = max(obstacleHit.tExit, obstacleT);
           rayPos = rayPos + rayDir * (exitT + 0.001);
           continue;
         }
