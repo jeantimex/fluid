@@ -12,7 +12,6 @@ import type {
 
 export class CompositePass {
   private device: GPUDevice;
-  private format: GPUTextureFormat;
   private pipeline: GPURenderPipeline;
   private colorPipeline: GPURenderPipeline;
   private compositePipeline: GPURenderPipeline;
@@ -27,7 +26,6 @@ export class CompositePass {
 
   constructor(device: GPUDevice, format: GPUTextureFormat) {
     this.device = device;
-    this.format = format;
 
     this.sampler = device.createSampler({
       magFilter: 'linear',

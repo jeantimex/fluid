@@ -17,7 +17,6 @@ import { createSpawnData } from '../common/spawn.ts';
 import { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import { ComputePipelinesLinear } from './compute_pipelines_linear.ts';
 import { ScreenSpaceRenderer } from './screen_space/screen_space_renderer.ts';
-import { mat4Perspective, mat4Multiply } from './math_utils.ts';
 
 /**
  * Orchestrates the full SPH fluid simulation pipeline on the GPU.
@@ -114,12 +113,6 @@ export class FluidSimulation {
 
   /** Viscosity params: [dt, viscosity, radius, poly6Scale, count, minBounds(3), gridRes(3), pad]. */
   private viscosityParamsData = new Float32Array(12);
-
-  /** Cull params: [viewProj(16 floats), particleRadius, particleCount(u32), pad, pad]. */
-  private cullParamsData = new Float32Array(20);
-
-  /** Indirect draw arguments: [vertexCount=6, instanceCount=0, firstVertex=0, firstInstance=0]. */
-  private indirectArgs = new Uint32Array([6, 0, 0, 0]);
 
   /** Foam spawn params: [dt, airRate, airMin, airMax, kinMin, kinMax, maxFoam(u32), frameCount(u32), count(u32), radius, minBounds(3), gridRes(3), bubbleScale, pad(7)]. Total 28 floats = 112 bytes. */
   private foamSpawnData = new Float32Array(28);
@@ -769,44 +762,6 @@ export class FluidSimulation {
       0,
       this.integrateData
     );
-  }
-
-  /**
-   * Dispatches the GPU frustum-culling compute pass.
-   *
-   * Resets the indirect draw argument buffer, computes the view-projection
-   * matrix, uploads cull parameters, and dispatches the cull shader. After
-   * execution the `visibleIndices` buffer contains a compact list of visible
-   * particle indices and `indirectDraw.instanceCount` reflects the count.
-   *
-   * @param encoder    - Active command encoder to record the compute pass into
-   * @param viewMatrix - 4×4 camera view matrix (column-major Float32Array)
-   */
-  private dispatchCull(
-    encoder: GPUCommandEncoder,
-    viewMatrix: Float32Array
-  ): void {
-    const { pipelines, buffers, config } = this;
-    this.device.queue.writeBuffer(buffers.indirectDraw, 0, this.indirectArgs);
-    const aspect = this.context.canvas.width / this.context.canvas.height;
-    const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 100.0);
-    const viewProj = mat4Multiply(projection, viewMatrix);
-    this.cullParamsData.set(viewProj);
-    this.cullParamsData[16] = config.particleRadius;
-    const u32View = new Uint32Array(this.cullParamsData.buffer);
-    u32View[17] = buffers.particleCount;
-    this.device.queue.writeBuffer(
-      pipelines.uniformBuffers.cull,
-      0,
-      this.cullParamsData
-    );
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(pipelines.cull);
-    pass.setBindGroup(0, pipelines.cullBindGroup);
-    pass.dispatchWorkgroups(
-      Math.ceil(buffers.particleCount / this.workgroupSize)
-    );
-    pass.end();
   }
 
   /**

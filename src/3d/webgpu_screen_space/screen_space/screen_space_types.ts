@@ -1,8 +1,7 @@
-import type { SimulationBuffers } from '../simulation_buffers.ts';
 import type { SimulationBuffersLinear } from '../simulation_buffers_linear.ts';
 import type { RGB, Vec3 } from '../../common/types.ts';
 
-export type SimBuffers = SimulationBuffers | SimulationBuffersLinear;
+export type SimBuffers = SimulationBuffersLinear;
 
 export interface ScreenSpaceTextures {
   depthTexture: GPUTexture | null;
@@ -63,6 +62,3 @@ export interface FoamPassResources extends ScreenSpaceTextures {
   maxFoamParticles: number;
 }
 
-export interface CompositePassInputs {
-  targetView: GPUTextureView;
-}

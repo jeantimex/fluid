@@ -1,13 +1,12 @@
 /**
- * Screen-space fluid renderer skeleton.
+ * Screen-space fluid renderer.
  *
- * This file provides a placeholder structure for a multi-pass screen-space
- * rendering pipeline (depth, thickness, normal, smoothing, composite).
+ * Multi-pass rendering pipeline: depth, thickness, normal, smoothing,
+ * shadow, foam, and composite.
  */
 
 import type { SimConfig } from '../../common/types.ts';
 import type {
-  CompositePassInputs,
   ScreenSpaceFrame,
   ScreenSpaceTextures,
   SimBuffers,
@@ -31,7 +30,6 @@ import { CompositePass } from './passes/composite_pass.ts';
 export class ScreenSpaceRenderer {
   private device: GPUDevice;
   private canvas: HTMLCanvasElement;
-  private format: GPUTextureFormat;
   private config: SimConfig;
 
   private width = 0;
@@ -63,7 +61,6 @@ export class ScreenSpaceRenderer {
   ) {
     this.device = device;
     this.canvas = canvas;
-    this.format = format;
     this.config = config;
 
     this.depthPass = new DepthPass(device);
@@ -89,15 +86,11 @@ export class ScreenSpaceRenderer {
       foamTexture: this.foamTexture,
     };
 
-    // Placeholder for per-pass bind group creation.
     this.depthPass.createBindGroup(resources);
     this.thicknessPass.createBindGroup(resources);
     this.normalPass.createBindGroup(resources);
-    // smooth pass bind groups are created on-demand per source texture
     this.shadowPass.createBindGroup(resources);
-    this.compositePass.createBindGroup(resources);
 
-    // Foam pass uses foam particle buffers (only available on SimulationBuffersLinear)
     if (buffers instanceof SimulationBuffersLinear) {
       this.foamPass.createBindGroup(
         buffers.foamPositions,
@@ -115,7 +108,6 @@ export class ScreenSpaceRenderer {
     this.width = Math.max(1, Math.floor(width));
     this.height = Math.max(1, Math.floor(height));
 
-    // Placeholder texture allocation. Formats and usages will be refined.
     this.depthTexture = this.device.createTexture({
       size: { width: this.width, height: this.height },
       format: 'depth24plus',
@@ -181,15 +173,6 @@ export class ScreenSpaceRenderer {
       return;
     }
 
-    // Placeholder for multi-pass render orchestration.
-    // Expected order:
-    // 1) Depth pass
-    // 2) Thickness pass
-    // 3) Normal reconstruction
-    // 4) Smooth thickness/normal
-    // 5) Shadow pass (optional)
-    // 6) Composite
-
     const aspect = this.canvas.width / this.canvas.height;
     const near = 0.1;
     const far = 100.0;
@@ -201,7 +184,6 @@ export class ScreenSpaceRenderer {
     const bounds = this.config.boundsSize;
     const halfX = bounds.x * 0.6;
     const halfY = bounds.y * 0.6;
-    const halfZ = bounds.z * 0.6;
     const lightDir = { x: 0.3, y: 1.0, z: 0.4 };
     const lightPos = {
       x: -lightDir.x * (bounds.x + bounds.z),
@@ -315,15 +297,11 @@ export class ScreenSpaceRenderer {
     }
     this.normalPass.encode(encoder, resources, frame);
 
-    const compositeInputs: CompositePassInputs = {
-      targetView: swapchainView,
-    };
-
     this.compositePass.encode(
       encoder,
       resources,
       frame,
-      compositeInputs.targetView,
+      swapchainView,
       this.config.screenSpaceDebugMode
     );
   }

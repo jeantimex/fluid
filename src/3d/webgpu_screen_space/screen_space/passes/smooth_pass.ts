@@ -75,7 +75,7 @@ export class SmoothPass {
 
   encode(
     encoder: GPUCommandEncoder,
-    resources: SmoothPassResources,
+    _resources: SmoothPassResources,
     _frame: ScreenSpaceFrame,
     source: GPUTexture,
     target: GPUTexture,
@@ -109,24 +109,4 @@ export class SmoothPass {
     pass.end();
   }
 
-  encodeLegacy(
-    encoder: GPUCommandEncoder,
-    resources: SmoothPassResources,
-    _frame: ScreenSpaceFrame
-  ) {
-    if (!resources.thicknessTexture || !resources.smoothTextureB) {
-      this.bindGroup = null;
-      return;
-    }
-
-    this.createBindGroup(resources.thicknessTexture, resources.smoothTextureA);
-    this.encode(
-      encoder,
-      resources,
-      _frame,
-      resources.thicknessTexture,
-      resources.smoothTextureB,
-      resources.smoothTextureA
-    );
-  }
 }
