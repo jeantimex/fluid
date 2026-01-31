@@ -228,6 +228,15 @@ export class ScreenSpaceRenderer {
         y: lightDir.y / lightLen,
         z: lightDir.z / lightLen,
       },
+      obstacleCenter: this.config.obstacleCentre,
+      obstacleHalfSize: {
+        x: this.config.obstacleSize.x * 0.5,
+        y: this.config.obstacleSize.y * 0.5,
+        z: this.config.obstacleSize.z * 0.5,
+      },
+      obstacleRotation: this.config.obstacleRotation,
+      obstacleColor: this.config.obstacleColor ?? { r: 1.0, g: 0.0, b: 0.0 },
+      obstacleAlpha: this.config.obstacleAlpha ?? 0.8,
     };
 
     const resources: ScreenSpaceTextures & { buffers: SimBuffers } = {

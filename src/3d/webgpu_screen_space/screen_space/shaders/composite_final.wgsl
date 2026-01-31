@@ -12,6 +12,14 @@ struct Uniforms {
   extinctionMultiplier: f32,
   dirToSun: vec3<f32>,
   refractionStrength: f32,
+  obstacleCenter: vec3<f32>,
+  pad0: f32,
+  obstacleHalfSize: vec3<f32>,
+  pad1: f32,
+  obstacleRotation: vec3<f32>,
+  pad2: f32,
+  obstacleColor: vec3<f32>,
+  obstacleAlpha: f32,
 };
 
 @vertex
@@ -48,6 +56,83 @@ fn rayBoxIntersection(origin: vec3<f32>, dir: vec3<f32>, boundsMin: vec3<f32>, b
   let tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
   let tmax = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
   return vec2<f32>(tmin, tmax);
+}
+
+fn rotateX(v: vec3<f32>, angle: f32) -> vec3<f32> {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3<f32>(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
+}
+
+fn rotateY(v: vec3<f32>, angle: f32) -> vec3<f32> {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3<f32>(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+}
+
+fn rotateZ(v: vec3<f32>, angle: f32) -> vec3<f32> {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3<f32>(v.x * c - v.y * s, v.x * s + v.y * c, v.z);
+}
+
+fn toRadians(v: vec3<f32>) -> vec3<f32> {
+  return v * (3.14159265 / 180.0);
+}
+
+fn rotateLocalToWorld(v: vec3<f32>, rot: vec3<f32>) -> vec3<f32> {
+  var r = v;
+  r = rotateX(r, rot.x);
+  r = rotateY(r, rot.y);
+  r = rotateZ(r, rot.z);
+  return r;
+}
+
+fn rotateWorldToLocal(v: vec3<f32>, rot: vec3<f32>) -> vec3<f32> {
+  var r = v;
+  r = rotateZ(r, -rot.z);
+  r = rotateY(r, -rot.y);
+  r = rotateX(r, -rot.x);
+  return r;
+}
+
+struct ObstacleHit {
+  tEntry: f32,
+  tExit: f32,
+  normal: vec3<f32>,
+  hit: bool,
+};
+
+fn obstacleFaceNormal(localPos: vec3<f32>, halfSize: vec3<f32>) -> vec3<f32> {
+  let dist = halfSize - abs(localPos);
+  if (dist.x < dist.y && dist.x < dist.z) {
+    return vec3<f32>(sign(localPos.x), 0.0, 0.0);
+  } else if (dist.y < dist.z) {
+    return vec3<f32>(0.0, sign(localPos.y), 0.0);
+  }
+  return vec3<f32>(0.0, 0.0, sign(localPos.z));
+}
+
+fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> ObstacleHit {
+  var res: ObstacleHit;
+  res.hit = false;
+  res.tEntry = -1.0;
+  res.tExit = -1.0;
+  res.normal = vec3<f32>(0.0);
+  if (any(uniforms.obstacleHalfSize <= vec3<f32>(0.0))) { return res; }
+  let rot = toRadians(uniforms.obstacleRotation);
+  let localOrigin = rotateWorldToLocal(origin - uniforms.obstacleCenter, rot);
+  let localDir = rotateWorldToLocal(dir, rot);
+  let hit = rayBoxIntersection(localOrigin, localDir, -uniforms.obstacleHalfSize, uniforms.obstacleHalfSize);
+  if (hit.y < max(hit.x, 0.0)) { return res; }
+  let tEntry = select(hit.x, 0.0, hit.x < 0.0);
+  let localHitPos = localOrigin + localDir * tEntry;
+  let localNormal = obstacleFaceNormal(localHitPos, uniforms.obstacleHalfSize);
+  res.tEntry = tEntry;
+  res.tExit = hit.y;
+  res.normal = normalize(rotateLocalToWorld(localNormal, rot));
+  res.hit = true;
+  return res;
 }
 
 fn skyColor(dir: vec3<f32>, sunDir: vec3<f32>) -> vec3<f32> {
@@ -149,10 +234,31 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let absorption = exp(-refractThickness * uniforms.extinctionCoeff * uniforms.extinctionMultiplier);
   let refracted = mix(floorCol, base, 1.0 - absorption);
 
-  var color = mix(floorCol, diffuse + specular, alpha);
+  // Obstacle shading (Lambert + ambient).
+  let obstacleHit = obstacleHitInfo(worldNear.xyz, rayDir);
+  let hasObstacle = obstacleHit.hit;
+  let obstacleT = obstacleHit.tEntry;
+  let obstacleLit = uniforms.obstacleColor *
+    (floorAmbient + max(0.0, dot(obstacleHit.normal, uniforms.dirToSun)) * (1.0 - floorAmbient));
+
+  let hasFluid = alpha > 0.001;
+  let tFluid = select(1.0e9, dot(world.xyz - worldNear.xyz, rayDir), hasFluid);
+
+  var baseBg = floorCol;
+  if (hasObstacle && obstacleT >= 0.0 && obstacleT >= tFluid) {
+    let a = clamp(uniforms.obstacleAlpha, 0.0, 1.0);
+    baseBg = mix(baseBg, obstacleLit, a);
+  }
+
+  var color = mix(baseBg, diffuse + specular, alpha);
   color = mix(color, refracted, 0.4 * fresnel);
   let foam = textureSample(foamTex, samp, in.uv).r;
   color = mix(color, uniforms.foamColor, clamp(foam * uniforms.foamOpacity, 0.0, 1.0));
+
+  if (hasObstacle && obstacleT >= 0.0 && obstacleT < tFluid) {
+    let a = clamp(uniforms.obstacleAlpha, 0.0, 1.0);
+    color = mix(color, obstacleLit, a);
+  }
 
   let exposure = 1.2;
   return vec4<f32>(color * exposure, 1.0);

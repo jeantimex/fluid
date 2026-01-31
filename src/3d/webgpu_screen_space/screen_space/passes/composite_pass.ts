@@ -35,7 +35,7 @@ export class CompositePass {
       compare: 'less',
     });
     this.uniformBuffer = device.createBuffer({
-      size: 176, // mat4(64) + mat4(64) + foamColor(12) + foamOpacity(4) + extinctionCoeff(12) + extinctionMul(4) + refractionStrength(4) + pad(12)
+      size: 240, // 60 floats
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -210,7 +210,7 @@ export class CompositePass {
       if (!this.compositeBindGroup) {
         return;
       }
-      const uniforms = new Float32Array(44);
+      const uniforms = new Float32Array(60);
       uniforms.set(frame.inverseViewProjection, 0);
       uniforms.set(frame.lightViewProjection, 16);
       uniforms[32] = frame.foamColor.r;
@@ -225,6 +225,22 @@ export class CompositePass {
       uniforms[41] = frame.dirToSun.y;
       uniforms[42] = frame.dirToSun.z;
       uniforms[43] = frame.refractionStrength;
+      uniforms[44] = frame.obstacleCenter.x;
+      uniforms[45] = frame.obstacleCenter.y;
+      uniforms[46] = frame.obstacleCenter.z;
+      uniforms[47] = 0;
+      uniforms[48] = frame.obstacleHalfSize.x;
+      uniforms[49] = frame.obstacleHalfSize.y;
+      uniforms[50] = frame.obstacleHalfSize.z;
+      uniforms[51] = 0;
+      uniforms[52] = frame.obstacleRotation.x;
+      uniforms[53] = frame.obstacleRotation.y;
+      uniforms[54] = frame.obstacleRotation.z;
+      uniforms[55] = 0;
+      uniforms[56] = frame.obstacleColor.r;
+      uniforms[57] = frame.obstacleColor.g;
+      uniforms[58] = frame.obstacleColor.b;
+      uniforms[59] = frame.obstacleAlpha;
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
     } else {
       if (this.lastMode !== mode) {

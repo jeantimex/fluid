@@ -29,6 +29,11 @@ export interface ScreenSpaceFrame {
   extinctionMultiplier: number;
   refractionStrength: number;
   dirToSun: Vec3;
+  obstacleCenter: Vec3;
+  obstacleHalfSize: Vec3;
+  obstacleRotation: Vec3;
+  obstacleColor: RGB;
+  obstacleAlpha: number;
 }
 
 export interface DepthPassResources extends ScreenSpaceTextures {
@@ -61,4 +66,3 @@ export interface FoamPassResources extends ScreenSpaceTextures {
   foamVelocities: GPUBuffer;
   maxFoamParticles: number;
 }
-
