@@ -17,7 +17,7 @@
  * The half-resolution strategy halves the pixel count (4× fewer fragments),
  * which is critical because the raymarch shader is extremely expensive per pixel.
  *
- * ## Uniform Buffer Layout (68 floats = 272 bytes)
+ * ## Uniform Buffer Layout (80 floats = 320 bytes)
  *
  * | Offset | Name                   | Type      |
  * |--------|------------------------|-----------|
@@ -50,6 +50,10 @@
  * | 60–62  | floorSize              | vec3<f32> |
  * | 63     | sceneExposure          | f32       |
  * | 64–66  | floorCenter            | vec3<f32> |
+ * | 68–70  | obstacleCenter         | vec3<f32> |
+ * | 72–74  | obstacleHalfSize       | vec3<f32> |
+ * | 76–78  | obstacleColor          | vec3<f32> |
+ * | 79     | obstacleAlpha          | f32       |
  *
  * @module renderer
  */
@@ -87,7 +91,7 @@ export class RaymarchRenderer {
   /** Bind group for the raymarch pass (density texture + sampler + uniforms). */
   private bindGroup!: GPUBindGroup;
 
-  /** CPU-side typed array mirroring the uniform buffer contents (68 floats). */
+  /** CPU-side typed array mirroring the uniform buffer contents (80 floats). */
   private uniformData = new Float32Array(28);
 
   // ---------------------------------------------------------------------------
@@ -186,7 +190,7 @@ export class RaymarchRenderer {
     // Uniform Buffer
     // -------------------------------------------------------------------------
 
-    this.uniformData = new Float32Array(68); // 68 floats = 272 bytes
+    this.uniformData = new Float32Array(80); // 80 floats = 320 bytes
 
     this.uniformBuffer = device.createBuffer({
       size: this.uniformData.byteLength,
@@ -388,6 +392,22 @@ export class RaymarchRenderer {
       -config.boundsSize.y * 0.5 - config.floorSize.y * 0.5; // floorCenter.y
     this.uniformData[66] = 0; // floorCenter.z
     this.uniformData[67] = 0; // pad
+
+    // --- Obstacle box ---
+    this.uniformData[68] = config.obstacleCentre.x;
+    this.uniformData[69] = config.obstacleCentre.y;
+    this.uniformData[70] = config.obstacleCentre.z;
+    this.uniformData[71] = 0; // pad
+
+    this.uniformData[72] = config.obstacleSize.x * 0.5;
+    this.uniformData[73] = config.obstacleSize.y * 0.5;
+    this.uniformData[74] = config.obstacleSize.z * 0.5;
+    this.uniformData[75] = 0; // pad
+
+    this.uniformData[76] = config.obstacleColor.r;
+    this.uniformData[77] = config.obstacleColor.g;
+    this.uniformData[78] = config.obstacleColor.b;
+    this.uniformData[79] = config.obstacleAlpha;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

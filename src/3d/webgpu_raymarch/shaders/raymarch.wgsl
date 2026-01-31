@@ -80,6 +80,12 @@ struct RaymarchParams {
   sceneExposure: f32,                // Final exposure multiplier
   floorCenter: vec3<f32>,            // Floor slab center position
   pad14: f32,
+  obstacleCenter: vec3<f32>,         // Obstacle AABB center (world space)
+  pad15: f32,
+  obstacleHalfSize: vec3<f32>,       // Obstacle half extents (world space)
+  pad16: f32,
+  obstacleColor: vec3<f32>,          // Obstacle solid color (linear RGB)
+  obstacleAlpha: f32,                // Obstacle opacity (0..1)
 };
 
 // =============================================================================
@@ -137,6 +143,16 @@ fn rayBoxIntersection(origin: vec3<f32>, dir: vec3<f32>, boundsMin: vec3<f32>, b
   let tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
   let tmax = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
   return vec2<f32>(tmin, tmax);
+}
+
+/// Returns vec2(tmin, tmax) for the obstacle AABB, or vec2(-1, -1) if no hit.
+fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> vec2<f32> {
+  if (any(params.obstacleHalfSize <= vec3<f32>(0.0))) { return vec2<f32>(-1.0, -1.0); }
+  let obstacleMin = params.obstacleCenter - params.obstacleHalfSize;
+  let obstacleMax = params.obstacleCenter + params.obstacleHalfSize;
+  let hit = rayBoxIntersection(origin, dir, obstacleMin, obstacleMax);
+  if (hit.y < max(hit.x, 0.0)) { return vec2<f32>(-1.0, -1.0); }
+  return hit;
 }
 
 // =============================================================================
@@ -516,12 +532,14 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
   // Test ray against floor slab AABB
   let floorMin = params.floorCenter - 0.5 * params.floorSize;
   let floorMax = params.floorCenter + 0.5 * params.floorSize;
-  let hit = rayBoxIntersection(origin, dir, floorMin, floorMax);
+  let floorHit = rayBoxIntersection(origin, dir, floorMin, floorMax);
+  let hasFloorHit = floorHit.y >= max(floorHit.x, 0.0);
+  let floorT = select(floorHit.x, 0.0, floorHit.x < 0.0);
 
-  if (hit.y >= max(hit.x, 0.0)) {
+  var bgCol: vec3<f32>;
+  if (hasFloorHit) {
     // Ray hits the floor — compute the hit position
-    let t = select(hit.x, 0.0, hit.x < 0.0); // If inside floor, use t=0
-    let hitPos = origin + dir * t;
+    let hitPos = origin + dir * floorT;
 
     // --- Debug mode 2: flat quadrant colors (no checkerboard) ---
     if (params.debugFloorMode >= 1.5) {
@@ -531,15 +549,17 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         if (hitPos.x < 0.0) { debugTileCol = params.tileCol3; }
         else { debugTileCol = params.tileCol4; }
       }
-      return srgbToLinear(debugTileCol);
+      bgCol = srgbToLinear(debugTileCol);
+      // Obstacle blending happens below.
     }
 
     // --- Debug mode 1: solid red ---
-    if (params.debugFloorMode >= 0.5) {
-      return vec3<f32>(1.0, 0.0, 0.0);
+    if (params.debugFloorMode >= 0.5 && params.debugFloorMode < 1.5) {
+      bgCol = vec3<f32>(1.0, 0.0, 0.0);
     }
 
     // --- Normal rendering: checkerboard tiles ---
+    if (params.debugFloorMode < 0.5) {
 
     // Select base color by floor quadrant (±X, ±Z)
     var tileCol = params.tileCol1;
@@ -572,11 +592,25 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     let ambient = clamp(params.floorAmbient, 0.0, 1.0);
     let lighting = shadowMap * (1.0 - ambient) + ambient;
 
-    return tileCol * lighting;
+    bgCol = tileCol * lighting;
+    }
+  } else {
+    // No floor hit — return sky color
+    bgCol = skyColor(dir);
   }
 
-  // No floor hit — return sky color
-  return skyColor(dir);
+  // Test ray against obstacle AABB (if enabled)
+  let obstacleHit = obstacleHitInfo(origin, dir);
+  let hasObstacleHit = obstacleHit.x >= 0.0;
+  let obstacleT = select(obstacleHit.x, 0.0, obstacleHit.x < 0.0);
+
+  // If the obstacle is the closest hit, alpha-blend it over the background
+  if (hasObstacleHit && (!hasFloorHit || obstacleT < floorT)) {
+    let a = clamp(params.obstacleAlpha, 0.0, 1.0);
+    return mix(bgCol, params.obstacleColor, a);
+  }
+
+  return bgCol;
 }
 
 // =============================================================================
@@ -726,7 +760,33 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
      let searchForNextFluidEntryPoint = !travellingThroughFluid;
 
      // Find the next fluid surface along the current ray
+     let obstacleHit = obstacleHitInfo(rayPos, rayDir);
+     let hasObstacleHit = obstacleHit.x >= 0.0;
      let surfaceInfo = findNextSurface(rayPos, rayDir, searchForNextFluidEntryPoint, &rngState, 1000.0);
+
+     // If we're in air and the obstacle is closer than the next fluid surface,
+     // alpha-blend the obstacle and continue marching behind it.
+     if (!travellingThroughFluid && hasObstacleHit) {
+        let obstacleT = select(obstacleHit.x, 0.0, obstacleHit.x < 0.0);
+        if (!surfaceInfo.foundSurface) {
+          let a = clamp(params.obstacleAlpha, 0.0, 1.0);
+          totalLight = totalLight + params.obstacleColor * totalTransmittance * a;
+          totalTransmittance = totalTransmittance * (1.0 - a);
+          // Move ray past the obstacle to avoid repeated hits
+          let exitT = max(obstacleHit.y, obstacleT);
+          rayPos = rayPos + rayDir * (exitT + 0.001);
+          continue;
+        }
+        let surfaceT = dot(surfaceInfo.pos - rayPos, rayDir);
+        if (obstacleT < surfaceT) {
+          let a = clamp(params.obstacleAlpha, 0.0, 1.0);
+          totalLight = totalLight + params.obstacleColor * totalTransmittance * a;
+          totalTransmittance = totalTransmittance * (1.0 - a);
+          let exitT = max(obstacleHit.y, obstacleT);
+          rayPos = rayPos + rayDir * (exitT + 0.001);
+          continue;
+        }
+     }
 
      if (!surfaceInfo.foundSurface) {
         break; // No more surfaces — exit loop and sample environment

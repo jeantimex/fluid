@@ -132,4 +132,10 @@ export interface RaymarchConfig extends SimConfig {
 
   /** Dimensions (width, height, depth) of the floor slab in world units. */
   floorSize: { x: number; y: number; z: number };
+
+  /** Solid color used to render the obstacle box (linear RGB). */
+  obstacleColor: { r: number; g: number; b: number };
+
+  /** Opacity for the obstacle box (0 = transparent, 1 = opaque). */
+  obstacleAlpha: number;
 }

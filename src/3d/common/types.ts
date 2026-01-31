@@ -36,6 +36,8 @@ export interface SimConfig {
   boundsSize: Vec3;
   obstacleSize: Vec3;
   obstacleCentre: Vec3;
+  obstacleColor?: RGB;
+  obstacleAlpha?: number;
   interactionRadius: number;
   interactionStrength: number;
   particleRadius: number;

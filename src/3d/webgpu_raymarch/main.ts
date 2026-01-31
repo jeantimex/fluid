@@ -159,6 +159,8 @@ const config: RaymarchConfig = {
   indexOfRefraction: 1.33,
   numRefractions: 4,
   floorSize: { x: 80, y: 0.05, z: 80 },
+  obstacleColor: { r: 1.0, g: 0.0, b: 0.0 },
+  obstacleAlpha: 0.8,
 };
 
 // Simulation instance (initialized asynchronously in main())
@@ -217,6 +219,7 @@ const tileColorState = {
   tileCol4: rgbToHex(config.tileCol4),
 };
 
+
 raymarchFolder
   .addColor(tileColorState, 'tileCol1')
   .name('Tile Color 1')
@@ -256,6 +259,7 @@ raymarchFolder
     config.tileCol4.g = rgb.g / 255;
     config.tileCol4.b = rgb.b / 255;
   });
+
 
 /**
  * Main Application Entry Point

@@ -178,6 +178,14 @@ export function setupGui(
   obstacleFolder.add(config.obstacleCentre, 'y', -10, 10, 0.1).name('Center Y');
   obstacleFolder.add(config.obstacleCentre, 'z', -10, 10, 0.1).name('Center Z');
 
+  if (config.obstacleColor) {
+    obstacleFolder.addColor(config, 'obstacleColor').name('Color');
+  }
+
+  if (typeof config.obstacleAlpha === 'number') {
+    obstacleFolder.add(config, 'obstacleAlpha', 0, 1, 0.01).name('Alpha');
+  }
+
   const interactionFolder = gui.addFolder('Interaction');
   interactionFolder.close();
 
