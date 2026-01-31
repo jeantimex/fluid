@@ -511,9 +511,7 @@ export class ComputePipelinesLinear {
     if ('foamPositions' in buffers) {
       this.foamClearCounterBindGroup = this.device.createBindGroup({
         layout: this.foamClearCounter.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: buffers.foamCounter } },
-        ],
+        entries: [{ binding: 0, resource: { buffer: buffers.foamCounter } }],
       });
 
       this.foamSpawnBindGroup = this.device.createBindGroup({

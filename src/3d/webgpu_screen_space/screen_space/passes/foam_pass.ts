@@ -1,5 +1,8 @@
 import foamShader from '../shaders/foam.wgsl?raw';
-import type { ScreenSpaceFrame, ScreenSpaceTextures } from '../screen_space_types.ts';
+import type {
+  ScreenSpaceFrame,
+  ScreenSpaceTextures,
+} from '../screen_space_types.ts';
 
 export class FoamPass {
   private device: GPUDevice;
@@ -19,15 +22,29 @@ export class FoamPass {
 
     this.bindGroupLayout = device.createBindGroupLayout({
       entries: [
-        { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
-        { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
-        { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+        {
+          binding: 0,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage' },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'read-only-storage' },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.VERTEX,
+          buffer: { type: 'uniform' },
+        },
       ],
     });
 
     const module = device.createShaderModule({ code: foamShader });
     this.pipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] }),
+      layout: device.createPipelineLayout({
+        bindGroupLayouts: [this.bindGroupLayout],
+      }),
       vertex: { module, entryPoint: 'vs_main' },
       fragment: {
         module,
@@ -51,7 +68,11 @@ export class FoamPass {
     });
   }
 
-  createBindGroup(foamPositions: GPUBuffer, foamVelocities: GPUBuffer, maxFoamParticles: number) {
+  createBindGroup(
+    foamPositions: GPUBuffer,
+    foamVelocities: GPUBuffer,
+    maxFoamParticles: number
+  ) {
     this.maxFoamParticles = maxFoamParticles;
     this.bindGroup = this.device.createBindGroup({
       layout: this.bindGroupLayout,

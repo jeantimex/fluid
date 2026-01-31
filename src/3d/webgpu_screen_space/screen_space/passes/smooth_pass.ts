@@ -81,7 +81,11 @@ export class SmoothPass {
     target: GPUTexture,
     depth: GPUTexture
   ) {
-    if (!this.bindGroup || this.lastSource !== source || this.lastDepth !== depth) {
+    if (
+      !this.bindGroup ||
+      this.lastSource !== source ||
+      this.lastDepth !== depth
+    ) {
       this.createBindGroup(source, depth);
     }
     if (!this.bindGroup) {

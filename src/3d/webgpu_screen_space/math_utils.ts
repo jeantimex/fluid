@@ -151,10 +151,22 @@ export function mat4Ortho(
 export function mat4Invert(m: Float32Array): Float32Array {
   const out = new Float32Array(16);
 
-  const a00 = m[0], a01 = m[1], a02 = m[2], a03 = m[3];
-  const a10 = m[4], a11 = m[5], a12 = m[6], a13 = m[7];
-  const a20 = m[8], a21 = m[9], a22 = m[10], a23 = m[11];
-  const a30 = m[12], a31 = m[13], a32 = m[14], a33 = m[15];
+  const a00 = m[0],
+    a01 = m[1],
+    a02 = m[2],
+    a03 = m[3];
+  const a10 = m[4],
+    a11 = m[5],
+    a12 = m[6],
+    a13 = m[7];
+  const a20 = m[8],
+    a21 = m[9],
+    a22 = m[10],
+    a23 = m[11];
+  const a30 = m[12],
+    a31 = m[13],
+    a32 = m[14],
+    a33 = m[15];
 
   const b00 = a00 * a11 - a01 * a10;
   const b01 = a00 * a12 - a02 * a10;
@@ -170,12 +182,7 @@ export function mat4Invert(m: Float32Array): Float32Array {
   const b11 = a22 * a33 - a23 * a32;
 
   let det =
-    b00 * b11 -
-    b01 * b10 +
-    b02 * b09 +
-    b03 * b08 -
-    b04 * b07 +
-    b05 * b06;
+    b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
 
   if (!det) {
     return out;

@@ -516,8 +516,17 @@ export class FluidSimulation {
     // Update foam spawn uniforms - MATCHING CONFIG/UNITY
     // ========================================================================
     // Apply spawn-rate fade-in (quadratic ease-in)
-    const fadeInT = config.spawnRateFadeInTime <= 0 ? 1 :
-      Math.min(1, Math.max(0, (this.simTimer - config.spawnRateFadeStartTime) / config.spawnRateFadeInTime));
+    const fadeInT =
+      config.spawnRateFadeInTime <= 0
+        ? 1
+        : Math.min(
+            1,
+            Math.max(
+              0,
+              (this.simTimer - config.spawnRateFadeStartTime) /
+                config.spawnRateFadeInTime
+            )
+          );
 
     this.foamSpawnData[0] = frameTime;
     this.foamSpawnData[1] = config.foamSpawnRate * fadeInT * fadeInT;
@@ -525,16 +534,16 @@ export class FluidSimulation {
     this.foamSpawnData[3] = config.trappedAirVelocityMax;
     this.foamSpawnData[4] = config.foamKineticEnergyMin;
     this.foamSpawnData[5] = config.foamKineticEnergyMax;
-    
+
     const u32SpawnView = new Uint32Array(this.foamSpawnData.buffer);
     u32SpawnView[6] = maxFoam;
     u32SpawnView[7] = this.foamFrameCount;
     this.foamSpawnData[8] = buffers.particleCount;
-    
+
     this.foamSpawnData[9] = config.smoothingRadius;
     this.foamSpawnData[10] = config.foamLifetimeMin;
     this.foamSpawnData[11] = config.foamLifetimeMax;
-    
+
     this.foamSpawnData[12] = -config.boundsSize.x * 0.5;
     this.foamSpawnData[13] = -config.boundsSize.y * 0.5;
     this.foamSpawnData[14] = -config.boundsSize.z * 0.5;
@@ -555,9 +564,9 @@ export class FluidSimulation {
     // ========================================================================
     this.foamUpdateData[0] = frameTime;
     this.foamUpdateData[1] = config.gravity;
-    this.foamUpdateData[2] = 0.04;  // dragCoeff (internal constant in Unity shader)
+    this.foamUpdateData[2] = 0.04; // dragCoeff (internal constant in Unity shader)
     this.foamUpdateData[3] = config.bubbleBuoyancy;
-    
+
     this.foamUpdateData[4] = config.boundsSize.x * 0.5;
     this.foamUpdateData[5] = config.boundsSize.y * 0.5;
     this.foamUpdateData[6] = config.boundsSize.z * 0.5;
@@ -590,7 +599,7 @@ export class FluidSimulation {
 
     // 1. Clear foam spawn counter - REMOVED to allow ring buffer accumulation
     // The counter should wrap around MAX_FOAM naturally
-    
+
     // 2. Spawn foam particles (per fluid particle)
     const spawnPass = encoder.beginComputePass();
     spawnPass.setPipeline(pipelines.foamSpawn);
@@ -604,9 +613,7 @@ export class FluidSimulation {
     const updatePass = encoder.beginComputePass();
     updatePass.setPipeline(pipelines.foamUpdate);
     updatePass.setBindGroup(0, pipelines.foamUpdateBindGroup);
-    updatePass.dispatchWorkgroups(
-      Math.ceil(maxFoam / this.workgroupSize)
-    );
+    updatePass.dispatchWorkgroups(Math.ceil(maxFoam / this.workgroupSize));
     updatePass.end();
 
     device.queue.submit([encoder.finish()]);

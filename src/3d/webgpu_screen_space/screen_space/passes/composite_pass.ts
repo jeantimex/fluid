@@ -80,8 +80,16 @@ export class CompositePass {
           texture: { sampleType: 'float' },
         },
         { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-        { binding: 6, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
-        { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        {
+          binding: 6,
+          visibility: GPUShaderStage.FRAGMENT,
+          sampler: { type: 'comparison' },
+        },
+        {
+          binding: 7,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: 'uniform' },
+        },
       ],
     });
 
@@ -113,7 +121,9 @@ export class CompositePass {
       primitive: { topology: 'triangle-list' },
     });
 
-    const compositeModule = device.createShaderModule({ code: compositeShader });
+    const compositeModule = device.createShaderModule({
+      code: compositeShader,
+    });
     this.compositePipeline = device.createRenderPipeline({
       layout: device.createPipelineLayout({
         bindGroupLayouts: [this.compositeBindGroupLayout],

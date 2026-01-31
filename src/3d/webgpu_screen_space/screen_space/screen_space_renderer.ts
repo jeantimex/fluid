@@ -13,7 +13,13 @@ import type {
   SimBuffers,
 } from './screen_space_types.ts';
 import { SimulationBuffersLinear } from '../simulation_buffers_linear.ts';
-import { mat4Invert, mat4LookAt, mat4Multiply, mat4Ortho, mat4Perspective } from '../math_utils.ts';
+import {
+  mat4Invert,
+  mat4LookAt,
+  mat4Multiply,
+  mat4Ortho,
+  mat4Perspective,
+} from '../math_utils.ts';
 import { DepthPass } from './passes/depth_pass.ts';
 import { FoamPass } from './passes/foam_pass.ts';
 import { ThicknessPass } from './passes/thickness_pass.ts';
@@ -113,7 +119,8 @@ export class ScreenSpaceRenderer {
     this.depthTexture = this.device.createTexture({
       size: { width: this.width, height: this.height },
       format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
     const colorUsage =
@@ -146,7 +153,8 @@ export class ScreenSpaceRenderer {
     this.shadowTexture = this.device.createTexture({
       size: { width: this.width, height: this.height },
       format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
     this.foamTexture = this.device.createTexture({
@@ -200,8 +208,19 @@ export class ScreenSpaceRenderer {
       y: -lightDir.y * (bounds.x + bounds.z),
       z: -lightDir.z * (bounds.x + bounds.z),
     };
-    const lightView = mat4LookAt(lightPos, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
-    const lightProj = mat4Ortho(-halfX, halfX, -halfY, halfY, 0.1, bounds.x + bounds.z);
+    const lightView = mat4LookAt(
+      lightPos,
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 }
+    );
+    const lightProj = mat4Ortho(
+      -halfX,
+      halfX,
+      -halfY,
+      halfY,
+      0.1,
+      bounds.x + bounds.z
+    );
     const lightViewProj = mat4Multiply(lightProj, lightView);
 
     const frame: ScreenSpaceFrame = {
