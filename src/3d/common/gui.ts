@@ -214,6 +214,18 @@ export function setupGui(
   foamFolder
     .add(config, 'bubbleClassifyMinNeighbours', 0, 50, 1)
     .name('Bubble Min Neighbors');
+  foamFolder
+    .add(config, 'foamParticleRadius', 0.1, 5, 0.1)
+    .name('Particle Radius');
+  foamFolder
+    .add(config, 'spawnRateFadeInTime', 0, 5, 0.01)
+    .name('Spawn Fade-In Time');
+  foamFolder
+    .add(config, 'spawnRateFadeStartTime', 0, 5, 0.01)
+    .name('Spawn Fade Start');
+  foamFolder
+    .add(config, 'bubbleChangeScaleSpeed', 0, 20, 0.1)
+    .name('Bubble Scale Speed');
 
   const performanceFolder = gui.addFolder('Performance');
   performanceFolder.close();

@@ -57,5 +57,9 @@ export function createConfig(): SimConfig {
     foamOpacity: 2.5,
     sprayClassifyMaxNeighbours: 5,
     bubbleClassifyMinNeighbours: 15,
+    foamParticleRadius: 1.0,
+    spawnRateFadeInTime: 0.75,
+    spawnRateFadeStartTime: 0.1,
+    bubbleChangeScaleSpeed: 7,
   };
 }

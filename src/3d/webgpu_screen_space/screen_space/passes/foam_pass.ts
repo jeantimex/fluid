@@ -77,7 +77,7 @@ export class FoamPass {
     uniforms.set(frame.viewProjection);
     uniforms[16] = frame.canvasWidth;
     uniforms[17] = frame.canvasHeight;
-    uniforms[18] = frame.particleRadius;
+    uniforms[18] = frame.foamParticleRadius;
     uniforms[19] = 0; // pad
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 

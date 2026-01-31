@@ -211,6 +211,7 @@ export class ScreenSpaceRenderer {
       canvasWidth: this.canvas.width,
       canvasHeight: this.canvas.height,
       particleRadius: this.config.particleRadius * dpr,
+      foamParticleRadius: this.config.foamParticleRadius * dpr,
       near,
       far,
       foamColor: this.config.foamColor,

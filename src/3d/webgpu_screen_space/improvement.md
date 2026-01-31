@@ -154,3 +154,61 @@ Implementation Notes & Technical Challenges
     - **Reason**: The current implementation uses procedural instancing (calculating vertex positions on-the-fly in the vertex shader from a single center point).
     - **Analysis**: Pre-generating quad vertices in a compute shader would drastically increase memory bandwidth usage (writing 4 vertices + UVs to global memory per particle) compared to the negligible ALU cost of computing them in the vertex shader.
     - **Conclusion**: Procedural instantiation is the optimal approach for simple particle billboards.
+
+Differences Found
+
+  1. timeScale -- 2x faster in WebGPU
+
+  - Unity: normalTimeScale: 1
+  - WebGPU: timeScale: 2 (config.ts:5)
+  - This makes the entire simulation run at double speed, affecting foam spawn rates, lifetimes, and overall
+  fluid behavior.
+
+  2. viscosityStrength -- added where Unity has none
+
+  - Unity: viscosityStrength: 0
+  - WebGPU: viscosityStrength: 0.001 (config.ts:14)
+  - Small but nonzero; Unity has it completely disabled in this scene.
+
+  3. spawnRateFadeInTime / spawnRateFadeStartTime -- missing from WebGPU
+
+  - Unity: spawnRateFadeInTime: 0.75, spawnRateFadeStartTime: 0.1
+  - WebGPU: Not implemented
+  - Unity gradually ramps up foam spawning over 0.75 seconds after a 0.1s delay. The WebGPU port spawns at
+  full rate immediately, causing a potential burst of foam at startup.
+
+  4. bubbleChangeScaleSpeed -- missing from WebGPU
+
+  - Unity: bubbleChangeScaleSpeed: 7
+  - WebGPU: Not implemented
+  - Unity dynamically interpolates bubble scale over time (speed=7). The WebGPU port sets scale once at spawn
+  as (bubbleScale + 1.0) / 2.0 = 0.65 and never changes it (foam_spawn.wgsl:155).
+
+  5. Foam rendering scale and testParams -- not replicated
+
+  - Unity FoamTest component: scale: 2, testParams: {x: 1, y: 3, z: 0.6}
+  - WebGPU: Uses particleRadius * scale * dissolveScale with no equivalent of the Unity foam renderer's
+  scale=2 or its testParams
+  - This likely affects foam billboard size and visual prominence.
+
+  6. Absorption / extinction model -- significant visual difference
+
+  - Unity: Per-channel extinction coefficients {2.12, 0.43, 0.3} with multiplier 2.24 -- produces
+  color-dependent absorption (blue absorbs least, red absorbs most), giving the fluid its colored tint.
+  - WebGPU: Simple scalar exp(-thickness * 2.0) in the composite shader (composite_final.wgsl:107) -- uniform
+  gray absorption, no per-channel color variation.
+  - This is one of the biggest visual differences between the two.
+
+  7. Refraction strength -- dramatically different
+
+  - Unity: refractionMultiplier: 9.15
+  - WebGPU: refractionStrength: 0.12 (hardcoded in composite_final.wgsl:103)
+  - Unity's refraction is ~76x stronger. The WebGPU fluid will look much flatter and less distorted at the
+  edges.
+
+  8. Thickness particle scale -- not separately configurable
+
+  - Unity: thicknessParticleScale: 0.07 (separate from depth size 0.1)
+  - WebGPU: Uses the same particle radius for both depth and thickness passes
+  - Unity renders thickness with smaller particles than depth, which gives a tighter, more refined thickness
+  accumulation.

@@ -130,6 +130,9 @@ export class FluidSimulation {
   /** Frame counter for foam RNG seed (increments each step call). */
   private foamFrameCount = 0;
 
+  /** Accumulated simulation time for spawn-rate fade-in. */
+  private simTimer = 0;
+
   /**
    * Creates a new fluid simulation instance.
    *
@@ -181,6 +184,9 @@ export class FluidSimulation {
     if (this.buffers) {
       this.buffers.destroy();
     }
+
+    this.simTimer = 0;
+    this.foamFrameCount = 0;
 
     const { boundsSize, smoothingRadius } = this.config;
     this.gridRes = {
@@ -249,6 +255,7 @@ export class FluidSimulation {
       ? 1 / config.maxTimestepFPS
       : Number.POSITIVE_INFINITY;
     const frameTime = Math.min(dt * config.timeScale, maxDeltaTime);
+    this.simTimer += frameTime;
     const timeStep = frameTime / config.iterationsPerFrame;
 
     for (let i = 0; i < config.iterationsPerFrame; i++) {
@@ -508,8 +515,12 @@ export class FluidSimulation {
     // ========================================================================
     // Update foam spawn uniforms - MATCHING CONFIG/UNITY
     // ========================================================================
+    // Apply spawn-rate fade-in (quadratic ease-in)
+    const fadeInT = config.spawnRateFadeInTime <= 0 ? 1 :
+      Math.min(1, Math.max(0, (this.simTimer - config.spawnRateFadeStartTime) / config.spawnRateFadeInTime));
+
     this.foamSpawnData[0] = frameTime;
-    this.foamSpawnData[1] = config.foamSpawnRate;
+    this.foamSpawnData[1] = config.foamSpawnRate * fadeInT * fadeInT;
     this.foamSpawnData[2] = config.trappedAirVelocityMin;
     this.foamSpawnData[3] = config.trappedAirVelocityMax;
     this.foamSpawnData[4] = config.foamKineticEnergyMin;
@@ -566,7 +577,9 @@ export class FluidSimulation {
     const u32Update = new Uint32Array(this.foamUpdateData.buffer);
     u32Update[16] = config.bubbleClassifyMinNeighbours;
     u32Update[17] = config.sprayClassifyMaxNeighbours;
-    
+    this.foamUpdateData[18] = config.bubbleScale;
+    this.foamUpdateData[19] = config.bubbleChangeScaleSpeed;
+
     device.queue.writeBuffer(
       pipelines.uniformBuffers.foamUpdate,
       0,

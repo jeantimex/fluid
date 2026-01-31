@@ -62,6 +62,10 @@ export interface SimConfig {
   foamOpacity: number;
   sprayClassifyMaxNeighbours: number;
   bubbleClassifyMinNeighbours: number;
+  foamParticleRadius: number;
+  spawnRateFadeInTime: number;
+  spawnRateFadeStartTime: number;
+  bubbleChangeScaleSpeed: number;
 }
 
 export interface InputState {

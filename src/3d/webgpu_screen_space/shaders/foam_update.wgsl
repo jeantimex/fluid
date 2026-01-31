@@ -31,7 +31,8 @@ struct FoamUpdateParams {
   pad1: f32,
   minBubble: u32,
   maxSpray: u32,
-  pad2: vec2<u32>,
+  bubbleScale: f32,
+  scaleChangeSpeed: f32,
 };
 
 @group(0) @binding(0) var<storage, read_write> foamPositions: array<vec4<f32>>;
@@ -152,6 +153,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     vel *= (1.0 - params.dragCoeff * params.dt);
   }
 
+  // Scale interpolation: bubbles shrink toward bubbleScale, foam/spray expand toward 1.0
+  let targetScale = select(1.0, params.bubbleScale, isBubble);
+  let newScale = mix(scale, targetScale, params.dt * params.scaleChangeSpeed);
+
   // Integrate
   pos += vel * params.dt;
 
@@ -163,5 +168,5 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   if (pos.z < -hb.z || pos.z > hb.z) { pos.z = clamp(pos.z, -hb.z, hb.z); vel.z *= -damping; }
 
   foamPositions[index] = vec4<f32>(pos, lifetime);
-  foamVelocities[index] = vec4<f32>(vel, scale);
+  foamVelocities[index] = vec4<f32>(vel, newScale);
 }

@@ -21,6 +21,7 @@ export interface ScreenSpaceFrame {
   canvasWidth: number;
   canvasHeight: number;
   particleRadius: number;
+  foamParticleRadius: number;
   near: number;
   far: number;
   foamColor: RGB;
