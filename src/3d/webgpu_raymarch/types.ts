@@ -10,7 +10,7 @@
  * @module types
  */
 
-import type { SimConfig } from '../common_old/types.ts';
+import type { SimConfig } from '../common/types.ts';
 
 /**
  * Configuration for the raymarch-based fluid renderer.

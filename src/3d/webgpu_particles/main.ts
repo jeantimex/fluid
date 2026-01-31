@@ -46,8 +46,8 @@
  */
 
 import './style.css';
-import { createConfig } from '../common_old/config.ts';
-import { setupGui } from '../common_old/gui.ts';
+import { createConfig } from '../common/config.ts';
+import { setupGui } from '../common/gui.ts';
 import { FluidSimulation } from './fluid_simulation.ts';
 import { OrbitCamera } from './orbit_camera.ts';
 import {

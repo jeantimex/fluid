@@ -23,7 +23,7 @@ import {
   vec3Scale,
 } from '../webgpu_particles/math_utils.ts';
 import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
-import type { InputState, SimConfig } from '../common_old/types.ts';
+import type { InputState, SimConfig } from '../common/types.ts';
 
 /**
  * Sets up all mouse/touch input handlers for camera control and particle interaction.

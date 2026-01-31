@@ -61,9 +61,9 @@
 import particleShader from './shaders/particle3d.wgsl?raw';
 import lineShader from './shaders/line3d.wgsl?raw';
 import type { SimulationBuffers } from './simulation_buffers.ts';
-import type { SimConfig } from '../common_old/types.ts';
+import type { SimConfig } from '../common/types.ts';
 import { mat4Perspective, mat4Multiply } from './math_utils.ts';
-import { buildGradientLut } from '../common_old/kernels.ts';
+import { buildGradientLut } from '../common/kernels.ts';
 
 /**
  * Handles all rendering for the 3D fluid simulation.

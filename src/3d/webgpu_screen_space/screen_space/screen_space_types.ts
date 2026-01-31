@@ -1,6 +1,6 @@
 import type { SimulationBuffers } from '../simulation_buffers.ts';
 import type { SimulationBuffersLinear } from '../simulation_buffers_linear.ts';
-import type { RGB } from '../../common_old/types.ts';
+import type { RGB } from '../../common/types.ts';
 
 export type SimBuffers = SimulationBuffers | SimulationBuffersLinear;
 

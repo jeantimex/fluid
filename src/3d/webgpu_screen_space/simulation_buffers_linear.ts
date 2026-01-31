@@ -31,7 +31,7 @@
  * @module simulation_buffers_linear
  */
 
-import type { SpawnData } from '../common_old/types.ts';
+import type { SpawnData } from '../common/types.ts';
 
 /**
  * Manages all GPU buffers for the fluid simulation using Linear Grid.

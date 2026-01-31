@@ -5,7 +5,7 @@
  * rendering pipeline (depth, thickness, normal, smoothing, composite).
  */
 
-import type { SimConfig } from '../../common_old/types.ts';
+import type { SimConfig } from '../../common/types.ts';
 import type {
   CompositePassInputs,
   ScreenSpaceFrame,
