@@ -84,6 +84,8 @@ struct RaymarchParams {
   pad15: f32,
   obstacleHalfSize: vec3<f32>,       // Obstacle half extents (world space)
   pad16: f32,
+  obstacleRotation: vec3<f32>,       // Obstacle rotation in degrees (XYZ)
+  pad17: f32,
   obstacleColor: vec3<f32>,          // Obstacle solid color (linear RGB)
   obstacleAlpha: f32,                // Obstacle opacity (0..1)
 };
@@ -145,12 +147,53 @@ fn rayBoxIntersection(origin: vec3<f32>, dir: vec3<f32>, boundsMin: vec3<f32>, b
   return vec2<f32>(tmin, tmax);
 }
 
-/// Returns vec2(tmin, tmax) for the obstacle AABB, or vec2(-1, -1) if no hit.
+fn rotateX(v: vec3<f32>, angle: f32) -> vec3<f32> {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3<f32>(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
+}
+
+fn rotateY(v: vec3<f32>, angle: f32) -> vec3<f32> {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3<f32>(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+}
+
+fn rotateZ(v: vec3<f32>, angle: f32) -> vec3<f32> {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3<f32>(v.x * c - v.y * s, v.x * s + v.y * c, v.z);
+}
+
+fn toRadians(v: vec3<f32>) -> vec3<f32> {
+  return v * (3.14159265 / 180.0);
+}
+
+fn rotateLocalToWorld(v: vec3<f32>, rot: vec3<f32>) -> vec3<f32> {
+  var r = v;
+  r = rotateX(r, rot.x);
+  r = rotateY(r, rot.y);
+  r = rotateZ(r, rot.z);
+  return r;
+}
+
+fn rotateWorldToLocal(v: vec3<f32>, rot: vec3<f32>) -> vec3<f32> {
+  var r = v;
+  r = rotateZ(r, -rot.z);
+  r = rotateY(r, -rot.y);
+  r = rotateX(r, -rot.x);
+  return r;
+}
+
+/// Returns vec2(tmin, tmax) for the obstacle OBB, or vec2(-1, -1) if no hit.
 fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> vec2<f32> {
   if (any(params.obstacleHalfSize <= vec3<f32>(0.0))) { return vec2<f32>(-1.0, -1.0); }
-  let obstacleMin = params.obstacleCenter - params.obstacleHalfSize;
-  let obstacleMax = params.obstacleCenter + params.obstacleHalfSize;
-  let hit = rayBoxIntersection(origin, dir, obstacleMin, obstacleMax);
+  let rot = toRadians(params.obstacleRotation);
+  let localOrigin = rotateWorldToLocal(origin - params.obstacleCenter, rot);
+  let localDir = rotateWorldToLocal(dir, rot);
+  let obstacleMin = -params.obstacleHalfSize;
+  let obstacleMax = params.obstacleHalfSize;
+  let hit = rayBoxIntersection(localOrigin, localDir, obstacleMin, obstacleMax);
   if (hit.y < max(hit.x, 0.0)) { return vec2<f32>(-1.0, -1.0); }
   return hit;
 }

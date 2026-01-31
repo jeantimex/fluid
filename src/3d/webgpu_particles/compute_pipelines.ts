@@ -382,7 +382,7 @@ export class ComputePipelines {
       }),
 
       integrate: device.createBuffer({
-        size: 64, // 16 floats
+        size: 80, // 20 floats
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
 

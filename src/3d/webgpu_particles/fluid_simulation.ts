@@ -85,8 +85,8 @@ export class FluidSimulation {
   /** External forces params: [dt, gravity, interactionRadius, strength, inputX, inputY, inputZ, pad]. */
   private computeData = new Float32Array(8);
 
-  /** Integration params: [dt, damping, hasObstacle, pad, halfBounds(3), pad, obstacleCenter(3), pad, obstacleHalf(3), pad]. */
-  private integrateData = new Float32Array(16);
+  /** Integration params: [dt, damping, hasObstacle, pad, halfBounds(3), pad, obstacleCenter(3), pad, obstacleHalf(3), pad, obstacleRotation(3), pad]. */
+  private integrateData = new Float32Array(20);
 
   /** Hash params: [radius, particleCount, minBoundsX/Y/Z, gridResX/Y/Z]. */
   private hashParamsData = new Float32Array(8);
@@ -594,9 +594,9 @@ export class FluidSimulation {
    * Packs the timestep, collision damping, boundary half-extents, and
    * optional obstacle parameters into the integration uniform buffer.
    *
-   * The buffer layout matches the `IntegrateParams` WGSL struct (64 bytes):
+   * The buffer layout matches the `IntegrateParams` WGSL struct (80 bytes):
    *   [dt, damping, hasObstacle, pad, halfBoundsXYZ, pad,
-   *    obstacleCenterXYZ, pad, obstacleHalfXYZ, pad]
+   *    obstacleCenterXYZ, pad, obstacleHalfXYZ, pad, obstacleRotationXYZ, pad]
    *
    * @param timeStep - Sub-step delta time for position integration
    */
@@ -620,6 +620,9 @@ export class FluidSimulation {
     this.integrateData[12] = this.config.obstacleSize.x * 0.5;
     this.integrateData[13] = this.config.obstacleSize.y * 0.5;
     this.integrateData[14] = this.config.obstacleSize.z * 0.5;
+    this.integrateData[16] = this.config.obstacleRotation.x;
+    this.integrateData[17] = this.config.obstacleRotation.y;
+    this.integrateData[18] = this.config.obstacleRotation.z;
 
     this.device.queue.writeBuffer(
       this.pipelines.uniformBuffers.integrate,

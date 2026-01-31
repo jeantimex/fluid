@@ -159,9 +159,10 @@ export class FluidSimulation {
    * Layout: [deltaTime, collisionDamping, hasObstacle, padding,
    *          halfBoundsX, halfBoundsY, halfBoundsZ, padding,
    *          obstacleX, obstacleY, obstacleZ, padding,
-   *          obstacleHalfX, obstacleHalfY, obstacleHalfZ, padding]
+   *          obstacleHalfX, obstacleHalfY, obstacleHalfZ, padding,
+   *          obstacleRotX, obstacleRotY, obstacleRotZ, padding]
    */
-  private integrateData = new Float32Array(16);
+  private integrateData = new Float32Array(20);
 
   /**
    * Spatial hash uniform data.
@@ -844,6 +845,9 @@ export class FluidSimulation {
     this.integrateData[12] = this.config.obstacleSize.x * 0.5;
     this.integrateData[13] = this.config.obstacleSize.y * 0.5;
     this.integrateData[14] = this.config.obstacleSize.z * 0.5;
+    this.integrateData[16] = this.config.obstacleRotation.x;
+    this.integrateData[17] = this.config.obstacleRotation.y;
+    this.integrateData[18] = this.config.obstacleRotation.z;
 
     this.device.queue.writeBuffer(
       this.pipelines.uniformBuffers.integrate,

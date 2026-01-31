@@ -178,6 +178,16 @@ export function setupGui(
   obstacleFolder.add(config.obstacleCentre, 'y', -10, 10, 0.1).name('Center Y');
   obstacleFolder.add(config.obstacleCentre, 'z', -10, 10, 0.1).name('Center Z');
 
+  obstacleFolder
+    .add(config.obstacleRotation, 'x', -180, 180, 1)
+    .name('Rotation X');
+  obstacleFolder
+    .add(config.obstacleRotation, 'y', -180, 180, 1)
+    .name('Rotation Y');
+  obstacleFolder
+    .add(config.obstacleRotation, 'z', -180, 180, 1)
+    .name('Rotation Z');
+
   if (config.obstacleColor) {
     obstacleFolder.addColor(config, 'obstacleColor').name('Color');
   }

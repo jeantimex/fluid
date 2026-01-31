@@ -76,13 +76,14 @@
  *  28      4    pad1             - Padding
  *  32     12    obstacleCenter   - Center of dynamic obstacle (reserved)
  *  44      4    pad2             - Padding
- *  48     12    obstacleHalf     - Half-extents of obstacle (reserved)
+ *  48     12    obstacleHalf     - Half-extents of obstacle
  *  60      4    pad3             - Padding
+ *  64     12    obstacleRotation - Rotation in degrees (XYZ)
+ *  76      4    pad4             - Padding
  * ------
- * Total: 64 bytes
+ * Total: 80 bytes
  *
- * Note: obstacleCenter and obstacleHalf are reserved for future use
- * (dynamic obstacle collision, not currently implemented)
+ * Note: obstacleRotation is in degrees to match GUI controls.
  */
 struct IntegrateParams {
   dt: f32,
@@ -95,6 +96,8 @@ struct IntegrateParams {
   pad2: f32,
   obstacleHalf: vec3<f32>,
   pad3: f32,
+  obstacleRotation: vec3<f32>,
+  pad4: f32,
 };
 
 // ============================================================================
@@ -114,6 +117,44 @@ struct IntegrateParams {
 @group(0) @binding(0) var<storage, read_write> positions: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read_write> velocities: array<vec4<f32>>;
 @group(0) @binding(2) var<uniform> params: IntegrateParams;
+
+fn rotateX(v: vec3<f32>, angle: f32) -> vec3<f32> {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3<f32>(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
+}
+
+fn rotateY(v: vec3<f32>, angle: f32) -> vec3<f32> {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3<f32>(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+}
+
+fn rotateZ(v: vec3<f32>, angle: f32) -> vec3<f32> {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec3<f32>(v.x * c - v.y * s, v.x * s + v.y * c, v.z);
+}
+
+fn toRadians(v: vec3<f32>) -> vec3<f32> {
+  return v * (3.14159265 / 180.0);
+}
+
+fn rotateLocalToWorld(v: vec3<f32>, rot: vec3<f32>) -> vec3<f32> {
+  var r = v;
+  r = rotateX(r, rot.x);
+  r = rotateY(r, rot.y);
+  r = rotateZ(r, rot.z);
+  return r;
+}
+
+fn rotateWorldToLocal(v: vec3<f32>, rot: vec3<f32>) -> vec3<f32> {
+  var r = v;
+  r = rotateZ(r, -rot.z);
+  r = rotateY(r, -rot.y);
+  r = rotateX(r, -rot.x);
+  return r;
+}
 
 /**
  * Main Integration Compute Kernel
@@ -169,9 +210,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   if (params.hasObstacle > 0.5) {
       let obsCenter = params.obstacleCenter;
       let obsHalf = params.obstacleHalf;
+      let rot = toRadians(params.obstacleRotation);
 
       // Calculate position relative to obstacle center
-      let localPos = pos - obsCenter;
+      var localPos = rotateWorldToLocal(pos - obsCenter, rot);
 
       // Check if inside obstacle (overlap on all axes)
       // We use a small epsilon for robustness, though strict inequality is fine
@@ -189,17 +231,31 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
           if (depthX < depthY && depthX < depthZ) {
               // ---- X-AXIS COLLISION ----
               // Snap to surface
-              pos.x = obsCenter.x + obsHalf.x * sign(localPos.x);
-              // Reflect velocity
-              vel.x = -vel.x * params.collisionDamping;
+              localPos.x = obsHalf.x * sign(localPos.x);
+              let normal = rotateLocalToWorld(vec3<f32>(sign(localPos.x), 0.0, 0.0), rot);
+              pos = obsCenter + rotateLocalToWorld(localPos, rot);
+              let vn = dot(vel, normal);
+              if (vn < 0.0) {
+                vel = vel - (1.0 + params.collisionDamping) * vn * normal;
+              }
           } else if (depthY < depthZ) {
               // ---- Y-AXIS COLLISION ----
-              pos.y = obsCenter.y + obsHalf.y * sign(localPos.y);
-              vel.y = -vel.y * params.collisionDamping;
+              localPos.y = obsHalf.y * sign(localPos.y);
+              let normal = rotateLocalToWorld(vec3<f32>(0.0, sign(localPos.y), 0.0), rot);
+              pos = obsCenter + rotateLocalToWorld(localPos, rot);
+              let vn = dot(vel, normal);
+              if (vn < 0.0) {
+                vel = vel - (1.0 + params.collisionDamping) * vn * normal;
+              }
           } else {
               // ---- Z-AXIS COLLISION ----
-              pos.z = obsCenter.z + obsHalf.z * sign(localPos.z);
-              vel.z = -vel.z * params.collisionDamping;
+              localPos.z = obsHalf.z * sign(localPos.z);
+              let normal = rotateLocalToWorld(vec3<f32>(0.0, 0.0, sign(localPos.z)), rot);
+              pos = obsCenter + rotateLocalToWorld(localPos, rot);
+              let vn = dot(vel, normal);
+              if (vn < 0.0) {
+                vel = vel - (1.0 + params.collisionDamping) * vn * normal;
+              }
           }
       }
   }
