@@ -431,11 +431,110 @@ export class Renderer {
   }
 
   // ===========================================================================
+  // Obstacle Wireframe Builder
+  // ===========================================================================
+
+  /**
+   * Builds the obstacle box wireframe vertices in lineVertexData.
+   *
+   * Generates 12 edges (24 vertices) for a rotated 3D box defined by the
+   * obstacle config (centre, size, rotation, color, alpha). The rotation
+   * order matches the integrate shader: rotateX → rotateY → rotateZ.
+   *
+   * @param config - Simulation configuration with obstacle parameters
+   * @returns Number of line vertices (0 if obstacle is disabled)
+   */
+  private buildObstacleLines(config: SimConfig): number {
+    const hx = config.obstacleSize.x * 0.5;
+    const hy = config.obstacleSize.y * 0.5;
+    const hz = config.obstacleSize.z * 0.5;
+
+    if (hx <= 0 || hy <= 0 || hz <= 0) return 0;
+
+    const cx = config.obstacleCentre.x;
+    const cy = config.obstacleCentre.y;
+    const cz = config.obstacleCentre.z;
+
+    const color = config.obstacleColor ?? { r: 1, g: 0, b: 0 };
+    const alpha = config.obstacleAlpha ?? 0.8;
+
+    // Rotation (degrees → radians), matching integrate.wgsl rotateLocalToWorld
+    const degToRad = Math.PI / 180;
+    const rx = config.obstacleRotation.x * degToRad;
+    const ry = config.obstacleRotation.y * degToRad;
+    const rz = config.obstacleRotation.z * degToRad;
+    const cosX = Math.cos(rx), sinX = Math.sin(rx);
+    const cosY = Math.cos(ry), sinY = Math.sin(ry);
+    const cosZ = Math.cos(rz), sinZ = Math.sin(rz);
+
+    // rotateLocalToWorld: rotateX → rotateY → rotateZ, then translate
+    const rotate = (
+      lx: number,
+      ly: number,
+      lz: number
+    ): [number, number, number] => {
+      // rotateX
+      const y1 = ly * cosX - lz * sinX;
+      const z1 = ly * sinX + lz * cosX;
+      // rotateY
+      const x2 = lx * cosY + z1 * sinY;
+      const z2 = -lx * sinY + z1 * cosY;
+      // rotateZ
+      const x3 = x2 * cosZ - y1 * sinZ;
+      const y3 = x2 * sinZ + y1 * cosZ;
+      return [x3 + cx, y3 + cy, z2 + cz];
+    };
+
+    // 8 corners of the box in local space → world space
+    const corners = [
+      rotate(-hx, -hy, -hz),
+      rotate(+hx, -hy, -hz),
+      rotate(+hx, +hy, -hz),
+      rotate(-hx, +hy, -hz),
+      rotate(-hx, -hy, +hz),
+      rotate(+hx, -hy, +hz),
+      rotate(+hx, +hy, +hz),
+      rotate(-hx, +hy, +hz),
+    ];
+
+    // 12 edges of the box
+    const edges = [
+      [0, 1], [1, 2], [2, 3], [3, 0], // back face (-z)
+      [4, 5], [5, 6], [6, 7], [7, 4], // front face (+z)
+      [0, 4], [1, 5], [2, 6], [3, 7], // connecting edges
+    ];
+
+    let offset = 0;
+    for (const [a, b] of edges) {
+      const pa = corners[a];
+      const pb = corners[b];
+      // Vertex A: position + color
+      this.lineVertexData[offset++] = pa[0];
+      this.lineVertexData[offset++] = pa[1];
+      this.lineVertexData[offset++] = pa[2];
+      this.lineVertexData[offset++] = color.r;
+      this.lineVertexData[offset++] = color.g;
+      this.lineVertexData[offset++] = color.b;
+      this.lineVertexData[offset++] = alpha;
+      // Vertex B: position + color
+      this.lineVertexData[offset++] = pb[0];
+      this.lineVertexData[offset++] = pb[1];
+      this.lineVertexData[offset++] = pb[2];
+      this.lineVertexData[offset++] = color.r;
+      this.lineVertexData[offset++] = color.g;
+      this.lineVertexData[offset++] = color.b;
+      this.lineVertexData[offset++] = alpha;
+    }
+
+    return 24; // 12 edges × 2 vertices
+  }
+
+  // ===========================================================================
   // Main Render Function
   // ===========================================================================
 
   /**
-   * Renders the complete scene (particles + bounding box).
+   * Renders the complete scene (particles + obstacle wireframe).
    *
    * @param encoder - Command encoder for recording render commands
    * @param view - Texture view for the current frame's render target
@@ -474,6 +573,21 @@ export class Renderer {
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
     // -------------------------------------------------------------------------
+    // Build & Upload Obstacle Wireframe
+    // -------------------------------------------------------------------------
+
+    const lineVertexCount = this.buildObstacleLines(config);
+    if (lineVertexCount > 0) {
+      this.device.queue.writeBuffer(
+        this.lineVertexBuffer,
+        0,
+        this.lineVertexData.buffer,
+        this.lineVertexData.byteOffset,
+        lineVertexCount * 7 * 4 // bytes
+      );
+    }
+
+    // -------------------------------------------------------------------------
     // Begin Render Pass
     // -------------------------------------------------------------------------
 
@@ -504,6 +618,17 @@ export class Renderer {
     // Use indirect draw - the instance count was populated by the cull shader
     // This avoids CPU-GPU synchronization for determining visible particle count
     pass.drawIndirect(buffers.indirectDraw, 0);
+
+    // -------------------------------------------------------------------------
+    // Draw Obstacle Wireframe
+    // -------------------------------------------------------------------------
+
+    if (lineVertexCount > 0) {
+      pass.setPipeline(this.linePipeline);
+      pass.setBindGroup(0, this.lineBindGroup);
+      pass.setVertexBuffer(0, this.lineVertexBuffer);
+      pass.draw(lineVertexCount);
+    }
 
     pass.end();
   }
