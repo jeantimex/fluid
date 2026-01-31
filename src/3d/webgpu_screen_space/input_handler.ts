@@ -18,7 +18,7 @@
 
 import { rayBoxIntersection, vec3Add, vec3Scale } from './math_utils.ts';
 import type { OrbitCamera } from './orbit_camera.ts';
-import type { InputState, SimConfig } from '../common/types.ts';
+import type { InputState, SimConfig } from '../common_old/types.ts';
 
 /**
  * Sets up all mouse/touch input handlers for camera control and particle interaction.

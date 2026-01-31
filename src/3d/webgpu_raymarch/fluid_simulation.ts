@@ -78,8 +78,8 @@
  * @module fluid_simulation
  */
 
-import type { SimState } from '../common/types.ts';
-import { createSpawnData } from '../common/spawn.ts';
+import type { SimState } from '../common_old/types.ts';
+import { createSpawnData } from '../common_old/spawn.ts';
 import { SimulationBuffers } from '../webgpu_particles/simulation_buffers.ts';
 import { ComputePipelines } from '../webgpu_particles/compute_pipelines.ts';
 import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';

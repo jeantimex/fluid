@@ -12,8 +12,8 @@
  * @module fluid_simulation
  */
 
-import type { SimConfig, SimState } from '../common/types.ts';
-import { createSpawnData } from '../common/spawn.ts';
+import type { SimConfig, SimState } from '../common_old/types.ts';
+import { createSpawnData } from '../common_old/spawn.ts';
 import { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import { ComputePipelinesLinear } from './compute_pipelines_linear.ts';
 import { Renderer } from './renderer.ts';

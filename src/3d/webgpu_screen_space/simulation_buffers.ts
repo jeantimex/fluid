@@ -52,7 +52,7 @@
  * @module simulation_buffers
  */
 
-import type { SpawnData } from '../common/types.ts';
+import type { SpawnData } from '../common_old/types.ts';
 
 /**
  * Manages all GPU buffers for the fluid simulation.

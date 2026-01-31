@@ -46,8 +46,8 @@
  */
 
 import './style.css';
-import { createConfig } from '../common/config.ts';
-import { setupGui } from '../common/gui.ts';
+import { createConfig } from '../common_old/config.ts';
+import { setupGui } from '../common_old/gui.ts';
 
 /**
  * Converts a normalized RGB color (components in [0, 1]) to a hex string.

@@ -186,35 +186,6 @@ export function setupGui(
     .add(config, 'interactionStrength', 0, 200, 1)
     .name('Strength');
 
-  const foamFolder = gui.addFolder('Foam');
-  foamFolder.close();
-
-  foamFolder.add(config, 'foamSpawnRate', 0, 1000, 1).name('Spawn Rate');
-  foamFolder
-    .add(config, 'trappedAirVelocityMin', 0, 50, 0.1)
-    .name('Air Vel Min');
-  foamFolder
-    .add(config, 'trappedAirVelocityMax', 0, 100, 0.1)
-    .name('Air Vel Max');
-  foamFolder
-    .add(config, 'foamKineticEnergyMin', 0, 50, 0.1)
-    .name('Kinetic Min');
-  foamFolder
-    .add(config, 'foamKineticEnergyMax', 0, 200, 0.1)
-    .name('Kinetic Max');
-  foamFolder.add(config, 'bubbleBuoyancy', 0, 5, 0.1).name('Buoyancy');
-  foamFolder.add(config, 'bubbleScale', 0, 2, 0.01).name('Scale');
-  foamFolder.add(config, 'foamLifetimeMin', 0, 30, 0.1).name('Lifetime Min');
-  foamFolder.add(config, 'foamLifetimeMax', 0, 60, 0.1).name('Lifetime Max');
-  foamFolder.addColor(config, 'foamColor').name('Color');
-  foamFolder.add(config, 'foamOpacity', 0, 20, 0.1).name('Opacity');
-  foamFolder
-    .add(config, 'sprayClassifyMaxNeighbours', 0, 20, 1)
-    .name('Spray Max Neighbors');
-  foamFolder
-    .add(config, 'bubbleClassifyMinNeighbours', 0, 50, 1)
-    .name('Bubble Min Neighbors');
-
   const performanceFolder = gui.addFolder('Performance');
   performanceFolder.close();
 
@@ -231,18 +202,6 @@ export function setupGui(
     .onChange((value: boolean) => {
       stats.dom.style.display = value ? 'block' : 'none';
     });
-
-  const debugFolder = gui.addFolder('Debug');
-  debugFolder.close();
-  debugFolder
-    .add(config, 'screenSpaceDebugMode', {
-      Shaded: 4,
-      Depth: 0,
-      Thickness: 1,
-      Normal: 2,
-      Smooth: 3,
-    })
-    .name('Screen-Space View');
 
   return { gui, stats, uiState };
 }
