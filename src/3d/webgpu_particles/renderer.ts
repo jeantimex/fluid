@@ -108,6 +108,18 @@ export class Renderer {
    */
   private linePipeline: GPURenderPipeline;
 
+  /**
+   * Pipeline for rendering filled obstacle faces.
+   *
+   * Configuration:
+   * - Vertex: Position + color from vertex buffer (same shader as lines)
+   * - Fragment: Pass-through color with alpha blending
+   * - Topology: triangle-list
+   * - Depth: read-only (no write) so particles behind show through
+   * - Cull: none (both sides visible for transparency)
+   */
+  private facePipeline: GPURenderPipeline;
+
   // ===========================================================================
   // GPU Buffers
   // ===========================================================================
@@ -157,6 +169,12 @@ export class Renderer {
    */
   private lineBindGroup: GPUBindGroup;
 
+  /**
+   * Bind group for face rendering.
+   * Static, only contains uniform buffer.
+   */
+  private faceBindGroup: GPUBindGroup;
+
   // ===========================================================================
   // Line Rendering Resources
   // ===========================================================================
@@ -171,11 +189,11 @@ export class Renderer {
   private lineVertexBuffer: GPUBuffer;
 
   /**
-   * CPU-side line vertex data.
+   * CPU-side vertex data for obstacle faces and wireframe edges.
    * Reused each frame to avoid allocation.
    *
-   * Capacity: 48 vertices × 7 floats = 336 floats
-   * (Enough for a 3D box: 12 edges × 2 vertices × 2 for safety)
+   * Capacity: 72 vertices × 7 floats = 504 floats
+   * (36 face vertices + 24 edge vertices + headroom)
    */
   private lineVertexData: Float32Array;
 
@@ -345,11 +363,62 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
-    // Create Line Vertex Buffer
+    // Create Face Render Pipeline (filled obstacle faces)
     // -------------------------------------------------------------------------
 
-    // Allocate for 48 vertices (enough for box edges plus some extra)
-    this.lineVertexData = new Float32Array(48 * 7); // 7 floats per vertex
+    this.facePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: lineModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 28,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: lineModule,
+        entryPoint: 'fs_main',
+        targets: [
+          {
+            format,
+            blend: {
+              color: {
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
+              alpha: {
+                srcFactor: 'one',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
+            },
+          },
+        ],
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none',
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: false,
+        depthCompare: 'less',
+      },
+    });
+
+    // -------------------------------------------------------------------------
+    // Create Vertex Buffer (faces + edges)
+    // -------------------------------------------------------------------------
+
+    // Allocate for 72 vertices (36 face + 24 edge + headroom)
+    this.lineVertexData = new Float32Array(72 * 7); // 7 floats per vertex
 
     this.lineVertexBuffer = device.createBuffer({
       size: this.lineVertexData.byteLength,
@@ -357,11 +426,16 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
-    // Create Line Bind Group
+    // Create Bind Groups (line + face)
     // -------------------------------------------------------------------------
 
     this.lineBindGroup = device.createBindGroup({
       layout: this.linePipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+    });
+
+    this.faceBindGroup = device.createBindGroup({
+      layout: this.facePipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
     });
 
@@ -431,25 +505,30 @@ export class Renderer {
   }
 
   // ===========================================================================
-  // Obstacle Wireframe Builder
+  // Obstacle Geometry Builder
   // ===========================================================================
 
   /**
-   * Builds the obstacle box wireframe vertices in lineVertexData.
+   * Builds obstacle box geometry (filled faces + wireframe edges).
    *
-   * Generates 12 edges (24 vertices) for a rotated 3D box defined by the
-   * obstacle config (centre, size, rotation, color, alpha). The rotation
-   * order matches the integrate shader: rotateX → rotateY → rotateZ.
+   * Writes face triangle vertices first (36 vertices), then edge line
+   * vertices (24 vertices) into lineVertexData. The rotation order matches
+   * the integrate shader: rotateX → rotateY → rotateZ.
    *
    * @param config - Simulation configuration with obstacle parameters
-   * @returns Number of line vertices (0 if obstacle is disabled)
+   * @returns Face and edge vertex counts (both 0 if obstacle is disabled)
    */
-  private buildObstacleLines(config: SimConfig): number {
+  private buildObstacleGeometry(config: SimConfig): {
+    faceCount: number;
+    edgeCount: number;
+  } {
     const hx = config.obstacleSize.x * 0.5;
     const hy = config.obstacleSize.y * 0.5;
     const hz = config.obstacleSize.z * 0.5;
 
-    if (hx <= 0 || hy <= 0 || hz <= 0) return 0;
+    if (hx <= 0 || hy <= 0 || hz <= 0) {
+      return { faceCount: 0, edgeCount: 0 };
+    }
 
     const cx = config.obstacleCentre.x;
     const cy = config.obstacleCentre.y;
@@ -473,60 +552,73 @@ export class Renderer {
       ly: number,
       lz: number
     ): [number, number, number] => {
-      // rotateX
       const y1 = ly * cosX - lz * sinX;
       const z1 = ly * sinX + lz * cosX;
-      // rotateY
       const x2 = lx * cosY + z1 * sinY;
       const z2 = -lx * sinY + z1 * cosY;
-      // rotateZ
       const x3 = x2 * cosZ - y1 * sinZ;
       const y3 = x2 * sinZ + y1 * cosZ;
       return [x3 + cx, y3 + cy, z2 + cz];
     };
 
     // 8 corners of the box in local space → world space
-    const corners = [
-      rotate(-hx, -hy, -hz),
-      rotate(+hx, -hy, -hz),
-      rotate(+hx, +hy, -hz),
-      rotate(-hx, +hy, -hz),
-      rotate(-hx, -hy, +hz),
-      rotate(+hx, -hy, +hz),
-      rotate(+hx, +hy, +hz),
-      rotate(-hx, +hy, +hz),
+    const c = [
+      rotate(-hx, -hy, -hz), // 0
+      rotate(+hx, -hy, -hz), // 1
+      rotate(+hx, +hy, -hz), // 2
+      rotate(-hx, +hy, -hz), // 3
+      rotate(-hx, -hy, +hz), // 4
+      rotate(+hx, -hy, +hz), // 5
+      rotate(+hx, +hy, +hz), // 6
+      rotate(-hx, +hy, +hz), // 7
     ];
 
-    // 12 edges of the box
+    // Helper: write one vertex (position + color) at current offset
+    let offset = 0;
+    const vert = (p: [number, number, number]) => {
+      this.lineVertexData[offset++] = p[0];
+      this.lineVertexData[offset++] = p[1];
+      this.lineVertexData[offset++] = p[2];
+      this.lineVertexData[offset++] = color.r;
+      this.lineVertexData[offset++] = color.g;
+      this.lineVertexData[offset++] = color.b;
+      this.lineVertexData[offset++] = alpha;
+    };
+
+    // --- Filled faces: 6 faces × 2 triangles × 3 vertices = 36 vertices ---
+    // Each face as two triangles (winding consistent for double-sided rendering)
+    const faces = [
+      [0, 2, 1, 0, 3, 2], // -Z back
+      [4, 5, 6, 4, 6, 7], // +Z front
+      [0, 4, 7, 0, 7, 3], // -X left
+      [1, 2, 6, 1, 6, 5], // +X right
+      [0, 1, 5, 0, 5, 4], // -Y bottom
+      [3, 7, 6, 3, 6, 2], // +Y top
+    ];
+
+    for (const face of faces) {
+      for (const idx of face) {
+        vert(c[idx]);
+      }
+    }
+
+    const faceCount = 36;
+
+    // --- Wireframe edges: 12 edges × 2 vertices = 24 vertices ---
     const edges = [
       [0, 1], [1, 2], [2, 3], [3, 0], // back face (-z)
       [4, 5], [5, 6], [6, 7], [7, 4], // front face (+z)
       [0, 4], [1, 5], [2, 6], [3, 7], // connecting edges
     ];
 
-    let offset = 0;
     for (const [a, b] of edges) {
-      const pa = corners[a];
-      const pb = corners[b];
-      // Vertex A: position + color
-      this.lineVertexData[offset++] = pa[0];
-      this.lineVertexData[offset++] = pa[1];
-      this.lineVertexData[offset++] = pa[2];
-      this.lineVertexData[offset++] = color.r;
-      this.lineVertexData[offset++] = color.g;
-      this.lineVertexData[offset++] = color.b;
-      this.lineVertexData[offset++] = alpha;
-      // Vertex B: position + color
-      this.lineVertexData[offset++] = pb[0];
-      this.lineVertexData[offset++] = pb[1];
-      this.lineVertexData[offset++] = pb[2];
-      this.lineVertexData[offset++] = color.r;
-      this.lineVertexData[offset++] = color.g;
-      this.lineVertexData[offset++] = color.b;
-      this.lineVertexData[offset++] = alpha;
+      vert(c[a]);
+      vert(c[b]);
     }
 
-    return 24; // 12 edges × 2 vertices
+    const edgeCount = 24;
+
+    return { faceCount, edgeCount };
   }
 
   // ===========================================================================
@@ -573,17 +665,18 @@ export class Renderer {
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
     // -------------------------------------------------------------------------
-    // Build & Upload Obstacle Wireframe
+    // Build & Upload Obstacle Geometry (faces + edges)
     // -------------------------------------------------------------------------
 
-    const lineVertexCount = this.buildObstacleLines(config);
-    if (lineVertexCount > 0) {
+    const { faceCount, edgeCount } = this.buildObstacleGeometry(config);
+    const totalVerts = faceCount + edgeCount;
+    if (totalVerts > 0) {
       this.device.queue.writeBuffer(
         this.lineVertexBuffer,
         0,
         this.lineVertexData.buffer,
         this.lineVertexData.byteOffset,
-        lineVertexCount * 7 * 4 // bytes
+        totalVerts * 7 * 4 // bytes
       );
     }
 
@@ -620,14 +713,21 @@ export class Renderer {
     pass.drawIndirect(buffers.indirectDraw, 0);
 
     // -------------------------------------------------------------------------
-    // Draw Obstacle Wireframe
+    // Draw Obstacle (filled faces, then wireframe edges on top)
     // -------------------------------------------------------------------------
 
-    if (lineVertexCount > 0) {
+    if (faceCount > 0) {
+      pass.setPipeline(this.facePipeline);
+      pass.setBindGroup(0, this.faceBindGroup);
+      pass.setVertexBuffer(0, this.lineVertexBuffer, 0);
+      pass.draw(faceCount);
+    }
+
+    if (edgeCount > 0) {
       pass.setPipeline(this.linePipeline);
       pass.setBindGroup(0, this.lineBindGroup);
-      pass.setVertexBuffer(0, this.lineVertexBuffer);
-      pass.draw(lineVertexCount);
+      pass.setVertexBuffer(0, this.lineVertexBuffer, faceCount * 28);
+      pass.draw(edgeCount);
     }
 
     pass.end();
