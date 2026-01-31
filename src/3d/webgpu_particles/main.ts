@@ -91,6 +91,8 @@ const canvas = createCanvas(app);
 
 // Initialize simulation configuration with default values
 const config = createConfig();
+config.viscosityStrength = 0;
+config.iterationsPerFrame = 3;
 
 // Simulation instance (initialized asynchronously in main())
 let simulation: FluidSimulation | null = null;

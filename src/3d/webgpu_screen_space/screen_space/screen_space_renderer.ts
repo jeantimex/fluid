@@ -223,6 +223,7 @@ export class ScreenSpaceRenderer {
     );
     const lightViewProj = mat4Multiply(lightProj, lightView);
 
+    const lightLen = Math.sqrt(lightDir.x ** 2 + lightDir.y ** 2 + lightDir.z ** 2);
     const frame: ScreenSpaceFrame = {
       viewProjection: viewProj,
       inverseViewProjection: invViewProj,
@@ -238,6 +239,11 @@ export class ScreenSpaceRenderer {
       extinctionCoeff: this.config.extinctionCoeff,
       extinctionMultiplier: this.config.extinctionMultiplier,
       refractionStrength: this.config.refractionStrength,
+      dirToSun: {
+        x: lightDir.x / lightLen,
+        y: lightDir.y / lightLen,
+        z: lightDir.z / lightLen,
+      },
     };
 
     const resources: ScreenSpaceTextures & { buffers: SimBuffers } = {

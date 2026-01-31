@@ -10,6 +10,7 @@ struct Uniforms {
   foamOpacity: f32,
   extinctionCoeff: vec3<f32>,
   extinctionMultiplier: f32,
+  dirToSun: vec3<f32>,
   refractionStrength: f32,
 };
 
@@ -40,6 +41,28 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> FullscreenOut {
 @group(0) @binding(6) var shadowSampler: sampler_comparison;
 @group(0) @binding(7) var<uniform> uniforms: Uniforms;
 
+fn rayBoxIntersection(origin: vec3<f32>, dir: vec3<f32>, boundsMin: vec3<f32>, boundsMax: vec3<f32>) -> vec2<f32> {
+  let invDir = 1.0 / dir;
+  let t0 = (boundsMin - origin) * invDir;
+  let t1 = (boundsMax - origin) * invDir;
+  let tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+  let tmax = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+  return vec2<f32>(tmin, tmax);
+}
+
+fn skyColor(dir: vec3<f32>, sunDir: vec3<f32>) -> vec3<f32> {
+  let colGround = vec3<f32>(0.7, 0.7, 0.72);
+  let colSkyHorizon = vec3<f32>(1.0, 1.0, 1.0);
+  let colSkyZenith = vec3<f32>(0.08, 0.37, 0.73);
+  let sun = pow(max(0.0, dot(dir, sunDir)), 500.0);
+  let skyGradientT = pow(smoothstep(0.0, 0.4, dir.y), 0.35);
+  let groundToSkyT = smoothstep(-0.01, 0.0, dir.y);
+  let skyGradient = mix(colSkyHorizon, colSkyZenith, skyGradientT);
+  var res = mix(colGround, skyGradient, groundToSkyT);
+  if (dir.y >= -0.01) { res = res + sun; }
+  return res;
+}
+
 @fragment
 fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let thickness = textureSample(thicknessTex, samp, in.uv).r;
@@ -51,9 +74,21 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   var world = uniforms.inverseViewProjection * ndc;
   world = world / world.w;
 
-  // Background + floor (checkerboard), matching raymarch palette.
-  let bg = vec3<f32>(0.03, 0.05, 0.08);
-  let floorY = -5.025;
+  // Compute camera ray from near/far plane unprojection.
+  let ndcNear = vec4<f32>(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0, 0.0, 1.0);
+  var worldNear = uniforms.inverseViewProjection * ndcNear;
+  worldNear = worldNear / worldNear.w;
+  let ndcFar = vec4<f32>(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0, 1.0, 1.0);
+  var worldFar = uniforms.inverseViewProjection * ndcFar;
+  worldFar = worldFar / worldFar.w;
+  let rayDir = normalize(worldFar.xyz - worldNear.xyz);
+
+  // Sky background + bounded floor slab (matching raymarch).
+  let bg = skyColor(rayDir, uniforms.dirToSun);
+  let floorCenter = vec3<f32>(0.0, -5.025, 0.0);
+  let floorSize = vec3<f32>(80.0, 0.05, 80.0);
+  let floorMin = floorCenter - 0.5 * floorSize;
+  let floorMax = floorCenter + 0.5 * floorSize;
   let tileScale = 1.0;
   let tileDarkFactor = 0.5;
   let tileCol1 = vec3<f32>(126.0 / 255.0, 183.0 / 255.0, 231.0 / 255.0);
@@ -61,16 +96,10 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let tileCol3 = vec3<f32>(153.0 / 255.0, 229.0 / 255.0, 199.0 / 255.0);
   let tileCol4 = vec3<f32>(237.0 / 255.0, 225.0 / 255.0, 167.0 / 255.0);
 
-  // Ray from camera through pixel to find floor intersection.
-  let ndcFar = vec4<f32>(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0, 1.0, 1.0);
-  var worldFar = uniforms.inverseViewProjection * ndcFar;
-  worldFar = worldFar / worldFar.w;
-  let rayDir = normalize(worldFar.xyz - world.xyz);
-
-  let denom = rayDir.y;
-  let t = (floorY - world.y) / denom;
-  let hit = select(0.0, 1.0, t > 0.0);
-  let hitPos = world.xyz + rayDir * t;
+  let boxHit = rayBoxIntersection(worldNear.xyz, rayDir, floorMin, floorMax);
+  let floorHit = boxHit.y >= max(boxHit.x, 0.0);
+  let t = max(boxHit.x, 0.0);
+  let hitPos = worldNear.xyz + rayDir * t;
   let tileCoord = floor(hitPos.xz * tileScale);
   let isDark = (i32(tileCoord.x) & 1) == (i32(tileCoord.y) & 1);
   var tileCol = tileCol1;
@@ -79,8 +108,19 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
     if (hitPos.x < 0.0) { tileCol = tileCol3; } else { tileCol = tileCol4; }
   }
   if (isDark) { tileCol = tileCol * tileDarkFactor; }
-  let floorCol = mix(bg, tileCol, hit);
 
+  // Floor shadow from floor hit position.
+  let floorLightPos = uniforms.lightViewProjection * vec4<f32>(hitPos, 1.0);
+  let floorLightNdc = floorLightPos.xyz / floorLightPos.w;
+  let floorShadowUV = vec2<f32>(floorLightNdc.x * 0.5 + 0.5, 0.5 - floorLightNdc.y * 0.5);
+  let floorInBounds = step(0.0, floorShadowUV.x) * step(0.0, floorShadowUV.y) * step(floorShadowUV.x, 1.0) * step(floorShadowUV.y, 1.0);
+  let floorShadowRaw = textureSampleCompare(shadowTex, shadowSampler, floorShadowUV, floorLightNdc.z - 0.002);
+  let floorShadow = mix(1.0, floorShadowRaw, floorInBounds);
+  let floorAmbient = 0.15;
+  let floorLighting = floorShadow * (1.0 - floorAmbient) + floorAmbient;
+  let floorCol = mix(bg, tileCol * floorLighting, select(0.0, 1.0, floorHit));
+
+  // Fluid shadow from depth-reconstructed world position.
   let lightPos = uniforms.lightViewProjection * world;
   let lightNdc = lightPos.xyz / lightPos.w;
   let shadowUV = vec2<f32>(lightNdc.x * 0.5 + 0.5, 0.5 - lightNdc.y * 0.5);
@@ -89,7 +129,7 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let shadowRaw = textureSampleCompare(shadowTex, shadowSampler, shadowUV, shadowDepth - 0.002);
   let shadow = mix(1.0, shadowRaw, inBounds);
 
-  let lightDir = normalize(vec3<f32>(0.3, 0.8, 0.5));
+  let lightDir = normalize(uniforms.dirToSun);
   let ndotl = max(dot(normal, lightDir), 0.0) * shadow;
 
   let viewDir = normalize(vec3<f32>(0.0, 0.0, 1.0));
@@ -114,5 +154,6 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let foam = textureSample(foamTex, samp, in.uv).r;
   color = mix(color, uniforms.foamColor, clamp(foam * uniforms.foamOpacity, 0.0, 1.0));
 
-  return vec4<f32>(color, 1.0);
+  let exposure = 1.2;
+  return vec4<f32>(color * exposure, 1.0);
 }

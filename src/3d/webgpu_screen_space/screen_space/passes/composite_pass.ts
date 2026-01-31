@@ -223,7 +223,10 @@ export class CompositePass {
       uniforms[37] = frame.extinctionCoeff.y;
       uniforms[38] = frame.extinctionCoeff.z;
       uniforms[39] = frame.extinctionMultiplier;
-      uniforms[40] = frame.refractionStrength;
+      uniforms[40] = frame.dirToSun.x;
+      uniforms[41] = frame.dirToSun.y;
+      uniforms[42] = frame.dirToSun.z;
+      uniforms[43] = frame.refractionStrength;
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
     } else {
       if (this.lastMode !== mode) {

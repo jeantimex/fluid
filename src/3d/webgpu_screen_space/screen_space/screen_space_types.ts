@@ -29,6 +29,7 @@ export interface ScreenSpaceFrame {
   extinctionCoeff: Vec3;
   extinctionMultiplier: number;
   refractionStrength: number;
+  dirToSun: Vec3;
 }
 
 export interface DepthPassResources extends ScreenSpaceTextures {
