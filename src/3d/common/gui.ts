@@ -242,6 +242,9 @@ export function setupGui(
   renderingFolder
     .add(config, 'extinctionMultiplier', 0, 10, 0.01)
     .name('Extinction Multiplier');
+  renderingFolder
+    .add(config, 'refractionStrength', 0, 20, 0.01)
+    .name('Refraction Strength');
 
   const performanceFolder = gui.addFolder('Performance');
   performanceFolder.close();

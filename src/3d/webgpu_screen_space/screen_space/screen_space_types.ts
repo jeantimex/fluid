@@ -28,6 +28,7 @@ export interface ScreenSpaceFrame {
   foamOpacity: number;
   extinctionCoeff: Vec3;
   extinctionMultiplier: number;
+  refractionStrength: number;
 }
 
 export interface DepthPassResources extends ScreenSpaceTextures {

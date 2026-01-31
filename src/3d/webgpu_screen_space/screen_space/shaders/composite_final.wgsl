@@ -10,6 +10,7 @@ struct Uniforms {
   foamOpacity: f32,
   extinctionCoeff: vec3<f32>,
   extinctionMultiplier: f32,
+  refractionStrength: f32,
 };
 
 @vertex
@@ -102,8 +103,7 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
 
   let alpha = clamp(thickness * 4.0, 0.0, 1.0);
 
-  let refractionStrength = 0.12;
-  let offset = normal.xy * refractionStrength;
+  let offset = normal.xy * uniforms.refractionStrength;
   let refractThickness = textureSample(thicknessTex, samp, in.uv + offset).r;
 
   let absorption = exp(-refractThickness * uniforms.extinctionCoeff * uniforms.extinctionMultiplier);
