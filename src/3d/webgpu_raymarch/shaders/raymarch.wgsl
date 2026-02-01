@@ -1,121 +1,55 @@
 // =============================================================================
 // Raymarch Fragment Shader — Volume Rendered Fluid with Refraction
 // =============================================================================
-//
-// Full-screen fragment shader that raymarches through a 3D density volume
-// to render a transparent fluid with physically-based optical effects:
-//
-//   - **Beer–Lambert transmittance**: wavelength-dependent light absorption
-//   - **Fresnel reflection/refraction**: Schlick-approximated via full
-//     Fresnel equations, with configurable index of refraction
-//   - **Multiple refraction bounces**: iterative surface finding + Snell's law
-//   - **Floor with checkerboard tiles**: 4-quadrant colors, shadow mapping
-//   - **Procedural sky**: gradient from horizon to zenith with sun highlight
-//
-// ## Rendering Pipeline
-//
-// 1. Construct a ray from the camera through the pixel
-// 2. For each refraction bounce (up to `numRefractions`):
-//    a. Find the next fluid surface along the ray (entry or exit)
-//    b. Compute the surface normal from density gradients
-//    c. Calculate Fresnel reflection/refraction split
-//    d. Use a density heuristic to choose which ray to follow
-//    e. Add the discarded ray's environmental contribution
-//    f. Accumulate transmittance along the followed ray
-// 3. After all bounces, sample the environment for the remaining ray
-// 4. Apply exposure and output in linear color space
-//    (the blit pass handles linear → sRGB conversion)
-//
-// ## Vertex Stage
-//
-// Uses the standard fullscreen triangle trick: 3 hardcoded vertices produce
-// a triangle that covers the entire [-1, 1] NDC viewport. UV coordinates
-// are derived from clip-space position.
-// =============================================================================
+
+#include "../../common/shaders/environment.wgsl"
 
 // =============================================================================
 // Uniform Parameters
 // =============================================================================
 
-/// All parameters passed from the CPU each frame.
-/// Layout must match the uniform buffer written by RaymarchRenderer.render().
+/// Render-specific parameters (Camera, Volume, Optics)
 struct RaymarchParams {
-  viewPos: vec3<f32>,                // Camera world position
+  viewPos: vec3<f32>,
   pad0: f32,
-  cameraRight: vec3<f32>,            // Camera right basis vector
+  cameraRight: vec3<f32>,
   pad1: f32,
-  cameraUp: vec3<f32>,               // Camera up basis vector
+  cameraUp: vec3<f32>,
   pad2: f32,
-  cameraForward: vec3<f32>,          // Camera forward (look) direction
+  cameraForward: vec3<f32>,
   pad3: f32,
-  boundsSize: vec3<f32>,             // Simulation domain dimensions
-  densityOffset: f32,                // Iso-surface threshold subtracted from raw density
-  densityMultiplier: f32,            // Opacity scaling per ray step
-  stepSize: f32,                     // World-space distance between primary ray samples
-  lightStepSize: f32,                // World-space distance between shadow ray samples
-  aspect: f32,                       // Canvas width / height
-  fovY: f32,                         // Vertical field of view in radians
-  maxSteps: f32,                     // Maximum ray steps before termination
-  tileScale: f32,                    // Floor tile grid density (tiles per unit)
-  tileDarkOffset: f32,               // Brightness offset for dark tiles (unused, see tileDarkFactor)
-  tileCol1: vec3<f32>,               // Floor color: −X, +Z quadrant
-  pad5: f32,
-  tileCol2: vec3<f32>,               // Floor color: +X, +Z quadrant
-  pad6: f32,
-  tileCol3: vec3<f32>,               // Floor color: −X, −Z quadrant
-  pad7: f32,
-  tileCol4: vec3<f32>,               // Floor color: +X, −Z quadrant
-  pad8: f32,
-  tileColVariation: vec3<f32>,       // HSV variation per tile for randomization
-  debugFloorMode: f32,               // 0 = normal, 1 = red hit test, 2 = flat colors
-  dirToSun: vec3<f32>,               // Normalized direction toward the sun
-  pad10: f32,
-  extinctionCoefficients: vec3<f32>, // Per-channel absorption for Beer–Lambert
-  pad11: f32,
-  indexOfRefraction: f32,            // Fluid IOR (water ≈ 1.33)
-  numRefractions: f32,               // Number of refraction bounces per pixel
-  tileDarkFactor: f32,               // Multiplier for dark checkerboard tiles (0–1)
-  floorAmbient: f32,                 // Minimum floor lighting (ambient term)
-  floorSize: vec3<f32>,              // Floor slab dimensions (width, height, depth)
-  sceneExposure: f32,                // Final exposure multiplier
-  floorCenter: vec3<f32>,            // Floor slab center position
-  pad14: f32,
-  obstacleCenter: vec3<f32>,         // Obstacle AABB center (world space)
-  pad15: f32,
-  obstacleHalfSize: vec3<f32>,       // Obstacle half extents (world space)
-  pad16: f32,
-  obstacleRotation: vec3<f32>,       // Obstacle rotation in degrees (XYZ)
-  pad17: f32,
-  obstacleColor: vec3<f32>,          // Obstacle solid color (linear RGB)
-  obstacleAlpha: f32,                // Obstacle opacity (0..1)
+  boundsSize: vec3<f32>,
+  densityOffset: f32,
+  densityMultiplier: f32,
+  stepSize: f32,
+  lightStepSize: f32,
+  aspect: f32,
+  fovY: f32,
+  maxSteps: f32,
+  indexOfRefraction: f32,
+  numRefractions: f32,
+  extinctionCoefficients: vec3<f32>,
+  pad4: f32,
 };
 
 // =============================================================================
 // Bindings
 // =============================================================================
 
-/// 3D density texture produced by the splat pipeline.
 @group(0) @binding(0) var densityTex: texture_3d<f32>;
-
-/// Trilinear sampler with clamp-to-edge addressing.
 @group(0) @binding(1) var densitySampler: sampler;
-
-/// Uniform parameter buffer.
 @group(0) @binding(2) var<uniform> params: RaymarchParams;
+@group(0) @binding(3) var<uniform> env: EnvironmentUniforms;
 
 // =============================================================================
 // Vertex Stage
 // =============================================================================
 
-/// Vertex-to-fragment interpolants.
 struct VSOut {
   @builtin(position) position: vec4<f32>,
   @location(0) uv: vec2<f32>,
 };
 
-/// Fullscreen triangle vertex shader.
-/// Three hardcoded vertices at (-1,-1), (3,-1), (-1,3) cover the entire viewport.
-/// UVs are derived to map [0,1]² over the visible portion.
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VSOut {
   var positions = array<vec2<f32>, 3>(
@@ -132,116 +66,14 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VSOut {
 }
 
 // =============================================================================
-// Ray–Box Intersection
-// =============================================================================
-
-/// Computes entry (tmin) and exit (tmax) distances for a ray vs. AABB.
-/// Returns vec2(tmin, tmax). If tmin > tmax, the ray misses the box.
-/// Uses the slab method with component-wise min/max.
-fn rayBoxIntersection(origin: vec3<f32>, dir: vec3<f32>, boundsMin: vec3<f32>, boundsMax: vec3<f32>) -> vec2<f32> {
-  let invDir = 1.0 / dir;
-  let t0 = (boundsMin - origin) * invDir;
-  let t1 = (boundsMax - origin) * invDir;
-  let tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
-  let tmax = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
-  return vec2<f32>(tmin, tmax);
-}
-
-fn rotateX(v: vec3<f32>, angle: f32) -> vec3<f32> {
-  let c = cos(angle);
-  let s = sin(angle);
-  return vec3<f32>(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
-}
-
-fn rotateY(v: vec3<f32>, angle: f32) -> vec3<f32> {
-  let c = cos(angle);
-  let s = sin(angle);
-  return vec3<f32>(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
-}
-
-fn rotateZ(v: vec3<f32>, angle: f32) -> vec3<f32> {
-  let c = cos(angle);
-  let s = sin(angle);
-  return vec3<f32>(v.x * c - v.y * s, v.x * s + v.y * c, v.z);
-}
-
-fn toRadians(v: vec3<f32>) -> vec3<f32> {
-  return v * (3.14159265 / 180.0);
-}
-
-fn rotateLocalToWorld(v: vec3<f32>, rot: vec3<f32>) -> vec3<f32> {
-  var r = v;
-  r = rotateX(r, rot.x);
-  r = rotateY(r, rot.y);
-  r = rotateZ(r, rot.z);
-  return r;
-}
-
-fn rotateWorldToLocal(v: vec3<f32>, rot: vec3<f32>) -> vec3<f32> {
-  var r = v;
-  r = rotateZ(r, -rot.z);
-  r = rotateY(r, -rot.y);
-  r = rotateX(r, -rot.x);
-  return r;
-}
-
-struct ObstacleHit {
-  tEntry: f32,
-  tExit: f32,
-  normal: vec3<f32>,
-  hit: bool,
-};
-
-fn obstacleFaceNormal(localPos: vec3<f32>) -> vec3<f32> {
-  let dist = params.obstacleHalfSize - abs(localPos);
-  if (dist.x < dist.y && dist.x < dist.z) {
-    return vec3<f32>(sign(localPos.x), 0.0, 0.0);
-  } else if (dist.y < dist.z) {
-    return vec3<f32>(0.0, sign(localPos.y), 0.0);
-  }
-  return vec3<f32>(0.0, 0.0, sign(localPos.z));
-}
-
-/// Returns obstacle hit info for the OBB, or hit=false if no hit.
-fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> ObstacleHit {
-  var res: ObstacleHit;
-  res.hit = false;
-  res.tEntry = -1.0;
-  res.tExit = -1.0;
-  res.normal = vec3<f32>(0.0);
-  if (any(params.obstacleHalfSize <= vec3<f32>(0.0))) { return res; }
-  let rot = toRadians(params.obstacleRotation);
-  let localOrigin = rotateWorldToLocal(origin - params.obstacleCenter, rot);
-  let localDir = rotateWorldToLocal(dir, rot);
-  let obstacleMin = -params.obstacleHalfSize;
-  let obstacleMax = params.obstacleHalfSize;
-  let hit = rayBoxIntersection(localOrigin, localDir, obstacleMin, obstacleMax);
-  if (hit.y < max(hit.x, 0.0)) { return res; }
-  let tEntry = select(hit.x, 0.0, hit.x < 0.0);
-  let localHitPos = localOrigin + localDir * tEntry;
-  let localNormal = obstacleFaceNormal(localHitPos);
-  res.tEntry = tEntry;
-  res.tExit = hit.y;
-  res.normal = normalize(rotateLocalToWorld(localNormal, rot));
-  res.hit = true;
-  return res;
-}
-
-// =============================================================================
 // Density Sampling
 // =============================================================================
 
-/// Samples the density texture at a world position WITHOUT boundary clamping.
-/// Converts world coords to UVW [0,1]³ and subtracts the density offset.
-/// Negative results indicate the point is below the iso-surface (outside fluid).
 fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
   let uvw = (pos + 0.5 * params.boundsSize) / params.boundsSize;
   return textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r - params.densityOffset;
 }
 
-/// Samples the density texture with boundary clamping.
-/// Returns -densityOffset for positions at or beyond the volume edges,
-/// preventing edge artifacts where the texture wraps or clamps.
 fn sampleDensity(pos: vec3<f32>) -> f32 {
   let uvw = (pos + 0.5 * params.boundsSize) / params.boundsSize;
   let epsilon = 0.0001;
@@ -251,12 +83,10 @@ fn sampleDensity(pos: vec3<f32>) -> f32 {
   return textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r - params.densityOffset;
 }
 
-/// Returns true if the position is inside the simulation bounds AND
-/// the density at that point is positive (above the iso-surface).
 fn isInsideFluid(pos: vec3<f32>) -> bool {
   let boundsMin = -0.5 * params.boundsSize;
   let boundsMax = 0.5 * params.boundsSize;
-  let hit = rayBoxIntersection(pos, vec3<f32>(0.0, 0.0, 1.0), boundsMin, boundsMax);
+  let hit = envRayBoxIntersection(pos, vec3<f32>(0.0, 0.0, 1.0), boundsMin, boundsMax);
   return (hit.x <= 0.0 && hit.y > 0.0) && sampleDensity(pos) > 0.0;
 }
 
@@ -264,11 +94,9 @@ fn isInsideFluid(pos: vec3<f32>) -> bool {
 // Normal Estimation
 // =============================================================================
 
-/// Returns the outward-facing normal of the closest AABB face to point `p`.
-/// Used to blend volume normals with box-face normals at edges.
 fn calculateClosestFaceNormal(boxSize: vec3<f32>, p: vec3<f32>) -> vec3<f32> {
   let halfSize = boxSize * 0.5;
-  let o = halfSize - abs(p); // Distance to each face
+  let o = halfSize - abs(p); 
   if (o.x < o.y && o.x < o.z) {
     return vec3<f32>(sign(p.x), 0.0, 0.0);
   } else if (o.y < o.z) {
@@ -278,15 +106,7 @@ fn calculateClosestFaceNormal(boxSize: vec3<f32>, p: vec3<f32>) -> vec3<f32> {
   }
 }
 
-/// Estimates the fluid surface normal at `pos` using central differences
-/// on the density field, then blends with the nearest box-face normal
-/// near the simulation boundary to avoid edge artifacts.
-///
-/// The blending uses smoothstep on the distance-to-face, weighted by the
-/// vertical component of the volume normal, so that flat (horizontal)
-/// surfaces near walls get more face-normal influence.
 fn calculateNormal(pos: vec3<f32>) -> vec3<f32> {
-  // Central differences with step size 0.1
   let s = 0.1;
   let offsetX = vec3<f32>(s, 0.0, 0.0);
   let offsetY = vec3<f32>(0.0, s, 0.0);
@@ -298,17 +118,14 @@ fn calculateNormal(pos: vec3<f32>) -> vec3<f32> {
 
   let volumeNormal = normalize(vec3<f32>(dx, dy, dz));
 
-  // Smoothly blend toward face normal near the simulation boundary
-  let o = params.boundsSize * 0.5 - abs(pos); // Distance to each face
-  var faceWeight = min(o.x, min(o.y, o.z));    // Distance to nearest face
+  let o = params.boundsSize * 0.5 - abs(pos); 
+  var faceWeight = min(o.x, min(o.y, o.z));    
   let faceNormal = calculateClosestFaceNormal(params.boundsSize, pos);
 
-  let smoothDst = 0.3;  // Distance over which blending occurs
-  let smoothPow = 5.0;  // Power curve for vertical normal weighting
+  let smoothDst = 0.3;  
+  let smoothPow = 5.0;  
 
-  // smoothstep: 0 at boundary, 1 beyond smoothDst
   let smoothFactor = smoothstep(0.0, smoothDst, faceWeight);
-  // Upward-facing surfaces get less face-normal blending
   let volFactor = pow(clamp(volumeNormal.y, 0.0, 1.0), smoothPow);
 
   faceWeight = (1.0 - smoothFactor) * (1.0 - volFactor);
@@ -320,53 +137,29 @@ fn calculateNormal(pos: vec3<f32>) -> vec3<f32> {
 // Surface Finding
 // =============================================================================
 
-/// Result of a surface search along a ray.
 struct SurfaceInfo {
-  pos: vec3<f32>,              // Position of the found surface
-  densityAlongRay: f32,        // Accumulated optical thickness along the ray
-  foundSurface: bool,          // Whether a surface transition was detected
+  pos: vec3<f32>,
+  densityAlongRay: f32,
+  foundSurface: bool,
 };
 
-/// Marches along a ray to find the next fluid surface (entry or exit).
-///
-/// ## Parameters
-/// - `origin`: ray start position
-/// - `rayDir`: normalized ray direction
-/// - `findNextFluidEntryPoint`: if true, searches for re-entry into fluid;
-///    if false, searches for the exit (fluid → air transition)
-/// - `rngState`: random state for jittering the start position
-/// - `maxDst`: maximum distance for density accumulation (for transmittance)
-///
-/// ## Algorithm
-///
-/// Steps along the ray at `stepSize` intervals. Tracks whether the ray has
-/// entered and exited the fluid. A "surface" is found when:
-///   - Entry mode: the ray was outside fluid and enters it
-///   - Exit mode: the ray was inside fluid and leaves it (or hits the boundary)
-///
-/// Random jitter (±20% of stepSize) is applied to the starting position to
-/// reduce banding artifacts from uniform sampling.
 fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint: bool, rngState: ptr<function, u32>, maxDst: f32) -> SurfaceInfo {
   var info: SurfaceInfo;
   info.densityAlongRay = 0.0;
   info.foundSurface = false;
 
-  // Degenerate ray check
   if (dot(rayDir, rayDir) < 0.5) { return info; }
 
   let boundsMin = -0.5 * params.boundsSize;
   let boundsMax = 0.5 * params.boundsSize;
-  let boundsDstInfo = rayBoxIntersection(origin, rayDir, boundsMin, boundsMax);
+  let boundsDstInfo = envRayBoxIntersection(origin, rayDir, boundsMin, boundsMax);
 
-  // Random jitter to reduce banding (±20% of step size)
-  let r = (randomValue(rngState) - 0.5) * params.stepSize * 0.4;
+  let r = (envRandomValue(rngState) - 0.5) * params.stepSize * 0.4;
 
   var currentOrigin = origin;
   if (boundsDstInfo.x > 0.0) {
-    // Outside box: jump to the box entry point (with jitter)
     currentOrigin = origin + rayDir * (boundsDstInfo.x + r);
   } else {
-    // Inside box: start from current position (with jitter)
     currentOrigin = origin + rayDir * r;
   }
 
@@ -376,12 +169,9 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
   var hasEnteredFluid = false;
   var lastPosInFluid = currentOrigin;
 
-  // Maximum distance to test inside the box (with tiny nudge to avoid edge cases)
   let dstToTest = boundsDstInfo.y - 0.01;
-
-  // Adaptive stepping: skip empty space at coarse resolution
   const COARSE_MULTIPLIER = 4.0;
-  const FINE_RETURN_THRESHOLD = 3u;  // consecutive empty samples before going coarse
+  const FINE_RETURN_THRESHOLD = 3u;  
 
   var useCoarseStep = true;
   var prevDst = 0.0;
@@ -397,7 +187,6 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
     let thickness = sampleDensity(samplePos) * params.densityMultiplier * currentStep;
     let insideFluid = thickness > 0.0;
 
-    // If coarse stepping found density, back up and refine
     if (useCoarseStep && insideFluid) {
       dst = prevDst;
       useCoarseStep = false;
@@ -409,7 +198,6 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
       hasEnteredFluid = true;
       lastPosInFluid = samplePos;
       consecutiveEmpty = 0u;
-      // Accumulate optical thickness for transmittance calculation
       if (dst <= maxDst) {
          info.densityAlongRay = info.densityAlongRay + thickness;
       }
@@ -418,19 +206,15 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
     if (!insideFluid) {
       hasExittedFluid = true;
       consecutiveEmpty++;
-      // After enough empty samples in fine mode, switch back to coarse
       if (!useCoarseStep && consecutiveEmpty >= FINE_RETURN_THRESHOLD && !hasEnteredFluid) {
         useCoarseStep = true;
       }
     }
 
-    // Determine if we found the desired surface transition
     var found = false;
     if (findNextFluidEntryPoint) {
-      // Looking for re-entry: fluid must have been exited, now we're back in
       found = insideFluid && hasExittedFluid;
     } else {
-      // Looking for exit: entered fluid and now left it (or at boundary)
       found = hasEnteredFluid && (!insideFluid || isLastStep);
     }
 
@@ -448,84 +232,13 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
 }
 
 // =============================================================================
-// Color Space & Random Utilities
-// =============================================================================
-
-/// Converts RGB [0,1] to HSV [0,1] using the standard hexagonal model.
-fn rgbToHsv(rgb: vec3<f32>) -> vec3<f32> {
-  let K = vec4<f32>(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-  let p = select(vec4<f32>(rgb.gb, K.xy), vec4<f32>(rgb.bg, K.wz), rgb.g < rgb.b);
-  let q = select(vec4<f32>(p.xyw, rgb.r), vec4<f32>(rgb.r, p.yzx), rgb.r < p.x);
-
-  let d = q.x - min(q.w, q.y);
-  let e = 1.0e-10;
-  return vec3<f32>(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
-}
-
-/// Converts HSV [0,1] to RGB [0,1].
-fn hsvToRgb(hsv: vec3<f32>) -> vec3<f32> {
-  let K = vec4<f32>(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-  let p = abs(fract(hsv.xxx + K.xyz) * 6.0 - K.www);
-  return hsv.z * mix(K.xxx, clamp(p - K.xxx, vec3<f32>(0.0), vec3<f32>(1.0)), hsv.y);
-}
-
-/// Applies an HSV shift to an RGB color (for per-tile color variation).
-fn tweakHsv(colRGB: vec3<f32>, shift: vec3<f32>) -> vec3<f32> {
-  let hsv = rgbToHsv(colRGB);
-  return clamp(hsvToRgb(hsv + shift), vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
-/// Converts sRGB [0,1] to linear [0,1] using the piecewise IEC 61966-2-1 EOTF.
-fn srgbToLinear(col: vec3<f32>) -> vec3<f32> {
-  let lo = col / 12.92;
-  let hi = pow((col + vec3<f32>(0.055)) / 1.055, vec3<f32>(2.4));
-  return select(hi, lo, col <= vec3<f32>(0.04045));
-}
-
-/// Hashes a 2D integer coordinate to a u32 seed for random number generation.
-fn hashInt2(v: vec2<i32>) -> u32 {
-  return u32(v.x) * 5023u + u32(v.y) * 96456u;
-}
-
-/// PCG-style PRNG: advances the state and returns a pseudo-random u32.
-fn nextRandom(state: ptr<function, u32>) -> u32 {
-  *state = *state * 747796405u + 2891336453u;
-  let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
-  return (word >> 22u) ^ word;
-}
-
-/// Returns a uniform random float in [0, 1].
-fn randomValue(state: ptr<function, u32>) -> f32 {
-  return f32(nextRandom(state)) / 4294967295.0;
-}
-
-/// Returns a random vec3 with each component in [−1, 1] (signed normalized).
-fn randomSNorm3(state: ptr<function, u32>) -> vec3<f32> {
-  return vec3<f32>(
-    randomValue(state) * 2.0 - 1.0,
-    randomValue(state) * 2.0 - 1.0,
-    randomValue(state) * 2.0 - 1.0
-  );
-}
-
-/// Positive modulo: always returns a non-negative result (unlike WGSL %).
-fn modulo(x: f32, y: f32) -> f32 {
-  return x - y * floor(x / y);
-}
-
-// =============================================================================
 // Lighting & Shadows
 // =============================================================================
 
-/// Accumulates optical depth along a ray through the density volume.
-/// Used for shadow rays (sun direction) and refraction density heuristics.
-///
-/// Steps at `lightStepSize * 2` intervals for performance, with an early
-/// exit when optical depth exceeds 3.0 (fully opaque for practical purposes).
 fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) -> f32 {
     let boundsMin = -0.5 * params.boundsSize;
     let boundsMax = 0.5 * params.boundsSize;
-    let hit = rayBoxIntersection(rayPos, rayDir, boundsMin, boundsMax);
+    let hit = envRayBoxIntersection(rayPos, rayDir, boundsMin, boundsMax);
     if (hit.y <= max(hit.x, 0.0)) { return 0.0; }
 
     let tStart = max(hit.x, 0.0);
@@ -533,7 +246,7 @@ fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) 
     if (tStart >= tEnd) { return 0.0; }
 
     var opticalDepth = 0.0;
-    let shadowStep = params.lightStepSize * 2.0; // Coarser steps for performance
+    let shadowStep = params.lightStepSize * 2.0; 
     var t = tStart;
 
     for (var i = 0; i < 32; i++) {
@@ -541,196 +254,42 @@ fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) 
         let pos = rayPos + rayDir * t;
         let d = max(0.0, sampleDensityRaw(pos));
         opticalDepth = opticalDepth + d * params.densityMultiplier * shadowStep;
-        if (opticalDepth > 3.0) { break; } // Early exit: effectively fully opaque
+        if (opticalDepth > 3.0) { break; } 
         t = t + shadowStep;
     }
     return opticalDepth;
 }
 
-/// Computes Beer–Lambert transmittance from optical depth.
-/// T = exp(−τ × σ) where σ is the per-channel extinction coefficient.
-/// Higher extinction → more absorption → darker color for that channel.
 fn transmittance(opticalDepth: f32) -> vec3<f32> {
   return exp(-opticalDepth * params.extinctionCoefficients);
-}
-
-// =============================================================================
-// Environment Sampling (Sky + Floor)
-// =============================================================================
-
-/// Generates a procedural sky color for a given ray direction.
-///
-/// Three zones blended together:
-///   1. Ground (y < 0): dark brownish-gray
-///   2. Horizon (y ≈ 0): white
-///   3. Zenith (y → 1): deep blue
-///
-/// A sharp sun highlight is added using pow(dot(dir, sunDir), 500).
-fn skyColor(dir: vec3<f32>) -> vec3<f32> {
-  let colGround = vec3<f32>(0.35, 0.3, 0.35) * 0.53;
-  let colSkyHorizon = vec3<f32>(1.0, 1.0, 1.0);
-  let colSkyZenith = vec3<f32>(0.08, 0.37, 0.73);
-
-  // Sun disc (very tight falloff for a small bright spot)
-  let sun = pow(max(0.0, dot(dir, params.dirToSun)), 500.0);
-  // Sky gradient: smoothstep from horizon to zenith
-  let skyGradientT = pow(smoothstep(0.0, 0.4, dir.y), 0.35);
-  // Ground-to-sky transition at the horizon
-  let groundToSkyT = smoothstep(-0.01, 0.0, dir.y);
-  let skyGradient = mix(colSkyHorizon, colSkyZenith, skyGradientT);
-
-  var res = mix(colGround, skyGradient, groundToSkyT);
-  if (dir.y >= -0.01) {
-    res = res + sun; // Add sun only above the horizon
-  }
-  return res;
-}
-
-/// Samples the scene environment (floor or sky) for a given ray.
-///
-/// First tests for intersection with the floor slab AABB. If hit:
-///   1. Determine floor quadrant → select tile color
-///   2. Apply checkerboard pattern (dark/light alternation)
-///   3. Optionally apply per-tile HSV variation for visual richness
-///   4. Compute shadow from the fluid volume (density toward sun)
-///   5. Apply ambient + shadow lighting
-///
-/// If the floor is missed, falls back to the procedural sky.
-///
-/// Debug modes:
-///   - mode 1: solid red (floor hit visualization)
-///   - mode 2: flat quadrant colors (no checkerboard)
-fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
-  // Test ray against floor slab AABB
-  let floorMin = params.floorCenter - 0.5 * params.floorSize;
-  let floorMax = params.floorCenter + 0.5 * params.floorSize;
-  let floorHit = rayBoxIntersection(origin, dir, floorMin, floorMax);
-  let hasFloorHit = floorHit.y >= max(floorHit.x, 0.0);
-  let floorT = select(floorHit.x, 0.0, floorHit.x < 0.0);
-
-  var bgCol: vec3<f32>;
-  if (hasFloorHit) {
-    // Ray hits the floor — compute the hit position
-    let hitPos = origin + dir * floorT;
-
-    // --- Debug mode 2: flat quadrant colors (no checkerboard) ---
-    if (params.debugFloorMode >= 1.5) {
-      var debugTileCol = params.tileCol1;
-      if (hitPos.x >= 0.0) { debugTileCol = params.tileCol2; }
-      if (hitPos.z < 0.0) {
-        if (hitPos.x < 0.0) { debugTileCol = params.tileCol3; }
-        else { debugTileCol = params.tileCol4; }
-      }
-      bgCol = srgbToLinear(debugTileCol);
-      // Obstacle blending happens below.
-    }
-
-    // --- Debug mode 1: solid red ---
-    if (params.debugFloorMode >= 0.5 && params.debugFloorMode < 1.5) {
-      bgCol = vec3<f32>(1.0, 0.0, 0.0);
-    }
-
-    // --- Normal rendering: checkerboard tiles ---
-    if (params.debugFloorMode < 0.5) {
-
-    // Select base color by floor quadrant (±X, ±Z)
-    var tileCol = params.tileCol1;
-    if (hitPos.x >= 0.0) { tileCol = params.tileCol2; }
-    if (hitPos.z < 0.0) {
-      if (hitPos.x < 0.0) { tileCol = params.tileCol3; }
-      else { tileCol = params.tileCol4; }
-    }
-
-    // Checkerboard: darken alternating tiles
-    let tileCoord = floor(hitPos.xz * params.tileScale);
-    let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
-
-    if (isDarkTile) {
-      tileCol = tileCol * params.tileDarkFactor;
-    }
-
-    // Optional per-tile HSV variation (adds visual richness)
-    if (any(params.tileColVariation != vec3<f32>(0.0))) {
-      var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
-      let randomVariation = randomSNorm3(&rngState) * params.tileColVariation * 0.1;
-      tileCol = tweakHsv(tileCol, randomVariation);
-    }
-
-    // Shadow: compute density between floor hit and sun
-    let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-    let shadowMap = transmittance(shadowDepth * 2.0);
-
-    // Final lighting: blend shadow with ambient
-    let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-    let lighting = shadowMap * (1.0 - ambient) + ambient;
-
-    bgCol = tileCol * lighting;
-    }
-  } else {
-    // No floor hit — return sky color
-    bgCol = skyColor(dir);
-  }
-
-  // Test ray against obstacle AABB (if enabled)
-  let obstacleHit = obstacleHitInfo(origin, dir);
-  let hasObstacleHit = obstacleHit.hit;
-  let obstacleT = obstacleHit.tEntry;
-
-  // If the obstacle is the closest hit, alpha-blend it over the background
-  if (hasObstacleHit && (!hasFloorHit || obstacleT < floorT)) {
-    let a = clamp(params.obstacleAlpha, 0.0, 1.0);
-    let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-    let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
-    let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient));
-    return mix(bgCol, lit, a);
-  }
-
-  return bgCol;
 }
 
 // =============================================================================
 // Fresnel Reflection & Refraction (Snell's Law)
 // =============================================================================
 
-/// Result of the reflection/refraction calculation at a surface.
 struct LightResponse {
-    reflectDir: vec3<f32>,     // Reflected ray direction
-    refractDir: vec3<f32>,     // Refracted ray direction (zero if TIR)
-    reflectWeight: f32,        // Fresnel reflectance [0, 1]
-    refractWeight: f32,        // 1 − reflectWeight
+    reflectDir: vec3<f32>,
+    refractDir: vec3<f32>,
+    reflectWeight: f32,
+    refractWeight: f32,
 };
 
-/// Computes the Fresnel reflectance using the exact Fresnel equations.
-///
-/// For unpolarized light, reflectance = (R_perp + R_para) / 2 where:
-///   R_perp = ((n₁ cos θᵢ − n₂ cos θₜ) / (n₁ cos θᵢ + n₂ cos θₜ))²
-///   R_para = ((n₂ cos θᵢ − n₁ cos θₜ) / (n₂ cos θᵢ + n₁ cos θₜ))²
-///
-/// Returns 1.0 for total internal reflection (sin²θₜ ≥ 1).
 fn calculateReflectance(inDir: vec3<f32>, normal: vec3<f32>, iorA: f32, iorB: f32) -> f32 {
     let refractRatio = iorA / iorB;
     let cosAngleIn = -dot(inDir, normal);
     let sinSqrAngleOfRefraction = refractRatio * refractRatio * (1.0 - cosAngleIn * cosAngleIn);
 
-    // Total internal reflection: no refracted ray exists
     if (sinSqrAngleOfRefraction >= 1.0) { return 1.0; }
 
     let cosAngleOfRefraction = sqrt(1.0 - sinSqrAngleOfRefraction);
-
-    // Perpendicular polarization component
     var rPerp = (iorA * cosAngleIn - iorB * cosAngleOfRefraction) / (iorA * cosAngleIn + iorB * cosAngleOfRefraction);
     rPerp = rPerp * rPerp;
-
-    // Parallel polarization component
     var rPara = (iorB * cosAngleIn - iorA * cosAngleOfRefraction) / (iorB * cosAngleIn + iorA * cosAngleOfRefraction);
     rPara = rPara * rPara;
-
-    // Average for unpolarized light
     return (rPerp + rPara) * 0.5;
 }
 
-/// Computes the refracted direction via Snell's law.
-/// Returns (0,0,0) for total internal reflection.
 fn refract(inDir: vec3<f32>, normal: vec3<f32>, iorA: f32, iorB: f32) -> vec3<f32> {
     let refractRatio = iorA / iorB;
     let cosAngleIn = -dot(inDir, normal);
@@ -741,7 +300,6 @@ fn refract(inDir: vec3<f32>, normal: vec3<f32>, iorA: f32, iorB: f32) -> vec3<f3
     return refractRatio * inDir + (refractRatio * cosAngleIn - sqrt(1.0 - sinSqrAngleOfRefraction)) * normal;
 }
 
-/// Computes both reflection and refraction directions with Fresnel weights.
 fn calculateReflectionAndRefraction(inDir: vec3<f32>, normal: vec3<f32>, iorA: f32, iorB: f32) -> LightResponse {
     var res: LightResponse;
     res.reflectWeight = calculateReflectance(inDir, normal, iorA, iorB);
@@ -751,21 +309,17 @@ fn calculateReflectionAndRefraction(inDir: vec3<f32>, normal: vec3<f32>, iorA: f
     return res;
 }
 
-/// Quick density probe along a ray to estimate optical depth.
-/// Used as a heuristic to choose between tracing the reflected or refracted ray.
-/// Takes only 2 short samples for speed.
 fn calculateDensityForRefraction(rayPos: vec3<f32>, rayDir: vec3<f32>, stepSize: f32) -> f32 {
   let boundsMin = -0.5 * params.boundsSize;
   let boundsMax = 0.5 * params.boundsSize;
-  let hit = rayBoxIntersection(rayPos, rayDir, boundsMin, boundsMax);
+  let hit = envRayBoxIntersection(rayPos, rayDir, boundsMin, boundsMax);
   if (hit.y <= max(hit.x, 0.0)) { return 0.0; }
 
   let tStart = max(hit.x, 0.0);
-  let tEnd = min(hit.y, 2.0); // Only probe a short distance
+  let tEnd = min(hit.y, 2.0); 
   var density = 0.0;
   let shortStep = (tEnd - tStart) / 2.0;
 
-  // Two samples centered in each half of the probe distance
   for (var i = 0; i < 2; i++) {
     let t = tStart + (f32(i) + 0.5) * shortStep;
     density += max(0.0, sampleDensityRaw(rayPos + rayDir * t));
@@ -777,168 +331,117 @@ fn calculateDensityForRefraction(rayPos: vec3<f32>, rayDir: vec3<f32>, stepSize:
 // Main Fragment Shader
 // =============================================================================
 
-/// Per-pixel raymarching with iterative refraction.
-///
-/// ## Algorithm Overview
-///
-/// 1. Construct a perspective ray from the camera through this pixel
-/// 2. Seed a per-pixel PRNG for jitter
-/// 3. For each refraction bounce (up to numRefractions):
-///    a. Find the next fluid surface (entry or exit)
-///    b. Accumulate Beer–Lambert transmittance from density along the ray
-///    c. Compute the surface normal via density gradient
-///    d. Calculate Fresnel reflection/refraction split
-///    e. Use a density heuristic to decide which ray to trace next:
-///       - Probe density along both directions
-///       - Follow the ray with higher (density × Fresnel weight)
-///    f. Add the discarded ray's environment contribution immediately
-///    g. Continue marching along the chosen ray
-/// 4. After all bounces, add the final environment sample
-/// 5. Apply exposure and return the linear-space color
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-  // Convert UV [0,1]² to NDC [-1,1]²
   let ndc = in.uv * 2.0 - vec2<f32>(1.0);
-
-  // Construct perspective ray direction from camera basis vectors
   let tanFov = tan(0.5 * params.fovY);
   var rayDir = normalize(params.cameraForward + params.cameraRight * (ndc.x * params.aspect * tanFov) + params.cameraUp * (ndc.y * tanFov));
   var rayPos = params.viewPos;
 
-  // Per-pixel random seed (based on UV position)
-  var rngState = hashInt2(vec2<i32>(i32(in.uv.x * 5000.0), i32(in.uv.y * 5000.0)));
-
-  // Check if the camera is already inside the fluid
+  var rngState = envHashInt2(vec2<i32>(i32(in.uv.x * 5000.0), i32(in.uv.y * 5000.0)));
   var travellingThroughFluid = isInsideFluid(rayPos);
 
-  // Accumulated light and transmittance across all bounces
-  var totalTransmittance = vec3<f32>(1.0); // Starts fully transparent
-  var totalLight = vec3<f32>(0.0);         // Accumulated radiance
+  var totalTransmittance = vec3<f32>(1.0); 
+  var totalLight = vec3<f32>(0.0);         
 
   let iorAir = 1.0;
   let iorFluid = params.indexOfRefraction;
 
-  // -------------------------------------------------------------------------
-  // Iterative Refraction Loop
-  // -------------------------------------------------------------------------
-
   for (var i = 0; i < i32(params.numRefractions); i = i + 1) {
-     // Early exit if transmittance is negligible (fully opaque)
      if (all(totalTransmittance < vec3<f32>(0.01))) {
         break;
      }
 
-     // Increase step size for later bounces (less precision needed)
      let densityStepSize = params.stepSize * f32(i + 1);
-
-     // Determine search mode: looking for fluid entry or exit?
      let searchForNextFluidEntryPoint = !travellingThroughFluid;
 
-     // Find the next fluid surface along the current ray
-     let obstacleHit = obstacleHitInfo(rayPos, rayDir);
-     let hasObstacleHit = obstacleHit.hit;
+     let obstacleHit = getObstacleHit(rayPos, rayDir, env);
+     let hasObstacleHit = obstacleHit.x >= 0.0;
      let surfaceInfo = findNextSurface(rayPos, rayDir, searchForNextFluidEntryPoint, &rngState, 1000.0);
 
-     // If we're in air and the obstacle is closer than the next fluid surface,
-     // alpha-blend the obstacle and continue marching behind it.
      if (!travellingThroughFluid && hasObstacleHit) {
-        let obstacleT = obstacleHit.tEntry;
+        let obstacleT = obstacleHit.x;
         if (!surfaceInfo.foundSurface) {
-          let a = clamp(params.obstacleAlpha, 0.0, 1.0);
-          let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-          let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
-          let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient));
+          // Obstacle shading using environment logic
+          let ambient = clamp(env.floorAmbient, 0.0, 1.0);
+          let obsNormal = obstacleHit.yzw;
+          let sun = max(0.0, dot(obsNormal, env.dirToSun));
+          let lit = env.obstacleColor * (ambient + sun * (1.0 - ambient));
+          
+          let a = clamp(env.obstacleAlpha, 0.0, 1.0);
           totalLight = totalLight + lit * totalTransmittance * a;
           totalTransmittance = totalTransmittance * (1.0 - a);
-          // Move ray past the obstacle to avoid repeated hits
-          let exitT = max(obstacleHit.tExit, obstacleT);
-          rayPos = rayPos + rayDir * (exitT + 0.001);
+          
+          // Ray marches "through" transparent obstacle - crude approx, just continue
+          rayPos = rayPos + rayDir * (obstacleT + 0.1);
           continue;
         }
         let surfaceT = dot(surfaceInfo.pos - rayPos, rayDir);
         if (obstacleT < surfaceT) {
-          let a = clamp(params.obstacleAlpha, 0.0, 1.0);
-          let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-          let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
-          let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient));
+          // Same obstacle shading logic
+          let ambient = clamp(env.floorAmbient, 0.0, 1.0);
+          let obsNormal = obstacleHit.yzw;
+          let sun = max(0.0, dot(obsNormal, env.dirToSun));
+          let lit = env.obstacleColor * (ambient + sun * (1.0 - ambient));
+          
+          let a = clamp(env.obstacleAlpha, 0.0, 1.0);
           totalLight = totalLight + lit * totalTransmittance * a;
           totalTransmittance = totalTransmittance * (1.0 - a);
-          let exitT = max(obstacleHit.tExit, obstacleT);
-          rayPos = rayPos + rayDir * (exitT + 0.001);
+          rayPos = rayPos + rayDir * (obstacleT + 0.1);
           continue;
         }
      }
 
      if (!surfaceInfo.foundSurface) {
-        break; // No more surfaces — exit loop and sample environment
+        break; 
      }
 
-     // Accumulate Beer–Lambert transmittance from density traversed
      totalTransmittance = totalTransmittance * transmittance(surfaceInfo.densityAlongRay);
 
-     // If we hit the bottom of the container, stop refracting
      if (surfaceInfo.pos.y < -params.boundsSize.y * 0.5 + 0.05) {
         break;
      }
 
-     // Compute surface normal from density gradient (central differences)
      var normal = calculateNormal(surfaceInfo.pos);
-     // Ensure normal faces against the incoming ray
      if (dot(normal, rayDir) > 0.0) {
         normal = -normal;
      }
 
-     // Determine IOR pair based on current medium:
-     //   Travelling through fluid: iorA = fluid, iorB = air (exiting)
-     //   Travelling through air:   iorA = air,   iorB = fluid (entering)
-     // WGSL select(falseVal, trueVal, condition):
      let response = calculateReflectionAndRefraction(rayDir, normal, select(iorAir, iorFluid, travellingThroughFluid), select(iorFluid, iorAir, travellingThroughFluid));
 
-     // --- Heuristic: which ray to trace? ---
-     // Probe density along both directions to estimate which path
-     // contributes more visible light (weighted by Fresnel coefficient).
      let densityRefract = calculateDensityForRefraction(surfaceInfo.pos, response.refractDir, densityStepSize);
      let densityReflect = calculateDensityForRefraction(surfaceInfo.pos, response.reflectDir, densityStepSize);
 
      let traceRefractedRay = (densityRefract * response.refractWeight) > (densityReflect * response.reflectWeight);
 
-     // Toggle medium: if refracting, we cross the surface boundary
      travellingThroughFluid = (traceRefractedRay != travellingThroughFluid);
 
      if (traceRefractedRay) {
-        // --- Follow refraction, add reflection contribution now ---
-        let reflectLight = sampleEnvironment(surfaceInfo.pos, response.reflectDir);
+        let reflectLight = getEnvironmentColor(surfaceInfo.pos, response.reflectDir, env);
         let reflectTrans = transmittance(densityReflect);
         totalLight = totalLight + reflectLight * totalTransmittance * reflectTrans * response.reflectWeight;
 
-        // Continue ray along refracted direction
         rayPos = surfaceInfo.pos;
         rayDir = response.refractDir;
         totalTransmittance = totalTransmittance * response.refractWeight;
      } else {
-        // --- Follow reflection, add refraction contribution now ---
-        let refractLight = sampleEnvironment(surfaceInfo.pos, response.refractDir);
+        let refractLight = getEnvironmentColor(surfaceInfo.pos, response.refractDir, env);
         let refractTrans = transmittance(densityRefract);
         totalLight = totalLight + refractLight * totalTransmittance * refractTrans * response.refractWeight;
 
-        // Continue ray along reflected direction
         rayPos = surfaceInfo.pos;
         rayDir = response.reflectDir;
         totalTransmittance = totalTransmittance * response.reflectWeight;
      }
   }
 
-  // -------------------------------------------------------------------------
-  // Final Environment Sample
-  // -------------------------------------------------------------------------
-
-  // After all refraction bounces, sample the environment for the remaining ray
-  // and apply the remaining transmittance through any fluid still in the path.
   let densityRemainder = calculateDensityForShadow(rayPos, rayDir, 1000.0);
-  let finalBg = sampleEnvironment(rayPos, rayDir);
+  
+  // Use shared environment sampling
+  let finalBg = getEnvironmentColor(rayPos, rayDir, env);
+  
   totalLight = totalLight + finalBg * totalTransmittance * transmittance(densityRemainder);
 
-  // Apply exposure and output (linear space — blit pass handles sRGB conversion)
-  let exposure = max(params.sceneExposure, 0.0);
+  let exposure = max(env.sceneExposure, 0.0);
   return vec4<f32>(totalLight * exposure, 1.0);
 }

@@ -205,37 +205,30 @@ export class ScreenSpaceRenderer {
     );
     const lightViewProj = mat4Multiply(lightProj, lightView);
 
-    const lightLen = Math.sqrt(
-      lightDir.x ** 2 + lightDir.y ** 2 + lightDir.z ** 2
-    );
     const frame: ScreenSpaceFrame = {
+      ...this.config, // Spread first to provide base EnvironmentConfig
       viewProjection: viewProj,
       inverseViewProjection: invViewProj,
       lightViewProjection: lightViewProj,
       canvasWidth: this.canvas.width,
       canvasHeight: this.canvas.height,
-      particleRadius: this.config.particleRadius * dpr,
+      particleRadius: this.config.particleRadius * dpr, // Override with DPR-scaled value
       foamParticleRadius: this.config.foamParticleRadius * dpr,
       near,
       far,
-      foamColor: this.config.foamColor,
-      foamOpacity: this.config.foamOpacity,
-      extinctionCoeff: this.config.extinctionCoeff,
-      extinctionMultiplier: this.config.extinctionMultiplier,
-      refractionStrength: this.config.refractionStrength,
+      // Overwrite dirToSun to ensure it's normalized if config one isn't (though EnvironmentConfig usually is)
       dirToSun: {
-        x: lightDir.x / lightLen,
-        y: lightDir.y / lightLen,
-        z: lightDir.z / lightLen,
+        x: lightDir.x / Math.sqrt(lightDir.x**2 + lightDir.y**2 + lightDir.z**2),
+        y: lightDir.y / Math.sqrt(lightDir.x**2 + lightDir.y**2 + lightDir.z**2),
+        z: lightDir.z / Math.sqrt(lightDir.x**2 + lightDir.y**2 + lightDir.z**2),
       },
-      obstacleCenter: this.config.obstacleCentre,
+      // Calculate derived obstacleHalfSize
       obstacleHalfSize: {
         x: this.config.obstacleSize.x * 0.5,
         y: this.config.obstacleSize.y * 0.5,
         z: this.config.obstacleSize.z * 0.5,
       },
-      obstacleRotation: this.config.obstacleRotation,
-      obstacleColor: this.config.obstacleColor ?? { r: 1.0, g: 0.0, b: 0.0 },
+      obstacleColor: this.config.obstacleColor ?? { r: 1, g: 0, b: 0 },
       obstacleAlpha: this.config.obstacleAlpha ?? 0.8,
     };
 

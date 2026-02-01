@@ -60,10 +60,14 @@
 
 import particleShader from './shaders/particle3d.wgsl?raw';
 import lineShader from './shaders/line3d.wgsl?raw';
+import backgroundShader from './shaders/background.wgsl?raw';
+import environmentShader from '../common/shaders/environment.wgsl?raw';
 import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import type { ParticlesConfig } from './types.ts';
 import { mat4Perspective, mat4Multiply } from './math_utils.ts';
 import { buildGradientLut } from '../common/kernels.ts';
+import { writeEnvironmentUniforms } from '../common/environment.ts';
+import { preprocessShader } from '../common/shader_preprocessor.ts';
 
 /**
  * Handles all rendering for the 3D fluid simulation.
@@ -86,128 +90,55 @@ export class Renderer {
   // Render Pipelines
   // ===========================================================================
 
-  /**
-   * Pipeline for rendering particles as billboards.
-   *
-   * Configuration:
-   * - Vertex: Procedural quad generation (6 vertices per instance)
-   * - Fragment: Circle impostor with velocity-based coloring
-   * - Topology: triangle-list
-   * - Depth: enabled, less-than comparison
-   */
+  /** Pipeline for rendering particles as billboards. */
   private particlePipeline: GPURenderPipeline;
 
-  /**
-   * Pipeline for rendering wireframe lines.
-   *
-   * Configuration:
-   * - Vertex: Position + color from vertex buffer
-   * - Fragment: Pass-through color
-   * - Topology: line-list
-   * - Depth: enabled for proper occlusion
-   */
+  /** Pipeline for rendering wireframe lines. */
   private linePipeline: GPURenderPipeline;
 
-  /**
-   * Pipeline for rendering filled obstacle faces.
-   *
-   * Configuration:
-   * - Vertex: Position + color from vertex buffer (same shader as lines)
-   * - Fragment: Pass-through color with alpha blending
-   * - Topology: triangle-list
-   * - Depth: read-only (no write) so particles behind show through
-   * - Cull: none (both sides visible for transparency)
-   */
+  /** Pipeline for rendering filled obstacle faces. */
   private facePipeline: GPURenderPipeline;
+
+  /** Pipeline for rendering the environment background. */
+  private backgroundPipeline: GPURenderPipeline;
 
   // ===========================================================================
   // GPU Buffers
   // ===========================================================================
 
-  /**
-   * Uniform buffer for render settings.
-   *
-   * Layout (96 bytes):
-   * - viewProjection: mat4x4<f32> (64 bytes)
-   * - canvasSize: vec2<f32> (8 bytes)
-   * - particleRadius: f32 (4 bytes)
-   * - velocityDisplayMax: f32 (4 bytes)
-   * - padding (16 bytes)
-   */
+  /** Uniform buffer for render settings. */
   private uniformBuffer: GPUBuffer;
 
-  /**
-   * Storage buffer for velocity-to-color gradient lookup table.
-   *
-   * Contains pre-computed colors at regular intervals.
-   * The shader samples this table based on particle speed.
-   *
-   * Size: gradientResolution * 16 bytes (vec4<f32> per entry)
-   */
+  /** Storage buffer for velocity-to-color gradient lookup table. */
   private gradientBuffer: GPUBuffer;
+
+  /** Uniform buffer for environment settings. */
+  private envUniformBuffer: GPUBuffer;
+
+  /** Uniform buffer for camera settings (for background shader). */
+  private camUniformBuffer: GPUBuffer;
 
   // ===========================================================================
   // Bind Groups
   // ===========================================================================
 
-  /**
-   * Bind group for particle rendering.
-   * Recreated when simulation buffers change (e.g., reset).
-   *
-   * Bindings:
-   * - 0: positions (storage, read)
-   * - 1: velocities (storage, read)
-   * - 2: uniforms (uniform)
-   * - 3: gradient (storage, read)
-   * - 4: visibleIndices (storage, read)
-   */
   private particleBindGroup!: GPUBindGroup;
-
-  /**
-   * Bind group for line rendering.
-   * Static, only contains uniform buffer.
-   */
   private lineBindGroup: GPUBindGroup;
-
-  /**
-   * Bind group for face rendering.
-   * Static, only contains uniform buffer.
-   */
   private faceBindGroup: GPUBindGroup;
+  private backgroundBindGroup: GPUBindGroup;
 
   // ===========================================================================
   // Line Rendering Resources
   // ===========================================================================
 
-  /**
-   * Vertex buffer for line rendering.
-   *
-   * Layout per vertex (28 bytes):
-   * - position: vec3<f32> (12 bytes)
-   * - color: vec4<f32> (16 bytes)
-   */
   private lineVertexBuffer: GPUBuffer;
-
-  /**
-   * CPU-side vertex data for obstacle faces and wireframe edges.
-   * Reused each frame to avoid allocation.
-   *
-   * Capacity: 72 vertices × 7 floats = 504 floats
-   * (36 face vertices + 24 edge vertices + headroom)
-   */
   private lineVertexData: Float32Array;
 
   // ===========================================================================
   // Depth Buffer
   // ===========================================================================
 
-  /** Reference to canvas for size queries */
   private canvas: HTMLCanvasElement;
-
-  /**
-   * Depth texture for z-buffering.
-   * Recreated on canvas resize.
-   */
   private depthTexture!: GPUTexture;
   private depthWidth = 0;
   private depthHeight = 0;
@@ -216,14 +147,6 @@ export class Renderer {
   // Constructor
   // ===========================================================================
 
-  /**
-   * Creates the renderer with all necessary pipelines and resources.
-   *
-   * @param device - WebGPU device
-   * @param canvas - Canvas element for size reference
-   * @param format - Preferred texture format for swap chain
-   * @param config - Simulation configuration for gradient colors
-   */
   constructor(
     device: GPUDevice,
     canvas: HTMLCanvasElement,
@@ -234,36 +157,45 @@ export class Renderer {
     this.canvas = canvas;
 
     // -------------------------------------------------------------------------
-    // Create Uniform Buffer
+    // Create Uniform Buffers
     // -------------------------------------------------------------------------
 
-    // Size: 96 bytes for viewProjection (64) + canvasSize (8) + radius (4) + velocityMax (4) + padding (16)
+    // Render uniforms: 96 bytes
     this.uniformBuffer = device.createBuffer({
       size: 96,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Environment uniforms: 240 bytes (60 floats)
+    this.envUniformBuffer = device.createBuffer({
+      size: 240,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Camera uniforms for background: 48 bytes (vec3 pos, vec3 fwd, vec3 right, vec3 up, fov, aspect)
+    // Actually struct FragmentUniforms has 4 vec4s = 64 bytes
+    this.camUniformBuffer = device.createBuffer({
+      size: 80, // Updated to 80 bytes
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     // -------------------------------------------------------------------------
     // Create Gradient Buffer
     // -------------------------------------------------------------------------
-    // Build a lookup table from the color gradient configuration.
-    // This allows fast color lookup in the shader without complex calculations.
 
     const gradientLut = buildGradientLut(
       config.colorKeys,
       config.gradientResolution
     );
 
-    // Convert to vec4<f32> format (RGBA with alpha = 1)
     const gradientData = new Float32Array(config.gradientResolution * 4);
     for (let i = 0; i < gradientLut.length; i++) {
       gradientData[i * 4] = gradientLut[i].r;
       gradientData[i * 4 + 1] = gradientLut[i].g;
       gradientData[i * 4 + 2] = gradientLut[i].b;
-      gradientData[i * 4 + 3] = 1; // Alpha
+      gradientData[i * 4 + 3] = 1;
     }
 
-    // Create buffer with mapped-at-creation for efficient upload
     this.gradientBuffer = device.createBuffer({
       size: gradientData.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -283,7 +215,6 @@ export class Renderer {
       vertex: {
         module: particleModule,
         entryPoint: 'vs_main',
-        // No vertex buffers - we use vertex pulling from storage buffers
       },
       fragment: {
         module: particleModule,
@@ -291,7 +222,7 @@ export class Renderer {
         targets: [{ format }],
       },
       primitive: {
-        topology: 'triangle-list', // 2 triangles (6 vertices) per particle
+        topology: 'triangle-list',
       },
       depthStencil: {
         format: 'depth24plus',
@@ -313,19 +244,10 @@ export class Renderer {
         entryPoint: 'vs_main',
         buffers: [
           {
-            // Vertex buffer layout: pos (vec3) + color (vec4)
-            arrayStride: 28, // 3 × 4 + 4 × 4 = 28 bytes
+            arrayStride: 28,
             attributes: [
-              {
-                shaderLocation: 0, // @location(0) pos
-                offset: 0,
-                format: 'float32x3',
-              },
-              {
-                shaderLocation: 1, // @location(1) color
-                offset: 12, // After 3 floats for position
-                format: 'float32x4',
-              },
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x4' },
             ],
           },
         ],
@@ -336,7 +258,6 @@ export class Renderer {
         targets: [
           {
             format,
-            // Alpha blending for semi-transparent lines
             blend: {
               color: {
                 srcFactor: 'src-alpha',
@@ -352,9 +273,7 @@ export class Renderer {
           },
         ],
       },
-      primitive: {
-        topology: 'line-list', // Each pair of vertices is a line segment
-      },
+      primitive: { topology: 'line-list' },
       depthStencil: {
         format: 'depth24plus',
         depthWriteEnabled: true,
@@ -363,7 +282,7 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
-    // Create Face Render Pipeline (filled obstacle faces)
+    // Create Face Render Pipeline
     // -------------------------------------------------------------------------
 
     this.facePipeline = device.createRenderPipeline({
@@ -402,10 +321,7 @@ export class Renderer {
           },
         ],
       },
-      primitive: {
-        topology: 'triangle-list',
-        cullMode: 'none',
-      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
       depthStencil: {
         format: 'depth24plus',
         depthWriteEnabled: false,
@@ -414,19 +330,53 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
+    // Create Background Render Pipeline
+    // -------------------------------------------------------------------------
+
+    const bgCode = preprocessShader(backgroundShader, {
+      '../../common/shaders/environment.wgsl': environmentShader,
+    });
+    const bgModule = device.createShaderModule({ code: bgCode });
+
+    this.backgroundPipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: bgModule,
+        entryPoint: 'vs_main',
+      },
+      fragment: {
+        module: bgModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: false,
+        depthCompare: 'always',
+      },
+    });
+
+    this.backgroundBindGroup = device.createBindGroup({
+      layout: this.backgroundPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.envUniformBuffer } },
+        { binding: 1, resource: { buffer: this.camUniformBuffer } },
+      ],
+    });
+
+    // -------------------------------------------------------------------------
     // Create Vertex Buffer (faces + edges)
     // -------------------------------------------------------------------------
 
-    // Allocate for 72 vertices (36 face + 24 edge + headroom)
-    this.lineVertexData = new Float32Array(72 * 7); // 7 floats per vertex
-
+    this.lineVertexData = new Float32Array(72 * 7);
     this.lineVertexBuffer = device.createBuffer({
       size: this.lineVertexData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
 
     // -------------------------------------------------------------------------
-    // Create Bind Groups (line + face)
+    // Create Static Bind Groups
     // -------------------------------------------------------------------------
 
     this.lineBindGroup = device.createBindGroup({
@@ -439,10 +389,6 @@ export class Renderer {
       entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
     });
 
-    // -------------------------------------------------------------------------
-    // Create Initial Depth Texture
-    // -------------------------------------------------------------------------
-
     this.resize();
   }
 
@@ -450,12 +396,6 @@ export class Renderer {
   // Resize Handling
   // ===========================================================================
 
-  /**
-   * Recreates the depth texture when canvas size changes.
-   *
-   * Called at the start of each frame to handle window resize.
-   * The depth texture must match the canvas size exactly.
-   */
   resize() {
     const width = this.canvas.width;
     const height = this.canvas.height;
@@ -467,10 +407,8 @@ export class Renderer {
       return;
     }
 
-    // Destroy old depth texture if it exists
     if (this.depthTexture) this.depthTexture.destroy();
 
-    // Create new depth texture matching canvas size
     this.depthTexture = this.device.createTexture({
       size: [width, height],
       format: 'depth24plus',
@@ -484,13 +422,6 @@ export class Renderer {
   // Bind Group Management
   // ===========================================================================
 
-  /**
-   * Creates the particle bind group with simulation buffers.
-   *
-   * Must be called whenever simulation buffers are recreated (e.g., on reset).
-   *
-   * @param buffers - The simulation buffers containing particle data
-   */
   createBindGroup(buffers: SimulationBuffersLinear) {
     this.particleBindGroup = this.device.createBindGroup({
       layout: this.particlePipeline.getBindGroupLayout(0),
@@ -508,16 +439,6 @@ export class Renderer {
   // Obstacle Geometry Builder
   // ===========================================================================
 
-  /**
-   * Builds obstacle box geometry (filled faces + wireframe edges).
-   *
-   * Writes face triangle vertices first (36 vertices), then edge line
-   * vertices (24 vertices) into lineVertexData. The rotation order matches
-   * the integrate shader: rotateX → rotateY → rotateZ.
-   *
-   * @param config - Simulation configuration with obstacle parameters
-   * @returns Face and edge vertex counts (both 0 if obstacle is disabled)
-   */
   private buildObstacleGeometry(config: ParticlesConfig): {
     faceCount: number;
     edgeCount: number;
@@ -537,19 +458,14 @@ export class Renderer {
     const color = config.obstacleColor ?? { r: 1, g: 0, b: 0 };
     const alpha = config.obstacleAlpha ?? 0.8;
 
-    // Rotation (degrees → radians), matching integrate.wgsl rotateLocalToWorld
     const degToRad = Math.PI / 180;
     const rx = config.obstacleRotation.x * degToRad;
     const ry = config.obstacleRotation.y * degToRad;
     const rz = config.obstacleRotation.z * degToRad;
-    const cosX = Math.cos(rx),
-      sinX = Math.sin(rx);
-    const cosY = Math.cos(ry),
-      sinY = Math.sin(ry);
-    const cosZ = Math.cos(rz),
-      sinZ = Math.sin(rz);
+    const cosX = Math.cos(rx), sinX = Math.sin(rx);
+    const cosY = Math.cos(ry), sinY = Math.sin(ry);
+    const cosZ = Math.cos(rz), sinZ = Math.sin(rz);
 
-    // rotateLocalToWorld: rotateX → rotateY → rotateZ, then translate
     const rotate = (
       lx: number,
       ly: number,
@@ -564,19 +480,17 @@ export class Renderer {
       return [x3 + cx, y3 + cy, z2 + cz];
     };
 
-    // 8 corners of the box in local space → world space
     const c = [
-      rotate(-hx, -hy, -hz), // 0
-      rotate(+hx, -hy, -hz), // 1
-      rotate(+hx, +hy, -hz), // 2
-      rotate(-hx, +hy, -hz), // 3
-      rotate(-hx, -hy, +hz), // 4
-      rotate(+hx, -hy, +hz), // 5
-      rotate(+hx, +hy, +hz), // 6
-      rotate(-hx, +hy, +hz), // 7
+      rotate(-hx, -hy, -hz),
+      rotate(+hx, -hy, -hz),
+      rotate(+hx, +hy, -hz),
+      rotate(-hx, +hy, -hz),
+      rotate(-hx, -hy, +hz),
+      rotate(+hx, -hy, +hz),
+      rotate(+hx, +hy, +hz),
+      rotate(-hx, +hy, +hz),
     ];
 
-    // Helper: write one vertex (position + color) at current offset
     let offset = 0;
     const vert = (p: [number, number, number]) => {
       this.lineVertexData[offset++] = p[0];
@@ -588,15 +502,13 @@ export class Renderer {
       this.lineVertexData[offset++] = alpha;
     };
 
-    // --- Filled faces: 6 faces × 2 triangles × 3 vertices = 36 vertices ---
-    // Each face as two triangles (winding consistent for double-sided rendering)
     const faces = [
-      [0, 2, 1, 0, 3, 2], // -Z back
-      [4, 5, 6, 4, 6, 7], // +Z front
-      [0, 4, 7, 0, 7, 3], // -X left
-      [1, 2, 6, 1, 6, 5], // +X right
-      [0, 1, 5, 0, 5, 4], // -Y bottom
-      [3, 7, 6, 3, 6, 2], // +Y top
+      [0, 2, 1, 0, 3, 2],
+      [4, 5, 6, 4, 6, 7],
+      [0, 4, 7, 0, 7, 3],
+      [1, 2, 6, 1, 6, 5],
+      [0, 1, 5, 0, 5, 4],
+      [3, 7, 6, 3, 6, 2],
     ];
 
     for (const face of faces) {
@@ -607,20 +519,10 @@ export class Renderer {
 
     const faceCount = 36;
 
-    // --- Wireframe edges: 12 edges × 2 vertices = 24 vertices ---
     const edges = [
-      [0, 1],
-      [1, 2],
-      [2, 3],
-      [3, 0], // back face (-z)
-      [4, 5],
-      [5, 6],
-      [6, 7],
-      [7, 4], // front face (+z)
-      [0, 4],
-      [1, 5],
-      [2, 6],
-      [3, 7], // connecting edges
+      [0, 1], [1, 2], [2, 3], [3, 0],
+      [4, 5], [5, 6], [6, 7], [7, 4],
+      [0, 4], [1, 5], [2, 6], [3, 7],
     ];
 
     for (const [a, b] of edges) {
@@ -676,6 +578,40 @@ export class Renderer {
 
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
+    // Update Environment Uniforms
+    const envData = new Float32Array(60);
+    writeEnvironmentUniforms(envData, 0, config, config);
+    this.device.queue.writeBuffer(this.envUniformBuffer, 0, envData);
+
+    // Update Camera Uniforms for Background
+    const camRight = { x: viewMatrix[0], y: viewMatrix[4], z: viewMatrix[8] };
+    const camUp    = { x: viewMatrix[1], y: viewMatrix[5], z: viewMatrix[9] };
+    const camBack  = { x: viewMatrix[2], y: viewMatrix[6], z: viewMatrix[10] };
+    const camFwd   = { x: -camBack.x, y: -camBack.y, z: -camBack.z };
+    
+    // Extract camera position from view matrix translation
+    const tx = viewMatrix[12];
+    const ty = viewMatrix[13];
+    const tz = viewMatrix[14];
+    
+    const eyeX = -(camRight.x * tx + camUp.x * ty + camBack.x * tz);
+    const eyeY = -(camRight.y * tx + camUp.y * ty + camBack.y * tz);
+    const eyeZ = -(camRight.z * tx + camUp.z * ty + camBack.z * tz);
+
+    const camFullData = new Float32Array(20);
+    // cameraPos (0-2)
+    camFullData[0] = eyeX; camFullData[1] = eyeY; camFullData[2] = eyeZ; camFullData[3] = 0;
+    // cameraForward (4-6)
+    camFullData[4] = camFwd.x; camFullData[5] = camFwd.y; camFullData[6] = camFwd.z; camFullData[7] = 0;
+    // cameraRight (8-10)
+    camFullData[8] = camRight.x; camFullData[9] = camRight.y; camFullData[10] = camRight.z; camFullData[11] = 0;
+    // cameraUp (12-14)
+    camFullData[12] = camUp.x; camFullData[13] = camUp.y; camFullData[14] = camUp.z; camFullData[15] = 0;
+    // fovY, aspect
+    camFullData[16] = Math.PI / 3;
+    camFullData[17] = aspect;
+    this.device.queue.writeBuffer(this.camUniformBuffer, 0, camFullData);
+
     // -------------------------------------------------------------------------
     // Build & Upload Obstacle Geometry (faces + edges)
     // -------------------------------------------------------------------------
@@ -700,8 +636,8 @@ export class Renderer {
       colorAttachments: [
         {
           view,
-          clearValue: { r: 0.05, g: 0.05, b: 0.08, a: 1 }, // Dark background
-          loadOp: 'clear',
+          clearValue: { r: 0.05, g: 0.05, b: 0.08, a: 1 }, // Irrelevant as we draw background
+          loadOp: 'clear', // Clear for safety, though background will overdraw
           storeOp: 'store',
         },
       ],
@@ -712,6 +648,11 @@ export class Renderer {
         depthStoreOp: 'store',
       },
     });
+
+    // 1. Draw Background
+    pass.setPipeline(this.backgroundPipeline);
+    pass.setBindGroup(0, this.backgroundBindGroup);
+    pass.draw(3, 1, 0, 0);
 
     // -------------------------------------------------------------------------
     // Draw Particles (Indirect Instanced)

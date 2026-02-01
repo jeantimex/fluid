@@ -47,6 +47,7 @@
 
 import './style.css';
 import { createConfig } from '../common/config.ts';
+import { createDefaultEnvironmentConfig } from '../common/environment.ts';
 import { setupGui } from '../common/gui.ts';
 
 import { rgbToHex, hexToRgb } from '../common/color_utils.ts';
@@ -98,6 +99,7 @@ const canvas = createCanvas(app);
 // floor tile colors, extinction coefficients, and refraction settings.
 const config: RaymarchConfig = {
   ...createConfig(),
+  ...createDefaultEnvironmentConfig(),
   viscosityStrength: 0,
   iterationsPerFrame: 2,
   densityTextureRes: 150,
@@ -106,23 +108,9 @@ const config: RaymarchConfig = {
   stepSize: 0.08,
   lightStepSize: 0.1,
   maxSteps: 512,
-  tileCol1: { r: 126 / 255, g: 183 / 255, b: 231 / 255 }, // Blue
-  tileCol2: { r: 210 / 255, g: 165 / 255, b: 240 / 255 }, // Purple
-  tileCol3: { r: 153 / 255, g: 229 / 255, b: 199 / 255 }, // Green
-  tileCol4: { r: 237 / 255, g: 225 / 255, b: 167 / 255 }, // Yellow
-  tileColVariation: { x: 0, y: 0, z: 0 },
-  tileScale: 1,
-  tileDarkOffset: -0.35,
-  tileDarkFactor: 0.5,
-  floorAmbient: 0.15,
-  sceneExposure: 1.1,
-  debugFloorMode: 0,
   extinctionCoefficients: { x: 18, y: 8, z: 2 },
   indexOfRefraction: 1.33,
   numRefractions: 4,
-  floorSize: { x: 80, y: 0.05, z: 80 },
-  obstacleColor: { r: 1.0, g: 0.0, b: 0.0 },
-  obstacleAlpha: 0.8,
 };
 
 // Simulation instance (initialized asynchronously in main())

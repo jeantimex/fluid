@@ -1,5 +1,6 @@
 import type { SimulationBuffersLinear } from '../simulation_buffers_linear.ts';
 import type { RGB, Vec3 } from '../../common/types.ts';
+import type { EnvironmentConfig } from '../../common/environment.ts';
 
 export type SimBuffers = SimulationBuffersLinear;
 
@@ -13,7 +14,7 @@ export interface ScreenSpaceTextures {
   foamTexture: GPUTexture | null;
 }
 
-export interface ScreenSpaceFrame {
+export interface ScreenSpaceFrame extends EnvironmentConfig {
   viewProjection: Float32Array;
   inverseViewProjection: Float32Array;
   lightViewProjection: Float32Array;
@@ -28,9 +29,11 @@ export interface ScreenSpaceFrame {
   extinctionCoeff: Vec3;
   extinctionMultiplier: number;
   refractionStrength: number;
-  dirToSun: Vec3;
-  obstacleCenter: Vec3;
-  obstacleHalfSize: Vec3;
+  // Overlapping fields removed as they are in EnvironmentConfig: dirToSun
+  
+  // Obstacle fields (from SimConfig)
+  obstacleCentre: Vec3;
+  obstacleHalfSize: Vec3; // Derived from size
   obstacleRotation: Vec3;
   obstacleColor: RGB;
   obstacleAlpha: number;

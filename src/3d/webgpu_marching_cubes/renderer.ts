@@ -15,6 +15,8 @@ import marchingCubesShader from './shaders/marching_cubes.wgsl?raw';
 import renderArgsShader from './shaders/render_args.wgsl?raw';
 import drawShader from './shaders/marching_cubes_draw.wgsl?raw';
 import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
+import backgroundShader from './shaders/background.wgsl?raw';
+import environmentShader from '../common/shaders/environment.wgsl?raw';
 import {
   marchingCubesEdgeA,
   marchingCubesEdgeB,
@@ -29,6 +31,8 @@ import {
 } from '../webgpu_particles/math_utils.ts';
 import type { MarchingCubesConfig } from './types.ts';
 import type { SimConfig } from '../common/types.ts';
+import { writeEnvironmentUniforms } from '../common/environment.ts';
+import { preprocessShader } from '../common/shader_preprocessor.ts';
 
 export class MarchingCubesRenderer {
   private device: GPUDevice;
@@ -38,6 +42,7 @@ export class MarchingCubesRenderer {
   private renderArgsPipeline: GPUComputePipeline;
   private drawPipeline: GPURenderPipeline;
   private facePipeline: GPURenderPipeline;
+  private backgroundPipeline: GPURenderPipeline;
 
   private sampler: GPUSampler;
 
@@ -47,6 +52,8 @@ export class MarchingCubesRenderer {
   private paramsU32: Uint32Array;
 
   private renderUniformBuffer: GPUBuffer;
+  private envUniformBuffer: GPUBuffer;
+  private camUniformBuffer: GPUBuffer;
 
   private triangleBuffer!: GPUBuffer;
   private triangleCountBuffer!: GPUBuffer;
@@ -64,6 +71,7 @@ export class MarchingCubesRenderer {
   private renderArgsBindGroup!: GPUBindGroup;
   private drawBindGroup!: GPUBindGroup;
   private faceBindGroup!: GPUBindGroup;
+  private backgroundBindGroup: GPUBindGroup;
 
   private lineVertexBuffer!: GPUBuffer;
   private lineVertexData: Float32Array;
@@ -167,6 +175,29 @@ export class MarchingCubesRenderer {
       },
     });
 
+    // -------------------------------------------------------------------------
+    // Create Background Render Pipeline
+    // -------------------------------------------------------------------------
+    const bgCode = preprocessShader(backgroundShader, {
+      '../../common/shaders/environment.wgsl': environmentShader,
+    });
+    const bgModule = device.createShaderModule({ code: bgCode });
+    this.backgroundPipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: bgModule, entryPoint: 'vs_main' },
+      fragment: {
+        module: bgModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: false,
+        depthCompare: 'always',
+      },
+    });
+
     // Allocate for face vertices (36 × 10 floats) + edge vertices (24 × 7 floats) + headroom
     this.lineVertexData = new Float32Array(720); // 36×10 + 24×7 = 528, with headroom
 
@@ -195,6 +226,18 @@ export class MarchingCubesRenderer {
     // Render uniforms: viewProjection (64) + color (16) + lightDir (12) + pad (4) = 96 bytes
     this.renderUniformBuffer = device.createBuffer({
       size: 96,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Environment uniforms: 240 bytes
+    this.envUniformBuffer = device.createBuffer({
+      size: 240,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Camera uniforms for background: 80 bytes
+    this.camUniformBuffer = device.createBuffer({
+      size: 80,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -227,6 +270,14 @@ export class MarchingCubesRenderer {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.edgeBBuffer, 0, marchingCubesEdgeB);
+
+    this.backgroundBindGroup = device.createBindGroup({
+      layout: this.backgroundPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.envUniformBuffer } },
+        { binding: 1, resource: { buffer: this.camUniformBuffer } },
+      ],
+    });
   }
 
   recreate(
@@ -532,8 +583,37 @@ export class MarchingCubesRenderer {
     argsPass.dispatchWorkgroups(1);
     argsPass.end();
 
-    // Update render uniforms
+    // Update Environment Uniforms
+    const envData = new Float32Array(60);
+    writeEnvironmentUniforms(envData, 0, config, config);
+    this.device.queue.writeBuffer(this.envUniformBuffer, 0, envData);
+
+    // Update Camera Uniforms for Background
+    const viewMatrix = camera.viewMatrix;
+    const camRight = { x: viewMatrix[0], y: viewMatrix[4], z: viewMatrix[8] };
+    const camUp    = { x: viewMatrix[1], y: viewMatrix[5], z: viewMatrix[9] };
+    const camBack  = { x: viewMatrix[2], y: viewMatrix[6], z: viewMatrix[10] };
+    const camFwd   = { x: -camBack.x, y: -camBack.y, z: -camBack.z };
+    
+    const tx = viewMatrix[12];
+    const ty = viewMatrix[13];
+    const tz = viewMatrix[14];
+    
+    const eyeX = -(camRight.x * tx + camUp.x * ty + camBack.x * tz);
+    const eyeY = -(camRight.y * tx + camUp.y * ty + camBack.y * tz);
+    const eyeZ = -(camRight.z * tx + camUp.z * ty + camBack.z * tz);
+
     const aspect = this.canvas.width / this.canvas.height;
+    const camFullData = new Float32Array(20);
+    camFullData[0] = eyeX; camFullData[1] = eyeY; camFullData[2] = eyeZ; camFullData[3] = 0;
+    camFullData[4] = camFwd.x; camFullData[5] = camFwd.y; camFullData[6] = camFwd.z; camFullData[7] = 0;
+    camFullData[8] = camRight.x; camFullData[9] = camRight.y; camFullData[10] = camRight.z; camFullData[11] = 0;
+    camFullData[12] = camUp.x; camFullData[13] = camUp.y; camFullData[14] = camUp.z; camFullData[15] = 0;
+    camFullData[16] = Math.PI / 3;
+    camFullData[17] = aspect;
+    this.device.queue.writeBuffer(this.camUniformBuffer, 0, camFullData);
+
+    // Update render uniforms
     const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 200.0);
     const viewProj = mat4Multiply(projection, camera.viewMatrix);
 
@@ -543,9 +623,10 @@ export class MarchingCubesRenderer {
     uniforms[17] = config.surfaceColor.g;
     uniforms[18] = config.surfaceColor.b;
     uniforms[19] = 1.0;
-    uniforms[20] = -0.36;
-    uniforms[21] = 0.8;
-    uniforms[22] = -0.45;
+    // Light dir updated to match environment sun dir
+    uniforms[20] = config.dirToSun.x;
+    uniforms[21] = config.dirToSun.y;
+    uniforms[22] = config.dirToSun.z;
     uniforms[23] = 0;
     this.device.queue.writeBuffer(this.renderUniformBuffer, 0, uniforms);
 
@@ -566,7 +647,7 @@ export class MarchingCubesRenderer {
       colorAttachments: [
         {
           view: targetView,
-          clearValue: { r: 0.05, g: 0.05, b: 0.08, a: 1 },
+          clearValue: { r: 0.05, g: 0.05, b: 0.08, a: 1 }, // Irrelevant
           loadOp: 'clear',
           storeOp: 'store',
         },
@@ -579,11 +660,17 @@ export class MarchingCubesRenderer {
       },
     });
 
+    // 1. Draw Background
+    pass.setPipeline(this.backgroundPipeline);
+    pass.setBindGroup(0, this.backgroundBindGroup);
+    pass.draw(3, 1, 0, 0);
+
+    // 2. Draw Marching Cubes Mesh
     pass.setPipeline(this.drawPipeline);
     pass.setBindGroup(0, this.drawBindGroup);
     pass.drawIndirect(this.renderArgsBuffer, 0);
 
-    // Draw Obstacle
+    // 3. Draw Obstacle
     if (faceCount > 0) {
       pass.setPipeline(this.facePipeline);
       pass.setBindGroup(0, this.faceBindGroup);

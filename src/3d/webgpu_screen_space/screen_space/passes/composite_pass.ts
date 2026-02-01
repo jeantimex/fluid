@@ -5,10 +5,13 @@
 import debugShader from '../shaders/debug_composite.wgsl?raw';
 import debugColorShader from '../shaders/debug_composite_color.wgsl?raw';
 import compositeShader from '../shaders/composite_final.wgsl?raw';
+import environmentShader from '../../../common/shaders/environment.wgsl?raw';
 import type {
   CompositePassResources,
   ScreenSpaceFrame,
 } from '../screen_space_types.ts';
+import { writeEnvironmentUniforms } from '../../../common/environment.ts';
+import { preprocessShader } from '../../../common/shader_preprocessor.ts';
 
 export class CompositePass {
   private device: GPUDevice;
@@ -22,6 +25,7 @@ export class CompositePass {
   private sampler: GPUSampler;
   private shadowSampler: GPUSampler;
   private uniformBuffer: GPUBuffer;
+  private envUniformBuffer: GPUBuffer;
   private lastMode: number | null = null;
 
   constructor(device: GPUDevice, format: GPUTextureFormat) {
@@ -34,8 +38,15 @@ export class CompositePass {
     this.shadowSampler = device.createSampler({
       compare: 'less',
     });
+    // Render uniforms: matrices (32) + foam/extinction (12) + padding = 48 floats = 192 bytes
     this.uniformBuffer = device.createBuffer({
-      size: 240, // 60 floats
+      size: 192,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Environment uniforms: 240 bytes
+    this.envUniformBuffer = device.createBuffer({
+      size: 240,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -88,6 +99,11 @@ export class CompositePass {
           visibility: GPUShaderStage.FRAGMENT,
           buffer: { type: 'uniform' },
         },
+        {
+          binding: 8,
+          visibility: GPUShaderStage.FRAGMENT,
+          buffer: { type: 'uniform' },
+        },
       ],
     });
 
@@ -119,8 +135,11 @@ export class CompositePass {
       primitive: { topology: 'triangle-list' },
     });
 
+    const compositeCode = preprocessShader(compositeShader, {
+      '../../../common/shaders/environment.wgsl': environmentShader,
+    });
     const compositeModule = device.createShaderModule({
-      code: compositeShader,
+      code: compositeCode,
     });
     this.compositePipeline = device.createRenderPipeline({
       layout: device.createPipelineLayout({
@@ -192,6 +211,7 @@ export class CompositePass {
         { binding: 5, resource: this.sampler },
         { binding: 6, resource: this.shadowSampler },
         { binding: 7, resource: { buffer: this.uniformBuffer } },
+        { binding: 8, resource: { buffer: this.envUniformBuffer } },
       ],
     });
   }
@@ -210,7 +230,8 @@ export class CompositePass {
       if (!this.compositeBindGroup) {
         return;
       }
-      const uniforms = new Float32Array(60);
+      // Render uniforms (matrices + foam/extinction)
+      const uniforms = new Float32Array(48);
       uniforms.set(frame.inverseViewProjection, 0);
       uniforms.set(frame.lightViewProjection, 16);
       uniforms[32] = frame.foamColor.r;
@@ -221,27 +242,26 @@ export class CompositePass {
       uniforms[37] = frame.extinctionCoeff.y;
       uniforms[38] = frame.extinctionCoeff.z;
       uniforms[39] = frame.extinctionMultiplier;
-      uniforms[40] = frame.dirToSun.x;
-      uniforms[41] = frame.dirToSun.y;
-      uniforms[42] = frame.dirToSun.z;
-      uniforms[43] = frame.refractionStrength;
-      uniforms[44] = frame.obstacleCenter.x;
-      uniforms[45] = frame.obstacleCenter.y;
-      uniforms[46] = frame.obstacleCenter.z;
-      uniforms[47] = 0;
-      uniforms[48] = frame.obstacleHalfSize.x;
-      uniforms[49] = frame.obstacleHalfSize.y;
-      uniforms[50] = frame.obstacleHalfSize.z;
-      uniforms[51] = 0;
-      uniforms[52] = frame.obstacleRotation.x;
-      uniforms[53] = frame.obstacleRotation.y;
-      uniforms[54] = frame.obstacleRotation.z;
-      uniforms[55] = 0;
-      uniforms[56] = frame.obstacleColor.r;
-      uniforms[57] = frame.obstacleColor.g;
-      uniforms[58] = frame.obstacleColor.b;
-      uniforms[59] = frame.obstacleAlpha;
+      uniforms[40] = frame.refractionStrength;
+      uniforms[41] = 0; // pad
+      uniforms[42] = 0; // pad
+      uniforms[43] = 0; // pad
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
+
+      // Environment uniforms
+      const envData = new Float32Array(60);
+      // Corrected: use obstacleCentre
+      writeEnvironmentUniforms(envData, 0, frame, {
+        ...frame,
+        obstacleCentre: frame.obstacleCentre,
+        obstacleSize: {
+            x: frame.obstacleHalfSize.x * 2,
+            y: frame.obstacleHalfSize.y * 2,
+            z: frame.obstacleHalfSize.z * 2
+        }
+      } as any);
+      this.device.queue.writeBuffer(this.envUniformBuffer, 0, envData);
+
     } else {
       if (this.lastMode !== mode) {
         this.createBindGroup(resources, mode);

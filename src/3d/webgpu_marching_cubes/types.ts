@@ -10,8 +10,9 @@
  */
 
 import type { SimConfig } from '../common/types.ts';
+import type { EnvironmentConfig } from '../common/environment.ts';
 
-export interface MarchingCubesConfig extends SimConfig {
+export interface MarchingCubesConfig extends SimConfig, EnvironmentConfig {
   /**
    * Resolution of the 3D density texture along its longest axis.
    * The other two axes are scaled proportionally to the bounds aspect ratio.
