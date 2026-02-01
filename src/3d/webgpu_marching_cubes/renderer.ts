@@ -16,6 +16,7 @@ import densityProbeShader from './shaders/density_probe.wgsl?raw';
 import renderArgsShader from './shaders/render_args.wgsl?raw';
 import drawShader from './shaders/marching_cubes_draw.wgsl?raw';
 import lineShader from './shaders/line3d.wgsl?raw';
+import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
 import {
   marchingCubesEdgeA,
   marchingCubesEdgeB,
@@ -165,23 +166,25 @@ export class MarchingCubesRenderer {
       },
     });
 
+    const faceModule = device.createShaderModule({ code: obstacleFaceShader });
     this.facePipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: {
-        module: lineModule,
+        module: faceModule,
         entryPoint: 'vs_main',
         buffers: [
           {
-            arrayStride: 28,
+            arrayStride: 40, // pos(12) + normal(12) + color(16)
             attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x3' },
-              { shaderLocation: 1, offset: 12, format: 'float32x4' },
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },  // pos
+              { shaderLocation: 1, offset: 12, format: 'float32x3' }, // normal
+              { shaderLocation: 2, offset: 24, format: 'float32x4' }, // color
             ],
           },
         ],
       },
       fragment: {
-        module: lineModule,
+        module: faceModule,
         entryPoint: 'fs_main',
         targets: [
           {
@@ -193,7 +196,7 @@ export class MarchingCubesRenderer {
           },
         ],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: {
         format: 'depth24plus',
         depthWriteEnabled: false, // Transparent faces don't write depth
@@ -201,11 +204,11 @@ export class MarchingCubesRenderer {
       },
     });
 
-    // Allocate for 72 vertices (36 face + 24 edge + headroom)
-    this.lineVertexData = new Float32Array(72 * 7); // 7 floats per vertex
+    // Allocate for face vertices (36 × 10 floats) + edge vertices (24 × 7 floats) + headroom
+    this.lineVertexData = new Float32Array(720); // 36×10 + 24×7 = 528, with headroom
 
     this.lineVertexBuffer = device.createBuffer({
-      size: this.lineVertexData.byteLength,
+      size: 720 * 4, // 2880 bytes
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
 
@@ -442,8 +445,49 @@ export class MarchingCubesRenderer {
       rotate(-hx, +hy, +hz), // 7
     ];
 
+    // Rotate a direction vector (no translation)
+    const rotateDir = (
+      lx: number,
+      ly: number,
+      lz: number
+    ): [number, number, number] => {
+      const y1 = ly * cosX - lz * sinX;
+      const z1 = ly * sinX + lz * cosX;
+      const x2 = lx * cosY + z1 * sinY;
+      const z2 = -lx * sinY + z1 * cosY;
+      const x3 = x2 * cosZ - y1 * sinZ;
+      const y3 = x2 * sinZ + y1 * cosZ;
+      return [x3, y3, z2];
+    };
+
+    // Per-face normals in local space, rotated to world space
+    const faceNormals: [number, number, number][] = [
+      rotateDir(0, 0, -1), // -Z back
+      rotateDir(0, 0, +1), // +Z front
+      rotateDir(-1, 0, 0), // -X left
+      rotateDir(+1, 0, 0), // +X right
+      rotateDir(0, -1, 0), // -Y bottom
+      rotateDir(0, +1, 0), // +Y top
+    ];
+
     let offset = 0;
-    const vert = (p: [number, number, number]) => {
+
+    // Face vertex: pos(3) + normal(3) + color(4) = 10 floats
+    const faceVert = (p: [number, number, number], n: [number, number, number]) => {
+      this.lineVertexData[offset++] = p[0];
+      this.lineVertexData[offset++] = p[1];
+      this.lineVertexData[offset++] = p[2];
+      this.lineVertexData[offset++] = n[0];
+      this.lineVertexData[offset++] = n[1];
+      this.lineVertexData[offset++] = n[2];
+      this.lineVertexData[offset++] = color.r;
+      this.lineVertexData[offset++] = color.g;
+      this.lineVertexData[offset++] = color.b;
+      this.lineVertexData[offset++] = alpha;
+    };
+
+    // Edge vertex: pos(3) + color(4) = 7 floats
+    const edgeVert = (p: [number, number, number]) => {
       this.lineVertexData[offset++] = p[0];
       this.lineVertexData[offset++] = p[1];
       this.lineVertexData[offset++] = p[2];
@@ -462,9 +506,10 @@ export class MarchingCubesRenderer {
       [3, 7, 6, 3, 6, 2], // +Y top
     ];
 
-    for (const face of faces) {
-      for (const idx of face) {
-        vert(c[idx]);
+    for (let fi = 0; fi < faces.length; fi++) {
+      const n = faceNormals[fi];
+      for (const idx of faces[fi]) {
+        faceVert(c[idx], n);
       }
     }
 
@@ -477,8 +522,8 @@ export class MarchingCubesRenderer {
     ];
 
     for (const [a, b] of edges) {
-      vert(c[a]);
-      vert(c[b]);
+      edgeVert(c[a]);
+      edgeVert(c[b]);
     }
 
     const edgeCount = 24;
@@ -547,14 +592,14 @@ export class MarchingCubesRenderer {
 
     // Build & Upload Obstacle Geometry
     const { faceCount, edgeCount } = this.buildObstacleGeometry(config);
-    const totalVerts = faceCount + edgeCount;
-    if (totalVerts > 0) {
+    const totalFloats = faceCount * 10 + edgeCount * 7;
+    if (totalFloats > 0) {
       this.device.queue.writeBuffer(
         this.lineVertexBuffer,
         0,
         this.lineVertexData.buffer,
         this.lineVertexData.byteOffset,
-        totalVerts * 7 * 4 // 7 floats * 4 bytes
+        totalFloats * 4 // bytes
       );
     }
 
@@ -585,13 +630,6 @@ export class MarchingCubesRenderer {
       pass.setBindGroup(0, this.faceBindGroup);
       pass.setVertexBuffer(0, this.lineVertexBuffer, 0);
       pass.draw(faceCount);
-    }
-
-    if (edgeCount > 0) {
-      pass.setPipeline(this.linePipeline);
-      pass.setBindGroup(0, this.lineBindGroup);
-      pass.setVertexBuffer(0, this.lineVertexBuffer, faceCount * 28);
-      pass.draw(edgeCount);
     }
 
     pass.end();
