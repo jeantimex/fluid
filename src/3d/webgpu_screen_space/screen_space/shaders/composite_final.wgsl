@@ -242,6 +242,6 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
     color = mix(color, litShadowed, a);
   }
 
-  let exposure = 1.2;
+  let exposure = envUniforms.sceneExposure;
   return vec4<f32>(color * exposure, 1.0);
 }

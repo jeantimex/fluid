@@ -223,9 +223,9 @@ export class MarchingCubesRenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // Render uniforms: viewProjection (64) + color (16) + lightDir (12) + pad (4) = 96 bytes
+    // Render uniforms: viewProjection (64) + color (16) + lightDir (12) + ambient (4) + exposure (4) = 100 bytes. Round to 112.
     this.renderUniformBuffer = device.createBuffer({
-      size: 96,
+      size: 112,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -617,7 +617,7 @@ export class MarchingCubesRenderer {
     const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 200.0);
     const viewProj = mat4Multiply(projection, camera.viewMatrix);
 
-    const uniforms = new Float32Array(24);
+    const uniforms = new Float32Array(28);
     uniforms.set(viewProj);
     uniforms[16] = config.surfaceColor.r;
     uniforms[17] = config.surfaceColor.g;
@@ -627,7 +627,8 @@ export class MarchingCubesRenderer {
     uniforms[20] = config.dirToSun.x;
     uniforms[21] = config.dirToSun.y;
     uniforms[22] = config.dirToSun.z;
-    uniforms[23] = 0;
+    uniforms[23] = config.floorAmbient;
+    uniforms[24] = config.sceneExposure;
     this.device.queue.writeBuffer(this.renderUniformBuffer, 0, uniforms);
 
     // Build & Upload Obstacle Geometry

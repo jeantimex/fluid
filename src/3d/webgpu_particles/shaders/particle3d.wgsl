@@ -99,6 +99,7 @@ struct Uniforms {
   canvasSize: vec2<f32>,
   particleRadius: f32,
   velocityDisplayMax: f32,
+  sceneExposure: f32,
 };
 
 // ============================================================================
@@ -315,5 +316,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
   // Return opaque colored pixel
   // Alpha = 1.0 (fully opaque)
-  return vec4<f32>(in.color, 1.0);
+  return vec4<f32>(in.color * uniforms.sceneExposure, 1.0);
 }

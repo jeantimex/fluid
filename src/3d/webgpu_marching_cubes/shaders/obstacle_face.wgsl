@@ -23,7 +23,8 @@ struct Uniforms {
   viewProjection: mat4x4<f32>,
   pad0: vec4<f32>,
   lightDir: vec3<f32>,
-  _pad1: f32,
+  ambient: f32,
+  sceneExposure: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -54,6 +55,6 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
   let n = normalize(input.normal);
   let l = normalize(uniforms.lightDir);
   let diffuse = dot(n, l) * 0.5 + 0.5;
-  let shading = 0.25 + 0.75 * diffuse;
-  return vec4<f32>(input.color.rgb * shading, input.color.a);
+  let shading = uniforms.ambient + (1.0 - uniforms.ambient) * diffuse;
+  return vec4<f32>(input.color.rgb * shading * uniforms.sceneExposure, input.color.a);
 }

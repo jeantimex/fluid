@@ -575,6 +575,7 @@ export class Renderer {
     uniforms[17] = this.canvas.height; // canvasSize.y
     uniforms[18] = config.particleRadius * dpr; // particleRadius in device pixels
     uniforms[19] = config.velocityDisplayMax; // For velocity → color mapping
+    uniforms[20] = config.sceneExposure;
 
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
