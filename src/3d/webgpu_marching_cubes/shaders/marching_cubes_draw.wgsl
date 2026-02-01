@@ -31,6 +31,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VSOut {
 fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
   let n = normalize(input.normal);
   let l = normalize(uniforms.lightDir);
-  let shading = dot(n, l) * 0.5 + 0.5;
+  let diffuse = dot(n, l) * 0.5 + 0.5;
+  let shading = 0.25 + 0.75 * diffuse;
   return vec4<f32>(uniforms.color.rgb * shading, uniforms.color.a);
 }

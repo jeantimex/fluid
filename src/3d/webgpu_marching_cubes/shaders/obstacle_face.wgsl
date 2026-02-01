@@ -53,6 +53,7 @@ fn vs_main(input: VertexIn) -> VertexOut {
 fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
   let n = normalize(input.normal);
   let l = normalize(uniforms.lightDir);
-  let shading = max(dot(n, l) * 0.5 + 0.5, 0.15);
+  let diffuse = dot(n, l) * 0.5 + 0.5;
+  let shading = 0.25 + 0.75 * diffuse;
   return vec4<f32>(input.color.rgb * shading, input.color.a);
 }
