@@ -12,7 +12,8 @@
  * @module fluid_simulation
  */
 
-import type { SimConfig, SimState } from '../common/types.ts';
+import type { SimState } from '../common/types.ts';
+import type { ParticlesConfig } from './types.ts';
 import { createSpawnData } from '../common/spawn.ts';
 import { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import { ComputePipelinesLinear } from './compute_pipelines_linear.ts';
@@ -44,7 +45,7 @@ export class FluidSimulation {
   private context: GPUCanvasContext;
 
   /** Simulation configuration (bounds, radii, multipliers, etc.). */
-  private config: SimConfig;
+  private config: ParticlesConfig;
 
   // ===========================================================================
   // Subsystems
@@ -134,7 +135,7 @@ export class FluidSimulation {
     device: GPUDevice,
     context: GPUCanvasContext,
     canvas: HTMLCanvasElement,
-    config: SimConfig,
+    config: ParticlesConfig,
     format: GPUTextureFormat
   ) {
     this.device = device;
@@ -225,7 +226,7 @@ export class FluidSimulation {
   /**
    * Advances the simulation by one frame.
    *
-   * Runs {@link SimConfig.iterationsPerFrame} sub-steps, each executing the
+   * Runs {@link ParticlesConfig.iterationsPerFrame} sub-steps, each executing the
    * full SPH pipeline: external forces → spatial hash → density → pressure →
    * viscosity → integration. The effective timestep is clamped by
    * `config.maxTimestepFPS` and scaled by `config.timeScale`.

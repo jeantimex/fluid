@@ -5,7 +5,7 @@
  * shadow, foam, and composite.
  */
 
-import type { SimConfig } from '../../common/types.ts';
+import type { ScreenSpaceConfig } from '../types.ts';
 import type {
   ScreenSpaceFrame,
   ScreenSpaceTextures,
@@ -30,7 +30,7 @@ import { CompositePass } from './passes/composite_pass.ts';
 export class ScreenSpaceRenderer {
   private device: GPUDevice;
   private canvas: HTMLCanvasElement;
-  private config: SimConfig;
+  private config: ScreenSpaceConfig;
 
   private width = 0;
   private height = 0;
@@ -57,7 +57,7 @@ export class ScreenSpaceRenderer {
     device: GPUDevice,
     canvas: HTMLCanvasElement,
     format: GPUTextureFormat,
-    config: SimConfig
+    config: ScreenSpaceConfig
   ) {
     this.device = device;
     this.canvas = canvas;

@@ -45,33 +45,7 @@ export interface SimConfig {
   spawnDensity: number;
   initialVelocity: Vec3;
   jitterStr: number;
-  velocityDisplayMax: number;
-  screenSpaceDebugMode: number;
-  gradientResolution: number;
-  colorKeys: ColorKey[];
   spawnRegions: SpawnRegion[];
-
-  // Foam Settings
-  foamSpawnRate: number;
-  trappedAirVelocityMin: number;
-  trappedAirVelocityMax: number;
-  foamKineticEnergyMin: number;
-  foamKineticEnergyMax: number;
-  bubbleBuoyancy: number;
-  bubbleScale: number;
-  foamLifetimeMin: number;
-  foamLifetimeMax: number;
-  foamColor: RGB;
-  foamOpacity: number;
-  sprayClassifyMaxNeighbours: number;
-  bubbleClassifyMinNeighbours: number;
-  extinctionCoeff: Vec3;
-  extinctionMultiplier: number;
-  refractionStrength: number;
-  foamParticleRadius: number;
-  spawnRateFadeInTime: number;
-  spawnRateFadeStartTime: number;
-  bubbleChangeScaleSpeed: number;
 }
 
 export interface InputState {

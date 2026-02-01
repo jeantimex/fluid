@@ -61,7 +61,7 @@
 import particleShader from './shaders/particle3d.wgsl?raw';
 import lineShader from './shaders/line3d.wgsl?raw';
 import type { SimulationBuffers } from './simulation_buffers.ts';
-import type { SimConfig } from '../common/types.ts';
+import type { ParticlesConfig } from './types.ts';
 import { mat4Perspective, mat4Multiply } from './math_utils.ts';
 import { buildGradientLut } from '../common/kernels.ts';
 
@@ -228,7 +228,7 @@ export class Renderer {
     device: GPUDevice,
     canvas: HTMLCanvasElement,
     format: GPUTextureFormat,
-    config: SimConfig
+    config: ParticlesConfig
   ) {
     this.device = device;
     this.canvas = canvas;
@@ -518,7 +518,7 @@ export class Renderer {
    * @param config - Simulation configuration with obstacle parameters
    * @returns Face and edge vertex counts (both 0 if obstacle is disabled)
    */
-  private buildObstacleGeometry(config: SimConfig): {
+  private buildObstacleGeometry(config: ParticlesConfig): {
     faceCount: number;
     edgeCount: number;
   } {
@@ -637,7 +637,7 @@ export class Renderer {
   render(
     encoder: GPUCommandEncoder,
     view: GPUTextureView,
-    config: SimConfig,
+    config: ParticlesConfig,
     buffers: SimulationBuffers,
     viewMatrix: Float32Array
   ) {

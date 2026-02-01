@@ -49,6 +49,7 @@ import './style.css';
 import { createConfig } from '../common/config.ts';
 import { setupGui } from '../common/gui.ts';
 import { FluidSimulation } from './fluid_simulation.ts';
+import type { ScreenSpaceConfig } from './types.ts';
 import { OrbitCamera } from './orbit_camera.ts';
 import {
   initWebGPU,
@@ -90,9 +91,36 @@ if (!app) throw new Error('Missing #app container');
 const canvas = createCanvas(app);
 
 // Initialize simulation configuration with default values
-const config = createConfig();
-config.viscosityStrength = 0.01;
-config.iterationsPerFrame = 2;
+const config: ScreenSpaceConfig = {
+  ...createConfig(),
+  viscosityStrength: 0.01,
+  iterationsPerFrame: 2,
+  screenSpaceDebugMode: 4,
+
+  // Foam Settings (matching Unity exact values)
+  foamSpawnRate: 70,
+  trappedAirVelocityMin: 5,
+  trappedAirVelocityMax: 25,
+  foamKineticEnergyMin: 15,
+  foamKineticEnergyMax: 80,
+  bubbleBuoyancy: 1.4,
+  bubbleScale: 0.3,
+  foamLifetimeMin: 10,
+  foamLifetimeMax: 30,
+  foamColor: { r: 0.95, g: 0.98, b: 1.0 },
+  foamOpacity: 2.5,
+  sprayClassifyMaxNeighbours: 5,
+  bubbleClassifyMinNeighbours: 15,
+  foamParticleRadius: 1.0,
+  spawnRateFadeInTime: 0.75,
+  spawnRateFadeStartTime: 0.1,
+  bubbleChangeScaleSpeed: 7,
+
+  // Rendering
+  extinctionCoeff: { x: 2.12, y: 0.43, z: 0.3 },
+  extinctionMultiplier: 2.24,
+  refractionStrength: 9.15,
+};
 
 // Simulation instance (initialized asynchronously in main())
 let simulation: FluidSimulation | null = null;
@@ -104,7 +132,7 @@ camera.theta = Math.PI / 6; // Original rotation
 camera.phi = Math.PI / 2.5; // ~72 degrees from vertical (looking slightly down)
 
 // Set up the GUI controls panel
-const { stats } = setupGui(
+const { stats, gui } = setupGui(
   config,
   {
     onReset: () => simulation?.reset(),
@@ -116,6 +144,93 @@ const { stats } = setupGui(
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
+
+// Add particle radius control to the Particles folder
+const particlesFolder = gui.folders.find((f) => f._title === 'Particles');
+if (particlesFolder) {
+  particlesFolder.add(config, 'particleRadius', 1, 5, 0.1).name('Particle Radius');
+}
+
+// ---------------------------------------------------------------------------
+// Foam GUI Controls (screen-space demo only)
+// ---------------------------------------------------------------------------
+const foamFolder = gui.addFolder('Foam');
+foamFolder.close();
+
+foamFolder.add(config, 'foamSpawnRate', 0, 1000, 1).name('Spawn Rate');
+foamFolder
+  .add(config, 'trappedAirVelocityMin', 0, 50, 0.1)
+  .name('Air Vel Min');
+foamFolder
+  .add(config, 'trappedAirVelocityMax', 0, 100, 0.1)
+  .name('Air Vel Max');
+foamFolder
+  .add(config, 'foamKineticEnergyMin', 0, 50, 0.1)
+  .name('Kinetic Min');
+foamFolder
+  .add(config, 'foamKineticEnergyMax', 0, 200, 0.1)
+  .name('Kinetic Max');
+foamFolder.add(config, 'bubbleBuoyancy', 0, 5, 0.1).name('Buoyancy');
+foamFolder.add(config, 'bubbleScale', 0, 2, 0.01).name('Scale');
+foamFolder.add(config, 'foamLifetimeMin', 0, 30, 0.1).name('Lifetime Min');
+foamFolder.add(config, 'foamLifetimeMax', 0, 60, 0.1).name('Lifetime Max');
+foamFolder.addColor(config, 'foamColor').name('Color');
+foamFolder.add(config, 'foamOpacity', 0, 20, 0.1).name('Opacity');
+foamFolder
+  .add(config, 'sprayClassifyMaxNeighbours', 0, 20, 1)
+  .name('Spray Max Neighbors');
+foamFolder
+  .add(config, 'bubbleClassifyMinNeighbours', 0, 50, 1)
+  .name('Bubble Min Neighbors');
+foamFolder
+  .add(config, 'foamParticleRadius', 0.1, 5, 0.1)
+  .name('Particle Radius');
+foamFolder
+  .add(config, 'spawnRateFadeInTime', 0, 5, 0.01)
+  .name('Spawn Fade-In Time');
+foamFolder
+  .add(config, 'spawnRateFadeStartTime', 0, 5, 0.01)
+  .name('Spawn Fade Start');
+foamFolder
+  .add(config, 'bubbleChangeScaleSpeed', 0, 20, 0.1)
+  .name('Bubble Scale Speed');
+
+// ---------------------------------------------------------------------------
+// Rendering GUI Controls (screen-space demo only)
+// ---------------------------------------------------------------------------
+const renderingFolder = gui.addFolder('Rendering');
+renderingFolder.close();
+
+renderingFolder
+  .add(config.extinctionCoeff, 'x', 0, 5, 0.01)
+  .name('Extinction R');
+renderingFolder
+  .add(config.extinctionCoeff, 'y', 0, 5, 0.01)
+  .name('Extinction G');
+renderingFolder
+  .add(config.extinctionCoeff, 'z', 0, 5, 0.01)
+  .name('Extinction B');
+renderingFolder
+  .add(config, 'extinctionMultiplier', 0, 10, 0.01)
+  .name('Extinction Multiplier');
+renderingFolder
+  .add(config, 'refractionStrength', 0, 20, 0.01)
+  .name('Refraction Strength');
+
+// ---------------------------------------------------------------------------
+// Debug GUI Controls (screen-space demo only)
+// ---------------------------------------------------------------------------
+const debugFolder = gui.addFolder('Debug');
+debugFolder.close();
+debugFolder
+  .add(config, 'screenSpaceDebugMode', {
+    Shaded: 4,
+    Depth: 0,
+    Thickness: 1,
+    Normal: 2,
+    Smooth: 3,
+  })
+  .name('Screen-Space View');
 
 /**
  * Main Application Entry Point

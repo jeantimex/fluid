@@ -49,6 +49,7 @@ import './style.css';
 import { createConfig } from '../common/config.ts';
 import { setupGui } from '../common/gui.ts';
 import { FluidSimulation } from './fluid_simulation.ts';
+import type { ParticlesConfig } from './types.ts';
 import { OrbitCamera } from './orbit_camera.ts';
 import {
   initWebGPU,
@@ -90,9 +91,19 @@ if (!app) throw new Error('Missing #app container');
 const canvas = createCanvas(app);
 
 // Initialize simulation configuration with default values
-const config = createConfig();
-config.viscosityStrength = 0;
-config.iterationsPerFrame = 3;
+const config: ParticlesConfig = {
+  ...createConfig(),
+  viscosityStrength: 0,
+  iterationsPerFrame: 3,
+  velocityDisplayMax: 6.5,
+  gradientResolution: 64,
+  colorKeys: [
+    { t: 4064 / 65535, r: 0.13363299, g: 0.34235913, b: 0.7264151 }, // Slow: blue
+    { t: 33191 / 65535, r: 0.2980392, g: 1, b: 0.56327766 }, // Medium: cyan-green
+    { t: 46738 / 65535, r: 1, g: 0.9309917, b: 0 }, // Fast: yellow
+    { t: 1, r: 0.96862745, g: 0.28555763, b: 0.031372573 }, // Very fast: orange
+  ],
+};
 
 // Simulation instance (initialized asynchronously in main())
 let simulation: FluidSimulation | null = null;
@@ -104,7 +115,7 @@ camera.theta = Math.PI / 6; // 30 degrees horizontal rotation
 camera.phi = Math.PI / 2.5; // ~72 degrees from vertical (looking slightly down)
 
 // Set up the GUI controls panel
-const { stats } = setupGui(
+const { stats, gui } = setupGui(
   config,
   {
     onReset: () => simulation?.reset(),
@@ -116,6 +127,12 @@ const { stats } = setupGui(
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
+
+// Add particle-rendering controls specific to this demo
+const particlesFolder = gui.folders.find((f) => f._title === 'Particles');
+if (particlesFolder) {
+  particlesFolder.add(config, 'particleRadius', 1, 5, 0.1).name('Particle Radius');
+}
 
 /**
  * Main Application Entry Point

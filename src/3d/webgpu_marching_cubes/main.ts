@@ -167,15 +167,6 @@ const { stats, gui } = setupGui(
   }
 );
 
-// Remove "Particle Radius" which is unused in Marching Cubes (size is controlled by Smoothing Radius)
-const particlesFolder = gui.folders.find((f) => f._title === 'Particles');
-if (particlesFolder) {
-  const radiusCtrl = particlesFolder.controllers.find(
-    (c) => c._name === 'Particle Radius'
-  );
-  if (radiusCtrl) radiusCtrl.destroy();
-}
-
 // ---------------------------------------------------------------------------
 // Marching Cubes GUI Controls
 // ---------------------------------------------------------------------------
