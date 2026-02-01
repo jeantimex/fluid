@@ -460,14 +460,16 @@ export class MarchingCubesRenderer {
       return [x3, y3, z2];
     };
 
-    // Per-face normals in local space, rotated to world space
+    // Per-face normals in local space, rotated to world space.
+    // Negated (inward-pointing) to match the marching cubes convention
+    // where normals are the density gradient pointing into the surface.
     const faceNormals: [number, number, number][] = [
-      rotateDir(0, 0, -1), // -Z back
-      rotateDir(0, 0, +1), // +Z front
-      rotateDir(-1, 0, 0), // -X left
-      rotateDir(+1, 0, 0), // +X right
-      rotateDir(0, -1, 0), // -Y bottom
-      rotateDir(0, +1, 0), // +Y top
+      rotateDir(0, 0, +1), // -Z back  (inward)
+      rotateDir(0, 0, -1), // +Z front (inward)
+      rotateDir(+1, 0, 0), // -X left  (inward)
+      rotateDir(-1, 0, 0), // +X right (inward)
+      rotateDir(0, +1, 0), // -Y bottom(inward)
+      rotateDir(0, -1, 0), // +Y top   (inward)
     ];
 
     let offset = 0;
