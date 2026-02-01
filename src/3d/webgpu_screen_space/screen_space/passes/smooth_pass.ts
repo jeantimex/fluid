@@ -108,5 +108,4 @@ export class SmoothPass {
     pass.draw(6, 1);
     pass.end();
   }
-
 }

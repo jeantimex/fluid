@@ -12,10 +12,8 @@
  */
 
 import marchingCubesShader from './shaders/marching_cubes.wgsl?raw';
-import densityProbeShader from './shaders/density_probe.wgsl?raw';
 import renderArgsShader from './shaders/render_args.wgsl?raw';
 import drawShader from './shaders/marching_cubes_draw.wgsl?raw';
-import lineShader from './shaders/line3d.wgsl?raw';
 import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
 import {
   marchingCubesEdgeA,
@@ -25,19 +23,20 @@ import {
   marchingCubesOffsets,
 } from './marching_cubes_tables.ts';
 import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
-import { mat4Multiply, mat4Perspective } from '../webgpu_particles/math_utils.ts';
+import {
+  mat4Multiply,
+  mat4Perspective,
+} from '../webgpu_particles/math_utils.ts';
 import type { MarchingCubesConfig } from './types.ts';
 import type { SimConfig } from '../common/types.ts';
 
 export class MarchingCubesRenderer {
   private device: GPUDevice;
   private canvas: HTMLCanvasElement;
-  private format: GPUTextureFormat;
 
   private marchingPipeline: GPUComputePipeline;
   private renderArgsPipeline: GPUComputePipeline;
   private drawPipeline: GPURenderPipeline;
-  private linePipeline: GPURenderPipeline;
   private facePipeline: GPURenderPipeline;
 
   private sampler: GPUSampler;
@@ -54,14 +53,6 @@ export class MarchingCubesRenderer {
   private renderArgsBuffer!: GPUBuffer;
   private renderArgsParamsBuffer!: GPUBuffer;
   private triangleCountReadback!: GPUBuffer;
-  private debugReadbackPending = false;
-  private debugFrame = 0;
-  private probePipeline: GPUComputePipeline;
-  private probeParamsBuffer: GPUBuffer;
-  private probeOutBuffer: GPUBuffer;
-  private probeReadback: GPUBuffer;
-  private probeBindGroup!: GPUBindGroup;
-  private probePending = false;
 
   private lutBuffer: GPUBuffer;
   private offsetsBuffer: GPUBuffer;
@@ -72,7 +63,6 @@ export class MarchingCubesRenderer {
   private computeBindGroup!: GPUBindGroup;
   private renderArgsBindGroup!: GPUBindGroup;
   private drawBindGroup!: GPUBindGroup;
-  private lineBindGroup!: GPUBindGroup;
   private faceBindGroup!: GPUBindGroup;
 
   private lineVertexBuffer!: GPUBuffer;
@@ -88,34 +78,38 @@ export class MarchingCubesRenderer {
   private depthHeight = 0;
   private resetCounterData = new Uint32Array([0]);
 
-  constructor(device: GPUDevice, canvas: HTMLCanvasElement, format: GPUTextureFormat) {
+  constructor(
+    device: GPUDevice,
+    canvas: HTMLCanvasElement,
+    format: GPUTextureFormat
+  ) {
     this.device = device;
     this.canvas = canvas;
-    this.format = format;
-
-    const marchingModule = device.createShaderModule({ code: marchingCubesShader });
+    const marchingModule = device.createShaderModule({
+      code: marchingCubesShader,
+    });
     this.marchingPipeline = device.createComputePipeline({
       layout: 'auto',
       compute: { module: marchingModule, entryPoint: 'main' },
     });
 
-    const renderArgsModule = device.createShaderModule({ code: renderArgsShader });
+    const renderArgsModule = device.createShaderModule({
+      code: renderArgsShader,
+    });
     this.renderArgsPipeline = device.createComputePipeline({
       layout: 'auto',
       compute: { module: renderArgsModule, entryPoint: 'main' },
-    });
-
-    const probeModule = device.createShaderModule({ code: densityProbeShader });
-    this.probePipeline = device.createComputePipeline({
-      layout: 'auto',
-      compute: { module: probeModule, entryPoint: 'main' },
     });
 
     const drawModule = device.createShaderModule({ code: drawShader });
     this.drawPipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: drawModule, entryPoint: 'vs_main' },
-      fragment: { module: drawModule, entryPoint: 'fs_main', targets: [{ format }] },
+      fragment: {
+        module: drawModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
       depthStencil: {
         format: 'depth24plus',
@@ -125,47 +119,8 @@ export class MarchingCubesRenderer {
     });
 
     // -------------------------------------------------------------------------
-    // Create Line & Face Render Pipelines (Obstacle)
+    // Create Face Render Pipeline (Obstacle)
     // -------------------------------------------------------------------------
-    const lineModule = device.createShaderModule({ code: lineShader });
-
-    this.linePipeline = device.createRenderPipeline({
-      layout: 'auto',
-      vertex: {
-        module: lineModule,
-        entryPoint: 'vs_main',
-        buffers: [
-          {
-            // Vertex buffer layout: pos (vec3) + color (vec4)
-            arrayStride: 28, // 3 × 4 + 4 × 4 = 28 bytes
-            attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x3' }, // pos
-              { shaderLocation: 1, offset: 12, format: 'float32x4' }, // color
-            ],
-          },
-        ],
-      },
-      fragment: {
-        module: lineModule,
-        entryPoint: 'fs_main',
-        targets: [
-          {
-            format,
-            blend: {
-              color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-            },
-          },
-        ],
-      },
-      primitive: { topology: 'line-list' },
-      depthStencil: {
-        format: 'depth24plus',
-        depthWriteEnabled: true,
-        depthCompare: 'less',
-      },
-    });
-
     const faceModule = device.createShaderModule({ code: obstacleFaceShader });
     this.facePipeline = device.createRenderPipeline({
       layout: 'auto',
@@ -176,7 +131,7 @@ export class MarchingCubesRenderer {
           {
             arrayStride: 40, // pos(12) + normal(12) + color(16)
             attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x3' },  // pos
+              { shaderLocation: 0, offset: 0, format: 'float32x3' }, // pos
               { shaderLocation: 1, offset: 12, format: 'float32x3' }, // normal
               { shaderLocation: 2, offset: 24, format: 'float32x4' }, // color
             ],
@@ -190,8 +145,16 @@ export class MarchingCubesRenderer {
           {
             format,
             blend: {
-              color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+              color: {
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
+              alpha: {
+                srcFactor: 'one',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
             },
           },
         ],
@@ -235,19 +198,6 @@ export class MarchingCubesRenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    this.probeParamsBuffer = device.createBuffer({
-      size: 16,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    this.probeOutBuffer = device.createBuffer({
-      size: 4,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-    this.probeReadback = device.createBuffer({
-      size: 4,
-      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-    });
-
     this.lutBuffer = device.createBuffer({
       size: marchingCubesLut.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -279,14 +229,18 @@ export class MarchingCubesRenderer {
     this.device.queue.writeBuffer(this.edgeBBuffer, 0, marchingCubesEdgeB);
   }
 
-  recreate(densityTextureView: GPUTextureView, size: { x: number; y: number; z: number }): void {
+  recreate(
+    densityTextureView: GPUTextureView,
+    size: { x: number; y: number; z: number }
+  ): void {
     this.densityTextureSize = { ...size };
 
     const voxelsX = Math.max(1, size.x - 1);
     const voxelsY = Math.max(1, size.y - 1);
     const voxelsZ = Math.max(1, size.z - 1);
     const numVoxels = voxelsX * voxelsY * voxelsZ;
-    const maxStorage = this.device.limits.maxStorageBufferBindingSize ?? 268_435_456;
+    const maxStorage =
+      this.device.limits.maxStorageBufferBindingSize ?? 268_435_456;
     const maxBuffer = this.device.limits.maxBufferSize ?? 268_435_456;
     const maxBytes = Math.min(maxStorage, maxBuffer);
     const vertexStride = 32; // vec3 position + vec3 normal (std430 alignment)
@@ -369,23 +323,9 @@ export class MarchingCubesRenderer {
       ],
     });
 
-    this.lineBindGroup = this.device.createBindGroup({
-      layout: this.linePipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: this.renderUniformBuffer } }],
-    });
-
     this.faceBindGroup = this.device.createBindGroup({
       layout: this.facePipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.renderUniformBuffer } }],
-    });
-
-    this.probeBindGroup = this.device.createBindGroup({
-      layout: this.probePipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: densityTextureView },
-        { binding: 1, resource: { buffer: this.probeParamsBuffer } },
-        { binding: 2, resource: { buffer: this.probeOutBuffer } },
-      ],
     });
   }
 
@@ -416,9 +356,12 @@ export class MarchingCubesRenderer {
     const rx = config.obstacleRotation.x * degToRad;
     const ry = config.obstacleRotation.y * degToRad;
     const rz = config.obstacleRotation.z * degToRad;
-    const cosX = Math.cos(rx), sinX = Math.sin(rx);
-    const cosY = Math.cos(ry), sinY = Math.sin(ry);
-    const cosZ = Math.cos(rz), sinZ = Math.sin(rz);
+    const cosX = Math.cos(rx),
+      sinX = Math.sin(rx);
+    const cosY = Math.cos(ry),
+      sinY = Math.sin(ry);
+    const cosZ = Math.cos(rz),
+      sinZ = Math.sin(rz);
 
     const rotate = (
       lx: number,
@@ -460,22 +403,23 @@ export class MarchingCubesRenderer {
       return [x3, y3, z2];
     };
 
-    // Per-face normals in local space, rotated to world space.
-    // Negated (inward-pointing) to match the marching cubes convention
-    // where normals are the density gradient pointing into the surface.
+    // Per-face outward normals in local space, rotated to world space.
     const faceNormals: [number, number, number][] = [
-      rotateDir(0, 0, +1), // -Z back  (inward)
-      rotateDir(0, 0, -1), // +Z front (inward)
-      rotateDir(+1, 0, 0), // -X left  (inward)
-      rotateDir(-1, 0, 0), // +X right (inward)
-      rotateDir(0, +1, 0), // -Y bottom(inward)
-      rotateDir(0, -1, 0), // +Y top   (inward)
+      rotateDir(0, 0, -1), // -Z back
+      rotateDir(0, 0, +1), // +Z front
+      rotateDir(-1, 0, 0), // -X left
+      rotateDir(+1, 0, 0), // +X right
+      rotateDir(0, -1, 0), // -Y bottom
+      rotateDir(0, +1, 0), // +Y top
     ];
 
     let offset = 0;
 
     // Face vertex: pos(3) + normal(3) + color(4) = 10 floats
-    const faceVert = (p: [number, number, number], n: [number, number, number]) => {
+    const faceVert = (
+      p: [number, number, number],
+      n: [number, number, number]
+    ) => {
       this.lineVertexData[offset++] = p[0];
       this.lineVertexData[offset++] = p[1];
       this.lineVertexData[offset++] = p[2];
@@ -518,9 +462,18 @@ export class MarchingCubesRenderer {
     const faceCount = 36;
 
     const edges = [
-      [0, 1], [1, 2], [2, 3], [3, 0], // back face (-z)
-      [4, 5], [5, 6], [6, 7], [7, 4], // front face (+z)
-      [0, 4], [1, 5], [2, 6], [3, 7], // connecting edges
+      [0, 1],
+      [1, 2],
+      [2, 3],
+      [3, 0], // back face (-z)
+      [4, 5],
+      [5, 6],
+      [6, 7],
+      [7, 4], // front face (+z)
+      [0, 4],
+      [1, 5],
+      [2, 6],
+      [3, 7], // connecting edges
     ];
 
     for (const [a, b] of edges) {
@@ -555,7 +508,11 @@ export class MarchingCubesRenderer {
     this.device.queue.writeBuffer(this.paramsBuffer, 0, this.paramsData);
 
     // Reset triangle counter
-    this.device.queue.writeBuffer(this.triangleCountBuffer, 0, this.resetCounterData);
+    this.device.queue.writeBuffer(
+      this.triangleCountBuffer,
+      0,
+      this.resetCounterData
+    );
 
     // Marching cubes compute pass
     const mcPass = encoder.beginComputePass();
@@ -586,9 +543,9 @@ export class MarchingCubesRenderer {
     uniforms[17] = config.surfaceColor.g;
     uniforms[18] = config.surfaceColor.b;
     uniforms[19] = 1.0;
-    uniforms[20] = 0.83;
-    uniforms[21] = 0.42;
-    uniforms[22] = 0.36;
+    uniforms[20] = -0.36;
+    uniforms[21] = 0.8;
+    uniforms[22] = -0.45;
     uniforms[23] = 0;
     this.device.queue.writeBuffer(this.renderUniformBuffer, 0, uniforms);
 
@@ -640,7 +597,11 @@ export class MarchingCubesRenderer {
   private ensureDepthTexture(): void {
     const width = Math.max(1, this.canvas.width);
     const height = Math.max(1, this.canvas.height);
-    if (this.depthTexture && width === this.depthWidth && height === this.depthHeight) {
+    if (
+      this.depthTexture &&
+      width === this.depthWidth &&
+      height === this.depthHeight
+    ) {
       return;
     }
 

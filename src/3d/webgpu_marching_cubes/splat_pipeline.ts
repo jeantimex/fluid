@@ -312,7 +312,10 @@ export class SplatPipeline {
    * @param particleCount - Number of active particles this frame
    * @param config - Current simulation configuration (bounds, smoothing radius)
    */
-  private updateParams(particleCount: number, config: MarchingCubesConfig): void {
+  private updateParams(
+    particleCount: number,
+    config: MarchingCubesConfig
+  ): void {
     const bounds = config.boundsSize;
     const radius = config.smoothingRadius;
 

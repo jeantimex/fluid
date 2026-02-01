@@ -44,7 +44,7 @@ fn calculateNormal(coord: vec3<i32>) -> vec3<f32> {
   let dx = sampleDensity(coord + vec3<i32>(1, 0, 0)) - sampleDensity(coord - vec3<i32>(1, 0, 0));
   let dy = sampleDensity(coord + vec3<i32>(0, 1, 0)) - sampleDensity(coord - vec3<i32>(0, 1, 0));
   let dz = sampleDensity(coord + vec3<i32>(0, 0, 1)) - sampleDensity(coord - vec3<i32>(0, 0, 1));
-  return normalize(vec3<f32>(dx, dy, dz));
+  return normalize(-vec3<f32>(dx, dy, dz));
 }
 
 fn createVertex(coordA: vec3<i32>, coordB: vec3<i32>) -> Vertex {

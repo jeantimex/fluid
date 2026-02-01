@@ -94,7 +94,7 @@ export class RaymarchRenderer {
   private bindGroup!: GPUBindGroup;
 
   /** CPU-side typed array mirroring the uniform buffer contents (84 floats). */
-  private uniformData = new Float32Array(28);
+  private uniformData!: Float32Array<ArrayBuffer>;
 
   // ---------------------------------------------------------------------------
   // Blit / Half-Resolution Rendering

@@ -683,21 +683,11 @@ export class FluidSimulation {
     this.renderer.resize();
     const encoder = this.device.createCommandEncoder();
     this.dispatchCull(encoder, viewMatrix);
-    // Renderer expects SimulationBuffers, but we pass SimulationBuffersLinear.
-    // Structural typing should allow this if fields match.
-    // SimulationBuffersLinear is missing 'sortedKeys' and 'spatialOffsets' from original SimulationBuffers.
-    // Does Renderer use them?
-    // Renderer uses: positions, velocities, visibleIndices, indirectDraw.
-    // It creates bind group using these.
-    // Renderer.ts:
-    // entries: [ { buffer: buffers.positions }, { buffer: buffers.velocities }, { buffer: this.uniformBuffer }, { buffer: this.gradientBuffer }, { buffer: buffers.visibleIndices } ]
-    // It does not use sortedKeys or spatialOffsets.
-    // So it should work!
     this.renderer.render(
       encoder,
       this.context.getCurrentTexture().createView(),
       this.config,
-      this.buffers as any, // Cast to any or compatible type if needed
+      this.buffers,
       viewMatrix
     );
     this.device.queue.submit([encoder.finish()]);

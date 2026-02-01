@@ -50,13 +50,13 @@ import { createConfig } from '../common/config.ts';
 import { setupGui } from '../common/gui.ts';
 import { FluidSimulation } from './fluid_simulation.ts';
 import type { ScreenSpaceConfig } from './types.ts';
-import { OrbitCamera } from './orbit_camera.ts';
+import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import {
   initWebGPU,
   configureContext,
   WebGPUInitError,
-} from './webgpu_utils.ts';
-import { setupInputHandlers } from './input_handler.ts';
+} from '../webgpu_particles/webgpu_utils.ts';
+import { setupInputHandlers } from '../webgpu_particles/input_handler.ts';
 
 /**
  * Creates and inserts a canvas element into the application container.
@@ -148,7 +148,9 @@ const { stats, gui } = setupGui(
 // Add particle radius control to the Particles folder
 const particlesFolder = gui.folders.find((f) => f._title === 'Particles');
 if (particlesFolder) {
-  particlesFolder.add(config, 'particleRadius', 1, 5, 0.1).name('Particle Radius');
+  particlesFolder
+    .add(config, 'particleRadius', 1, 5, 0.1)
+    .name('Particle Radius');
 }
 
 // ---------------------------------------------------------------------------
@@ -158,18 +160,12 @@ const foamFolder = gui.addFolder('Foam');
 foamFolder.close();
 
 foamFolder.add(config, 'foamSpawnRate', 0, 1000, 1).name('Spawn Rate');
-foamFolder
-  .add(config, 'trappedAirVelocityMin', 0, 50, 0.1)
-  .name('Air Vel Min');
+foamFolder.add(config, 'trappedAirVelocityMin', 0, 50, 0.1).name('Air Vel Min');
 foamFolder
   .add(config, 'trappedAirVelocityMax', 0, 100, 0.1)
   .name('Air Vel Max');
-foamFolder
-  .add(config, 'foamKineticEnergyMin', 0, 50, 0.1)
-  .name('Kinetic Min');
-foamFolder
-  .add(config, 'foamKineticEnergyMax', 0, 200, 0.1)
-  .name('Kinetic Max');
+foamFolder.add(config, 'foamKineticEnergyMin', 0, 50, 0.1).name('Kinetic Min');
+foamFolder.add(config, 'foamKineticEnergyMax', 0, 200, 0.1).name('Kinetic Max');
 foamFolder.add(config, 'bubbleBuoyancy', 0, 5, 0.1).name('Buoyancy');
 foamFolder.add(config, 'bubbleScale', 0, 2, 0.01).name('Scale');
 foamFolder.add(config, 'foamLifetimeMin', 0, 30, 0.1).name('Lifetime Min');

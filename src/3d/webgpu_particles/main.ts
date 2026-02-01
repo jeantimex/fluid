@@ -131,7 +131,9 @@ const { stats, gui } = setupGui(
 // Add particle-rendering controls specific to this demo
 const particlesFolder = gui.folders.find((f) => f._title === 'Particles');
 if (particlesFolder) {
-  particlesFolder.add(config, 'particleRadius', 1, 5, 0.1).name('Particle Radius');
+  particlesFolder
+    .add(config, 'particleRadius', 1, 5, 0.1)
+    .name('Particle Radius');
 }
 
 /**

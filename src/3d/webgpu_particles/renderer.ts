@@ -60,7 +60,7 @@
 
 import particleShader from './shaders/particle3d.wgsl?raw';
 import lineShader from './shaders/line3d.wgsl?raw';
-import type { SimulationBuffers } from './simulation_buffers.ts';
+import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import type { ParticlesConfig } from './types.ts';
 import { mat4Perspective, mat4Multiply } from './math_utils.ts';
 import { buildGradientLut } from '../common/kernels.ts';
@@ -491,7 +491,7 @@ export class Renderer {
    *
    * @param buffers - The simulation buffers containing particle data
    */
-  createBindGroup(buffers: SimulationBuffers) {
+  createBindGroup(buffers: SimulationBuffersLinear) {
     this.particleBindGroup = this.device.createBindGroup({
       layout: this.particlePipeline.getBindGroupLayout(0),
       entries: [
@@ -542,9 +542,12 @@ export class Renderer {
     const rx = config.obstacleRotation.x * degToRad;
     const ry = config.obstacleRotation.y * degToRad;
     const rz = config.obstacleRotation.z * degToRad;
-    const cosX = Math.cos(rx), sinX = Math.sin(rx);
-    const cosY = Math.cos(ry), sinY = Math.sin(ry);
-    const cosZ = Math.cos(rz), sinZ = Math.sin(rz);
+    const cosX = Math.cos(rx),
+      sinX = Math.sin(rx);
+    const cosY = Math.cos(ry),
+      sinY = Math.sin(ry);
+    const cosZ = Math.cos(rz),
+      sinZ = Math.sin(rz);
 
     // rotateLocalToWorld: rotateX → rotateY → rotateZ, then translate
     const rotate = (
@@ -606,9 +609,18 @@ export class Renderer {
 
     // --- Wireframe edges: 12 edges × 2 vertices = 24 vertices ---
     const edges = [
-      [0, 1], [1, 2], [2, 3], [3, 0], // back face (-z)
-      [4, 5], [5, 6], [6, 7], [7, 4], // front face (+z)
-      [0, 4], [1, 5], [2, 6], [3, 7], // connecting edges
+      [0, 1],
+      [1, 2],
+      [2, 3],
+      [3, 0], // back face (-z)
+      [4, 5],
+      [5, 6],
+      [6, 7],
+      [7, 4], // front face (+z)
+      [0, 4],
+      [1, 5],
+      [2, 6],
+      [3, 7], // connecting edges
     ];
 
     for (const [a, b] of edges) {
@@ -638,7 +650,7 @@ export class Renderer {
     encoder: GPUCommandEncoder,
     view: GPUTextureView,
     config: ParticlesConfig,
-    buffers: SimulationBuffers,
+    buffers: SimulationBuffersLinear,
     viewMatrix: Float32Array
   ) {
     // -------------------------------------------------------------------------
