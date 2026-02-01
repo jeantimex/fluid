@@ -15,6 +15,7 @@ import marchingCubesShader from './shaders/marching_cubes.wgsl?raw';
 import densityProbeShader from './shaders/density_probe.wgsl?raw';
 import renderArgsShader from './shaders/render_args.wgsl?raw';
 import drawShader from './shaders/marching_cubes_draw.wgsl?raw';
+import lineShader from './shaders/line3d.wgsl?raw';
 import {
   marchingCubesEdgeA,
   marchingCubesEdgeB,
@@ -25,6 +26,7 @@ import {
 import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import { mat4Multiply, mat4Perspective } from '../webgpu_particles/math_utils.ts';
 import type { MarchingCubesConfig } from './types.ts';
+import type { SimConfig } from '../common/types.ts';
 
 export class MarchingCubesRenderer {
   private device: GPUDevice;
@@ -34,6 +36,8 @@ export class MarchingCubesRenderer {
   private marchingPipeline: GPUComputePipeline;
   private renderArgsPipeline: GPUComputePipeline;
   private drawPipeline: GPURenderPipeline;
+  private linePipeline: GPURenderPipeline;
+  private facePipeline: GPURenderPipeline;
 
   private sampler: GPUSampler;
 
@@ -67,6 +71,11 @@ export class MarchingCubesRenderer {
   private computeBindGroup!: GPUBindGroup;
   private renderArgsBindGroup!: GPUBindGroup;
   private drawBindGroup!: GPUBindGroup;
+  private lineBindGroup!: GPUBindGroup;
+  private faceBindGroup!: GPUBindGroup;
+
+  private lineVertexBuffer!: GPUBuffer;
+  private lineVertexData: Float32Array;
 
   private densityTextureSize = { x: 1, y: 1, z: 1 };
   private dispatchSize = { x: 1, y: 1, z: 1 };
@@ -112,6 +121,92 @@ export class MarchingCubesRenderer {
         depthWriteEnabled: true,
         depthCompare: 'less',
       },
+    });
+
+    // -------------------------------------------------------------------------
+    // Create Line & Face Render Pipelines (Obstacle)
+    // -------------------------------------------------------------------------
+    const lineModule = device.createShaderModule({ code: lineShader });
+
+    this.linePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: lineModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            // Vertex buffer layout: pos (vec3) + color (vec4)
+            arrayStride: 28, // 3 × 4 + 4 × 4 = 28 bytes
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' }, // pos
+              { shaderLocation: 1, offset: 12, format: 'float32x4' }, // color
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: lineModule,
+        entryPoint: 'fs_main',
+        targets: [
+          {
+            format,
+            blend: {
+              color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            },
+          },
+        ],
+      },
+      primitive: { topology: 'line-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    this.facePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: lineModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 28,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: lineModule,
+        entryPoint: 'fs_main',
+        targets: [
+          {
+            format,
+            blend: {
+              color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            },
+          },
+        ],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: false, // Transparent faces don't write depth
+        depthCompare: 'less',
+      },
+    });
+
+    // Allocate for 72 vertices (36 face + 24 edge + headroom)
+    this.lineVertexData = new Float32Array(72 * 7); // 7 floats per vertex
+
+    this.lineVertexBuffer = device.createBuffer({
+      size: this.lineVertexData.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
 
     this.sampler = device.createSampler({
@@ -271,6 +366,16 @@ export class MarchingCubesRenderer {
       ],
     });
 
+    this.lineBindGroup = this.device.createBindGroup({
+      layout: this.linePipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.renderUniformBuffer } }],
+    });
+
+    this.faceBindGroup = this.device.createBindGroup({
+      layout: this.facePipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.renderUniformBuffer } }],
+    });
+
     this.probeBindGroup = this.device.createBindGroup({
       layout: this.probePipeline.getBindGroupLayout(0),
       entries: [
@@ -279,6 +384,106 @@ export class MarchingCubesRenderer {
         { binding: 2, resource: { buffer: this.probeOutBuffer } },
       ],
     });
+  }
+
+  /**
+   * Builds obstacle box geometry (filled faces + wireframe edges).
+   */
+  private buildObstacleGeometry(config: SimConfig): {
+    faceCount: number;
+    edgeCount: number;
+  } {
+    const hx = config.obstacleSize.x * 0.5;
+    const hy = config.obstacleSize.y * 0.5;
+    const hz = config.obstacleSize.z * 0.5;
+
+    if (hx <= 0 || hy <= 0 || hz <= 0) {
+      return { faceCount: 0, edgeCount: 0 };
+    }
+
+    const cx = config.obstacleCentre.x;
+    const cy = config.obstacleCentre.y;
+    const cz = config.obstacleCentre.z;
+
+    const color = config.obstacleColor ?? { r: 1, g: 0, b: 0 };
+    const alpha = config.obstacleAlpha ?? 0.8;
+
+    // Rotation (degrees → radians)
+    const degToRad = Math.PI / 180;
+    const rx = config.obstacleRotation.x * degToRad;
+    const ry = config.obstacleRotation.y * degToRad;
+    const rz = config.obstacleRotation.z * degToRad;
+    const cosX = Math.cos(rx), sinX = Math.sin(rx);
+    const cosY = Math.cos(ry), sinY = Math.sin(ry);
+    const cosZ = Math.cos(rz), sinZ = Math.sin(rz);
+
+    const rotate = (
+      lx: number,
+      ly: number,
+      lz: number
+    ): [number, number, number] => {
+      const y1 = ly * cosX - lz * sinX;
+      const z1 = ly * sinX + lz * cosX;
+      const x2 = lx * cosY + z1 * sinY;
+      const z2 = -lx * sinY + z1 * cosY;
+      const x3 = x2 * cosZ - y1 * sinZ;
+      const y3 = x2 * sinZ + y1 * cosZ;
+      return [x3 + cx, y3 + cy, z2 + cz];
+    };
+
+    const c = [
+      rotate(-hx, -hy, -hz), // 0
+      rotate(+hx, -hy, -hz), // 1
+      rotate(+hx, +hy, -hz), // 2
+      rotate(-hx, +hy, -hz), // 3
+      rotate(-hx, -hy, +hz), // 4
+      rotate(+hx, -hy, +hz), // 5
+      rotate(+hx, +hy, +hz), // 6
+      rotate(-hx, +hy, +hz), // 7
+    ];
+
+    let offset = 0;
+    const vert = (p: [number, number, number]) => {
+      this.lineVertexData[offset++] = p[0];
+      this.lineVertexData[offset++] = p[1];
+      this.lineVertexData[offset++] = p[2];
+      this.lineVertexData[offset++] = color.r;
+      this.lineVertexData[offset++] = color.g;
+      this.lineVertexData[offset++] = color.b;
+      this.lineVertexData[offset++] = alpha;
+    };
+
+    const faces = [
+      [0, 2, 1, 0, 3, 2], // -Z back
+      [4, 5, 6, 4, 6, 7], // +Z front
+      [0, 4, 7, 0, 7, 3], // -X left
+      [1, 2, 6, 1, 6, 5], // +X right
+      [0, 1, 5, 0, 5, 4], // -Y bottom
+      [3, 7, 6, 3, 6, 2], // +Y top
+    ];
+
+    for (const face of faces) {
+      for (const idx of face) {
+        vert(c[idx]);
+      }
+    }
+
+    const faceCount = 36;
+
+    const edges = [
+      [0, 1], [1, 2], [2, 3], [3, 0], // back face (-z)
+      [4, 5], [5, 6], [6, 7], [7, 4], // front face (+z)
+      [0, 4], [1, 5], [2, 6], [3, 7], // connecting edges
+    ];
+
+    for (const [a, b] of edges) {
+      vert(c[a]);
+      vert(c[b]);
+    }
+
+    const edgeCount = 24;
+
+    return { faceCount, edgeCount };
   }
 
   render(
@@ -340,6 +545,19 @@ export class MarchingCubesRenderer {
     uniforms[23] = 0;
     this.device.queue.writeBuffer(this.renderUniformBuffer, 0, uniforms);
 
+    // Build & Upload Obstacle Geometry
+    const { faceCount, edgeCount } = this.buildObstacleGeometry(config);
+    const totalVerts = faceCount + edgeCount;
+    if (totalVerts > 0) {
+      this.device.queue.writeBuffer(
+        this.lineVertexBuffer,
+        0,
+        this.lineVertexData.buffer,
+        this.lineVertexData.byteOffset,
+        totalVerts * 7 * 4 // 7 floats * 4 bytes
+      );
+    }
+
     const pass = encoder.beginRenderPass({
       colorAttachments: [
         {
@@ -360,6 +578,22 @@ export class MarchingCubesRenderer {
     pass.setPipeline(this.drawPipeline);
     pass.setBindGroup(0, this.drawBindGroup);
     pass.drawIndirect(this.renderArgsBuffer, 0);
+
+    // Draw Obstacle
+    if (faceCount > 0) {
+      pass.setPipeline(this.facePipeline);
+      pass.setBindGroup(0, this.faceBindGroup);
+      pass.setVertexBuffer(0, this.lineVertexBuffer, 0);
+      pass.draw(faceCount);
+    }
+
+    if (edgeCount > 0) {
+      pass.setPipeline(this.linePipeline);
+      pass.setBindGroup(0, this.lineBindGroup);
+      pass.setVertexBuffer(0, this.lineVertexBuffer, faceCount * 28);
+      pass.draw(edgeCount);
+    }
+
     pass.end();
   }
 
