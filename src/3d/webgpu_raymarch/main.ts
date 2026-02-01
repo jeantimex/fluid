@@ -57,7 +57,7 @@ import {
   configureContext,
   WebGPUInitError,
 } from '../webgpu_particles/webgpu_utils.ts';
-import { setupInputHandlers } from './input_handler.ts';
+import { setupInputHandlers } from '../webgpu_particles/input_handler.ts';
 import type { RaymarchConfig } from './types.ts';
 
 /**

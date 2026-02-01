@@ -6,9 +6,10 @@
  * Handles all user input for the simulation:
  * - **Camera Orbit**: Click and drag on empty space to rotate the camera
  * - **Camera Zoom**: Mouse wheel to zoom in/out
- * - **Particle Interaction**: Click and drag inside the bounding box to push/pull particles
- *   - Left click: Pull (attract particles toward cursor)
- *   - Right click: Push (repel particles away from cursor)
+ * - **Camera Inertia**: Camera coasts after drag release
+ * - **Particle Interaction**: Shift+click and drag inside the bounding box to push/pull particles
+ *   - Shift+Left click: Pull (attract particles toward cursor)
+ *   - Shift+Right click: Push (repel particles away from cursor)
  *
  * Ray casting is used to detect whether the user clicked inside the simulation bounds
  * and to convert 2D screen coordinates to 3D world coordinates for particle interaction.
@@ -16,7 +17,11 @@
  * @module input_handler
  */
 
-import { rayBoxIntersection, vec3Add, vec3Scale } from './math_utils.ts';
+import {
+  rayBoxIntersection,
+  vec3Add,
+  vec3Scale,
+} from './math_utils.ts';
 import type { OrbitCamera } from './orbit_camera.ts';
 import type { InputState, SimConfig } from '../common/types.ts';
 
@@ -47,13 +52,14 @@ import type { InputState, SimConfig } from '../common/types.ts';
  * @param getInput - Function that returns the current input state (may be undefined during initialization)
  * @param camera - The orbit camera instance for controlling view
  * @param config - Simulation configuration containing bounds size
+ * @returns A function to call each frame for camera inertia updates
  */
 export function setupInputHandlers(
   canvas: HTMLCanvasElement,
   getInput: () => InputState | undefined,
   camera: OrbitCamera,
   config: SimConfig
-): void {
+): () => void {
   // ==========================================================================
   // State Variables
   // ==========================================================================
@@ -69,6 +75,10 @@ export function setupInputHandlers(
 
   /** Last mouse Y position for calculating drag delta */
   let lastY = 0;
+
+  /** Angular velocity for camera inertia */
+  let velocityTheta = 0;
+  let velocityPhi = 0;
 
   // ==========================================================================
   // Ray Casting Utilities
@@ -226,16 +236,16 @@ export function setupInputHandlers(
     // Test if the ray intersects the simulation bounds
     const hit = rayBoxIntersection(ray.origin, ray.dir, boxMin, boxMax);
 
-    if (hit && e.button !== 1) {
-      // Left click (0) or Right click (2) inside the box → particle interaction
+    if (hit && e.shiftKey && e.button !== 1) {
+      // Shift + Left/Right click inside the box → particle interaction
       isInteractingParticle = true;
       updateInteraction(e);
 
       // Set push/pull based on which mouse button
-      if (e.button === 0) input.pull = true; // Left click = attract
-      if (e.button === 2) input.push = true; // Right click = repel
+      if (e.button === 0) input.pull = true; // Shift+Left click = attract
+      if (e.button === 2) input.push = true; // Shift+Right click = repel
     } else {
-      // Click outside box or middle mouse → camera control
+      // Click without Shift, or outside box → camera control
       isDraggingCamera = true;
       lastX = e.clientX;
       lastY = e.clientY;
@@ -263,7 +273,9 @@ export function setupInputHandlers(
 
       // Apply rotation with sensitivity scaling
       const sensitivity = 0.005;
-      camera.rotate(-dx * sensitivity, -dy * sensitivity);
+      velocityTheta = -dx * sensitivity;
+      velocityPhi = -dy * sensitivity;
+      camera.rotate(velocityTheta, velocityPhi);
     }
   });
 
@@ -320,4 +332,19 @@ export function setupInputHandlers(
    * allowing right-click to be used for push interaction.
    */
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Return inertia update function to be called each frame
+  const friction = 0.92;
+  const stopThreshold = 0.0001;
+  return function updateInertia() {
+    if (
+      !isDraggingCamera &&
+      (Math.abs(velocityTheta) > stopThreshold ||
+        Math.abs(velocityPhi) > stopThreshold)
+    ) {
+      camera.rotate(velocityTheta, velocityPhi);
+      velocityTheta *= friction;
+      velocityPhi *= friction;
+    }
+  };
 }

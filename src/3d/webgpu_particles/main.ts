@@ -190,7 +190,7 @@ async function main() {
   simulation = new FluidSimulation(device, context, canvas, config, format);
 
   // Set up input handlers (camera control + particle interaction)
-  setupInputHandlers(
+  const updateInertia = setupInputHandlers(
     canvas,
     () => simulation?.simulationState.input,
     camera,
@@ -238,6 +238,9 @@ async function main() {
     // Cap at 33ms (~30 FPS minimum) to prevent instability from large time steps
     const dt = Math.min(0.033, (now - lastTime) / 1000);
     lastTime = now;
+
+    // Apply camera inertia (coasting after drag release)
+    updateInertia();
 
     if (simulation) {
       // Run physics simulation step(s)
