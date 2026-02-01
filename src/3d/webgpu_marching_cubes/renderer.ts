@@ -629,6 +629,7 @@ export class MarchingCubesRenderer {
     uniforms[22] = config.dirToSun.z;
     uniforms[23] = config.floorAmbient;
     uniforms[24] = config.sceneExposure;
+    uniforms[25] = config.sunBrightness;
     this.device.queue.writeBuffer(this.renderUniformBuffer, 0, uniforms);
 
     // Build & Upload Obstacle Geometry

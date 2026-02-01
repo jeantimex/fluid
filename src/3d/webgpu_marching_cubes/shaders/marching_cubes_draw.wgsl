@@ -9,6 +9,7 @@ struct Uniforms {
   lightDir: vec3<f32>,
   ambient: f32,
   sceneExposure: f32,
+  sunBrightness: f32,
 };
 
 @group(0) @binding(0) var<storage, read> vertices: array<Vertex>;
@@ -33,6 +34,6 @@ fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
   let n = normalize(input.normal);
   let l = normalize(uniforms.lightDir);
   let diffuse = dot(n, l) * 0.5 + 0.5;
-  let shading = uniforms.ambient + (1.0 - uniforms.ambient) * diffuse;
+  let shading = uniforms.ambient + diffuse * uniforms.sunBrightness;
   return vec4<f32>(uniforms.color.rgb * shading * uniforms.sceneExposure, uniforms.color.a);
 }

@@ -5,6 +5,7 @@ export interface EnvironmentConfig {
   dirToSun: Vec3;
   floorAmbient: number;
   sceneExposure: number;
+  sunBrightness: number;
 
   // Sky (Procedural)
   skyColorHorizon: RGB;
@@ -31,6 +32,7 @@ export function createDefaultEnvironmentConfig(): EnvironmentConfig {
     dirToSun: { x: 0.83, y: 0.42, z: 0.36 }, // Approximate normalized vector
     floorAmbient: 1.0,
     sceneExposure: 1.4,
+    sunBrightness: 1.0,
 
     // Sky (Matches raymarch.wgsl hardcoded values)
     skyColorHorizon: { r: 1.0, g: 1.0, b: 1.0 },
@@ -103,11 +105,11 @@ export function writeEnvironmentUniforms(
   buffer[i++] = env.floorCenter.z;
   buffer[i++] = env.tileDarkFactor;
 
-  // 24-27: tileCol1, pad
+  // 24-27: tileCol1, sunBrightness
   buffer[i++] = env.tileCol1.r;
   buffer[i++] = env.tileCol1.g;
   buffer[i++] = env.tileCol1.b;
-  buffer[i++] = 0;
+  buffer[i++] = env.sunBrightness;
 
   // 28-31: tileCol2, pad
   buffer[i++] = env.tileCol2.r;

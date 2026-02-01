@@ -361,32 +361,20 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
      if (!travellingThroughFluid && hasObstacleHit) {
         let obstacleT = obstacleHit.x;
-        if (!surfaceInfo.foundSurface) {
+        let surfaceT = select(1.0e9, dot(surfaceInfo.pos - rayPos, rayDir), surfaceInfo.foundSurface);
+        
+        if (obstacleT < surfaceT) {
           // Obstacle shading using environment logic
-          let ambient = clamp(env.floorAmbient, 0.0, 1.0);
+          let ambient = env.floorAmbient;
           let obsNormal = obstacleHit.yzw;
-          let sun = max(0.0, dot(obsNormal, env.dirToSun));
-          let lit = env.obstacleColor * (ambient + sun * (1.0 - ambient));
+          let sun = max(0.0, dot(obsNormal, env.dirToSun)) * env.sunBrightness;
+          let lit = env.obstacleColor * (ambient + sun);
           
           let a = clamp(env.obstacleAlpha, 0.0, 1.0);
           totalLight = totalLight + lit * totalTransmittance * a;
           totalTransmittance = totalTransmittance * (1.0 - a);
           
           // Ray marches "through" transparent obstacle - crude approx, just continue
-          rayPos = rayPos + rayDir * (obstacleT + 0.1);
-          continue;
-        }
-        let surfaceT = dot(surfaceInfo.pos - rayPos, rayDir);
-        if (obstacleT < surfaceT) {
-          // Same obstacle shading logic
-          let ambient = clamp(env.floorAmbient, 0.0, 1.0);
-          let obsNormal = obstacleHit.yzw;
-          let sun = max(0.0, dot(obsNormal, env.dirToSun));
-          let lit = env.obstacleColor * (ambient + sun * (1.0 - ambient));
-          
-          let a = clamp(env.obstacleAlpha, 0.0, 1.0);
-          totalLight = totalLight + lit * totalTransmittance * a;
-          totalTransmittance = totalTransmittance * (1.0 - a);
           rayPos = rayPos + rayDir * (obstacleT + 0.1);
           continue;
         }

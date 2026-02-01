@@ -19,7 +19,7 @@ struct EnvironmentUniforms {
   tileDarkFactor: f32,
 
   tileCol1: vec3<f32>,
-  pad0: f32,
+  sunBrightness: f32,
   tileCol2: vec3<f32>,
   pad1: f32,
   tileCol3: vec3<f32>,
@@ -157,7 +157,7 @@ fn getSkyColor(dir: vec3<f32>, params: EnvironmentUniforms) -> vec3<f32> {
 
   var res = mix(params.skyColorGround, skyGradient, groundToSkyT);
   if (dir.y >= -0.01) {
-    res = res + sun;
+    res = res + sun * params.sunBrightness;
   }
   return res;
 }
@@ -244,9 +244,11 @@ fn getEnvironmentColor(origin: vec3<f32>, dir: vec3<f32>, params: EnvironmentUni
         tileCol = envTweakHsv(tileCol, randomVariation);
       }
       
-      // Basic ambient lighting (shadows handled by caller if needed)
-      let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-      bgCol = tileCol * ambient; 
+      // Checkerboard lighting (Ambient + Sun)
+      let ambient = params.floorAmbient;
+      let sunNDotL = max(0.0, params.dirToSun.y); // Floor is flat Y-up
+      let sun = sunNDotL * params.sunBrightness;
+      bgCol = tileCol * (ambient + sun); 
     }
   } else {
     bgCol = getSkyColor(dir, params);
@@ -259,9 +261,9 @@ fn getEnvironmentColor(origin: vec3<f32>, dir: vec3<f32>, params: EnvironmentUni
   
   if (obsT >= 0.0 && (!hasFloorHit || obsT < floorT)) {
     let a = clamp(params.obstacleAlpha, 0.0, 1.0);
-    let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-    let sun = max(0.0, dot(obsNormal, params.dirToSun));
-    let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient));
+    let ambient = params.floorAmbient;
+    let sun = max(0.0, dot(obsNormal, params.dirToSun)) * params.sunBrightness;
+    let lit = params.obstacleColor * (ambient + sun);
     return mix(bgCol, lit, a);
   }
 

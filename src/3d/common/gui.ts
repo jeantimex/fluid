@@ -1,6 +1,7 @@
 import GUI, { Controller } from 'lil-gui';
 import Stats from 'stats-gl';
 import type { SimConfig } from './types.ts';
+import { rgbToHex, hexToRgb } from './color_utils.ts';
 
 function calculateParticleCount(config: SimConfig): number {
   let total = 0;
@@ -98,6 +99,46 @@ export function setupGui(
   document.body.appendChild(stats.dom);
 
   const uiState = { showStats: true };
+
+  // Environment Controls
+  const envFolder = gui.addFolder('Environment');
+  envFolder.close();
+
+  if ('floorAmbient' in config) {
+    // Cast config to any to access EnvironmentConfig properties
+    // since SimConfig might not explicitly include them in all contexts
+    const envConfig = config as any;
+
+    envFolder.add(envConfig, 'floorAmbient', 0, 1, 0.01).name('Ambient Light');
+    envFolder.add(envConfig, 'sceneExposure', 0.1, 5, 0.1).name('Exposure');
+    envFolder.add(envConfig, 'sunBrightness', 0, 5, 0.1).name('Sun Brightness');
+    
+    envFolder.add(envConfig, 'debugFloorMode', {
+      Normal: 0,
+      'Red Hit': 1,
+      'Flat Colors': 2,
+    }).name('Floor Mode');
+
+    // Tile Colors
+    const tileColorState = {
+      tileCol1: rgbToHex(envConfig.tileCol1),
+      tileCol2: rgbToHex(envConfig.tileCol2),
+      tileCol3: rgbToHex(envConfig.tileCol3),
+      tileCol4: rgbToHex(envConfig.tileCol4),
+    };
+
+    const updateTileColor = (key: string) => (value: string) => {
+      const rgb = hexToRgb(value);
+      envConfig[key].r = rgb.r / 255;
+      envConfig[key].g = rgb.g / 255;
+      envConfig[key].b = rgb.b / 255;
+    };
+
+    envFolder.addColor(tileColorState, 'tileCol1').name('Tile Color 1').onChange(updateTileColor('tileCol1'));
+    envFolder.addColor(tileColorState, 'tileCol2').name('Tile Color 2').onChange(updateTileColor('tileCol2'));
+    envFolder.addColor(tileColorState, 'tileCol3').name('Tile Color 3').onChange(updateTileColor('tileCol3'));
+    envFolder.addColor(tileColorState, 'tileCol4').name('Tile Color 4').onChange(updateTileColor('tileCol4'));
+  }
 
   const particlesFolder = gui.addFolder('Particles');
   particlesFolder.close();
