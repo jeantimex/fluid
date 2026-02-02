@@ -48,9 +48,9 @@ export class RaymarchAdapter implements FluidAppAdapter<RaymarchConfig> {
   }
 
   applyCameraDefaults(camera: OrbitCamera): void {
-    camera.radius = 28.0;
-    camera.theta = 0.39;
-    camera.phi = 1.27;
+    camera.radius = 30.0;
+    camera.theta = Math.PI / 6;
+    camera.phi = Math.PI / 2.5;
   }
 
   getInputState(): InputState | undefined {

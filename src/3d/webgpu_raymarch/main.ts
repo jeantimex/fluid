@@ -118,9 +118,9 @@ let simulation: FluidSimulation | null = null;
 
 // Initialize the orbit camera with default view position
 const camera = new OrbitCamera();
-camera.radius = 28.0; // Moved back to see the whole water volume
-camera.theta = 0.39; // Rotated 160 degrees from original position
-camera.phi = 1.27; // Adjusted to match Unity (approx 72.7 degrees)
+camera.radius = 30.0; // Distance from target
+camera.theta = Math.PI / 6; // 30 degrees horizontal rotation
+camera.phi = Math.PI / 2.5; // ~72 degrees from vertical (looking slightly down)
 
 // Set up the GUI controls panel
 const { stats, gui } = setupGui(

@@ -99,10 +99,10 @@ const canvas = createCanvas(app);
 const config: MarchingCubesConfig = {
   ...createConfig(),
   ...createDefaultEnvironmentConfig(),
-  boundsSize: { x: 16, y: 12, z: 8 },
-  // Override spawn regions to fit within the smaller bounds
+  // Override spawn regions to ensure safe margin from bounds
   spawnRegions: [
-    { position: { x: -4, y: 0, z: 0 }, size: { x: 5, y: 8, z: 5 } },
+    { position: { x: -8.0, y: -1.0, z: 3.5 }, size: { x: 6, y: 7, z: 6 } },
+    { position: { x: -8.0, y: -1.0, z: -3.5 }, size: { x: 6, y: 7, z: 6 } },
   ],
   viscosityStrength: 0,
   iterationsPerFrame: 3,
@@ -116,9 +116,9 @@ let simulation: FluidSimulation | null = null;
 
 // Initialize the orbit camera with default view position
 const camera = new OrbitCamera();
-camera.radius = 28.0; // Moved back to see the whole water volume
-camera.theta = 3.53; // Rotated 180 degrees from previous position (0.39 + PI)
-camera.phi = 1.27; // Adjusted to match Unity (approx 72.7 degrees)
+camera.radius = 30.0; // Distance from target
+camera.theta = Math.PI / 6; // 30 degrees horizontal rotation
+camera.phi = Math.PI / 2.5; // ~72 degrees from vertical (looking slightly down)
 
 // Set up the GUI controls panel
 const { stats, gui } = setupGui(

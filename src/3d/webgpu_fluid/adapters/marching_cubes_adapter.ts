@@ -14,7 +14,11 @@ export class MarchingCubesAdapter
   readonly config: MarchingCubesConfig = {
     ...createConfig(),
     ...createDefaultEnvironmentConfig(),
-    boundsSize: { x: 16, y: 12, z: 8 },
+    // Override spawn regions to ensure safe margin from bounds
+    spawnRegions: [
+      { position: { x: -8.0, y: -1.0, z: 3.5 }, size: { x: 6, y: 7, z: 6 } },
+      { position: { x: -8.0, y: -1.0, z: -3.5 }, size: { x: 6, y: 7, z: 6 } },
+    ],
     viscosityStrength: 0,
     iterationsPerFrame: 3,
     densityTextureRes: 150,
@@ -44,9 +48,9 @@ export class MarchingCubesAdapter
   }
 
   applyCameraDefaults(camera: OrbitCamera): void {
-    camera.radius = 28.0;
-    camera.theta = 3.53;
-    camera.phi = 1.27;
+    camera.radius = 30.0;
+    camera.theta = Math.PI / 6;
+    camera.phi = Math.PI / 2.5;
   }
 
   getInputState(): InputState | undefined {
