@@ -100,6 +100,10 @@ const config: MarchingCubesConfig = {
   ...createConfig(),
   ...createDefaultEnvironmentConfig(),
   boundsSize: { x: 16, y: 12, z: 8 },
+  // Override spawn regions to fit within the smaller bounds
+  spawnRegions: [
+    { position: { x: -4, y: 0, z: 0 }, size: { x: 5, y: 8, z: 5 } },
+  ],
   viscosityStrength: 0,
   iterationsPerFrame: 3,
   densityTextureRes: 150,

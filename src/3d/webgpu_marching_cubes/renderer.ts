@@ -16,6 +16,7 @@ import renderArgsShader from './shaders/render_args.wgsl?raw';
 import drawShader from './shaders/marching_cubes_draw.wgsl?raw';
 import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
 import backgroundShader from './shaders/background.wgsl?raw';
+import shadowShader from './shaders/shadow.wgsl?raw';
 import environmentShader from '../common/shaders/environment.wgsl?raw';
 import {
   marchingCubesEdgeA,
@@ -28,6 +29,8 @@ import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import {
   mat4Multiply,
   mat4Perspective,
+  mat4LookAt,
+  mat4Ortho,
 } from '../webgpu_particles/math_utils.ts';
 import type { MarchingCubesConfig } from './types.ts';
 import type { SimConfig } from '../common/types.ts';
@@ -43,8 +46,11 @@ export class MarchingCubesRenderer {
   private drawPipeline: GPURenderPipeline;
   private facePipeline: GPURenderPipeline;
   private backgroundPipeline: GPURenderPipeline;
+  private shadowMeshPipeline: GPURenderPipeline;
+  private shadowObstaclePipeline: GPURenderPipeline;
 
   private sampler: GPUSampler;
+  private shadowSampler: GPUSampler;
 
   private paramsBuffer: GPUBuffer;
   private paramsData: ArrayBuffer;
@@ -54,6 +60,7 @@ export class MarchingCubesRenderer {
   private renderUniformBuffer: GPUBuffer;
   private envUniformBuffer: GPUBuffer;
   private camUniformBuffer: GPUBuffer;
+  private shadowUniformBuffer: GPUBuffer;
 
   private triangleBuffer!: GPUBuffer;
   private triangleCountBuffer!: GPUBuffer;
@@ -71,7 +78,9 @@ export class MarchingCubesRenderer {
   private renderArgsBindGroup!: GPUBindGroup;
   private drawBindGroup!: GPUBindGroup;
   private faceBindGroup!: GPUBindGroup;
-  private backgroundBindGroup: GPUBindGroup;
+  private backgroundBindGroup!: GPUBindGroup;
+  private shadowMeshBindGroup!: GPUBindGroup;
+  private shadowObstacleBindGroup!: GPUBindGroup;
 
   private lineVertexBuffer!: GPUBuffer;
   private lineVertexData: Float32Array;
@@ -84,6 +93,10 @@ export class MarchingCubesRenderer {
   private depthTexture!: GPUTexture;
   private depthWidth = 0;
   private depthHeight = 0;
+  
+  private shadowTexture!: GPUTexture;
+  private shadowMapSize = 2048;
+
   private resetCounterData = new Uint32Array([0]);
 
   constructor(
@@ -198,6 +211,46 @@ export class MarchingCubesRenderer {
       },
     });
 
+    // -------------------------------------------------------------------------
+    // Create Shadow Render Pipelines
+    // -------------------------------------------------------------------------
+    const shadowModule = device.createShaderModule({ code: shadowShader });
+    
+    // Mesh Shadow Pipeline
+    this.shadowMeshPipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: shadowModule, entryPoint: 'vs_mesh' },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    // Obstacle Shadow Pipeline
+    this.shadowObstaclePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { 
+        module: shadowModule, 
+        entryPoint: 'vs_obstacle',
+        buffers: [
+          {
+            arrayStride: 40,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' }, // pos
+            ],
+          },
+        ],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
     // Allocate for face vertices (36 × 10 floats) + edge vertices (24 × 7 floats) + headroom
     this.lineVertexData = new Float32Array(720); // 36×10 + 24×7 = 528, with headroom
 
@@ -210,6 +263,12 @@ export class MarchingCubesRenderer {
       addressModeU: 'clamp-to-edge',
       addressModeV: 'clamp-to-edge',
       addressModeW: 'clamp-to-edge',
+      magFilter: 'linear',
+      minFilter: 'linear',
+    });
+
+    this.shadowSampler = device.createSampler({
+      compare: 'less',
       magFilter: 'linear',
       minFilter: 'linear',
     });
@@ -238,6 +297,12 @@ export class MarchingCubesRenderer {
     // Camera uniforms for background: 80 bytes
     this.camUniformBuffer = device.createBuffer({
       size: 80,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Shadow uniforms: lightViewProjection (64) + params (16) + padding (16) = 96 bytes
+    this.shadowUniformBuffer = device.createBuffer({
+      size: 96,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -271,12 +336,9 @@ export class MarchingCubesRenderer {
     });
     this.device.queue.writeBuffer(this.edgeBBuffer, 0, marchingCubesEdgeB);
 
-    this.backgroundBindGroup = device.createBindGroup({
-      layout: this.backgroundPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.envUniformBuffer } },
-        { binding: 1, resource: { buffer: this.camUniformBuffer } },
-      ],
+    this.shadowObstacleBindGroup = device.createBindGroup({
+      layout: this.shadowObstaclePipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowUniformBuffer } }],
     });
   }
 
@@ -310,6 +372,7 @@ export class MarchingCubesRenderer {
     if (this.renderArgsBuffer) this.renderArgsBuffer.destroy();
     if (this.renderArgsParamsBuffer) this.renderArgsParamsBuffer.destroy();
     if (this.triangleCountReadback) this.triangleCountReadback.destroy();
+    if (this.shadowTexture) this.shadowTexture.destroy();
 
     const totalVertices = this.maxTriangles * 3;
     this.triangleBuffer = this.device.createBuffer({
@@ -341,6 +404,13 @@ export class MarchingCubesRenderer {
     const argsParams = new Uint32Array([this.maxTriangles, 0, 0, 0]);
     this.device.queue.writeBuffer(this.renderArgsParamsBuffer, 0, argsParams);
 
+    // Create shadow texture
+    this.shadowTexture = this.device.createTexture({
+      size: [this.shadowMapSize, this.shadowMapSize],
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
     this.computeBindGroup = this.device.createBindGroup({
       layout: this.marchingPipeline.getBindGroupLayout(0),
       entries: [
@@ -366,17 +436,36 @@ export class MarchingCubesRenderer {
       ],
     });
 
+    // Include shadow resources in draw bind group
     this.drawBindGroup = this.device.createBindGroup({
       layout: this.drawPipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.triangleBuffer } },
         { binding: 1, resource: { buffer: this.renderUniformBuffer } },
+        { binding: 2, resource: this.shadowTexture.createView() },
+        { binding: 3, resource: this.shadowSampler },
+        { binding: 4, resource: { buffer: this.shadowUniformBuffer } },
       ],
     });
 
-    this.faceBindGroup = this.device.createBindGroup({
-      layout: this.facePipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: this.renderUniformBuffer } }],
+    // Include shadow resources in background bind group
+    this.backgroundBindGroup = this.device.createBindGroup({
+      layout: this.backgroundPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.envUniformBuffer } },
+        { binding: 1, resource: { buffer: this.camUniformBuffer } },
+        { binding: 2, resource: this.shadowTexture.createView() },
+        { binding: 3, resource: this.shadowSampler },
+        { binding: 4, resource: { buffer: this.shadowUniformBuffer } },
+      ],
+    });
+
+    this.shadowMeshBindGroup = this.device.createBindGroup({
+      layout: this.shadowMeshPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.shadowUniformBuffer } },
+        { binding: 1, resource: { buffer: this.triangleBuffer } },
+      ],
     });
   }
 
@@ -583,6 +672,90 @@ export class MarchingCubesRenderer {
     argsPass.dispatchWorkgroups(1);
     argsPass.end();
 
+    // -----------------------------------------------------------------------
+    // Shadow Pass Calculations & Rendering
+    // -----------------------------------------------------------------------
+    
+    // Calculate Shadow View-Projection
+    const bounds = config.boundsSize;
+    const floor = config.floorSize; // from EnvironmentConfig (config extends SimConfig, EnvironmentConfig)
+    const sunDir = config.dirToSun;
+    
+    // Ortho bounds covering scene
+    const lightDistance = Math.max(bounds.x + bounds.z, floor.x + floor.z);
+    const orthoSize = lightDistance * 0.6;
+    
+    const lightPos = {
+      x: sunDir.x * lightDistance,
+      y: sunDir.y * lightDistance,
+      z: sunDir.z * lightDistance,
+    };
+    
+    const lightView = mat4LookAt(
+      lightPos,
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 }
+    );
+    
+    const lightProj = mat4Ortho(
+      -orthoSize,
+      orthoSize,
+      -orthoSize,
+      orthoSize,
+      0.1,
+      -lightDistance * 3.0
+    );
+    const lightViewProj = mat4Multiply(lightProj, lightView);
+
+    // Upload to ShadowUniformBuffer
+    const shadowUniforms = new Float32Array(20);
+    shadowUniforms.set(lightViewProj); // 0-15
+    shadowUniforms[16] = config.shadowSoftness ?? 1.0;
+    // pad
+    this.device.queue.writeBuffer(this.shadowUniformBuffer, 0, shadowUniforms);
+
+    // Build Obstacle Geometry (used in shadow and main pass)
+    const { faceCount, edgeCount } = this.buildObstacleGeometry(config);
+    const totalFloats = faceCount * 10 + edgeCount * 7;
+    if (totalFloats > 0) {
+      this.device.queue.writeBuffer(
+        this.lineVertexBuffer,
+        0,
+        this.lineVertexData.buffer,
+        this.lineVertexData.byteOffset,
+        totalFloats * 4
+      );
+    }
+
+    // --- SHADOW PASS ---
+    const shadowPass = encoder.beginRenderPass({
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: this.shadowTexture.createView(),
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    });
+
+    // Mesh shadows
+    shadowPass.setPipeline(this.shadowMeshPipeline);
+    shadowPass.setBindGroup(0, this.shadowMeshBindGroup);
+    shadowPass.drawIndirect(this.renderArgsBuffer, 0);
+
+    // Obstacle shadows
+    if (faceCount > 0) {
+      shadowPass.setPipeline(this.shadowObstaclePipeline);
+      shadowPass.setBindGroup(0, this.shadowObstacleBindGroup);
+      shadowPass.setVertexBuffer(0, this.lineVertexBuffer, 0);
+      shadowPass.draw(faceCount);
+    }
+    shadowPass.end();
+
+    // -----------------------------------------------------------------------
+    // Main Rendering
+    // -----------------------------------------------------------------------
+
     // Update Environment Uniforms
     const envData = new Float32Array(60);
     writeEnvironmentUniforms(envData, 0, config, config);
@@ -631,19 +804,6 @@ export class MarchingCubesRenderer {
     uniforms[24] = config.sceneExposure;
     uniforms[25] = config.sunBrightness;
     this.device.queue.writeBuffer(this.renderUniformBuffer, 0, uniforms);
-
-    // Build & Upload Obstacle Geometry
-    const { faceCount, edgeCount } = this.buildObstacleGeometry(config);
-    const totalFloats = faceCount * 10 + edgeCount * 7;
-    if (totalFloats > 0) {
-      this.device.queue.writeBuffer(
-        this.lineVertexBuffer,
-        0,
-        this.lineVertexData.buffer,
-        this.lineVertexData.byteOffset,
-        totalFloats * 4 // bytes
-      );
-    }
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [
