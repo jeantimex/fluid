@@ -59,7 +59,6 @@
  */
 
 import particleShader from './shaders/particle3d.wgsl?raw';
-import lineShader from './shaders/line3d.wgsl?raw';
 import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
 import shadowShader from './shaders/shadow.wgsl?raw';
 import backgroundShader from './shaders/background.wgsl?raw';
@@ -100,9 +99,6 @@ export class Renderer {
   /** Pipeline for rendering particles as billboards. */
   private particlePipeline: GPURenderPipeline;
 
-  /** Pipeline for rendering wireframe lines. */
-  private linePipeline: GPURenderPipeline;
-
   /** Pipeline for rendering filled obstacle faces. */
   private facePipeline: GPURenderPipeline;
 
@@ -139,7 +135,6 @@ export class Renderer {
   // ===========================================================================
 
   private particleBindGroup!: GPUBindGroup;
-  private lineBindGroup: GPUBindGroup;
   private faceBindGroup: GPUBindGroup;
   private backgroundBindGroup!: GPUBindGroup;
   private shadowParticleBindGroup!: GPUBindGroup;
@@ -277,56 +272,6 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
-    // Create Line Render Pipeline
-    // -------------------------------------------------------------------------
-
-    const lineModule = device.createShaderModule({ code: lineShader });
-
-    this.linePipeline = device.createRenderPipeline({
-      layout: 'auto',
-      vertex: {
-        module: lineModule,
-        entryPoint: 'vs_main',
-        buffers: [
-          {
-            arrayStride: 28,
-            attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x3' },
-              { shaderLocation: 1, offset: 12, format: 'float32x4' },
-            ],
-          },
-        ],
-      },
-      fragment: {
-        module: lineModule,
-        entryPoint: 'fs_main',
-        targets: [
-          {
-            format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add',
-              },
-              alpha: {
-                srcFactor: 'one',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add',
-              },
-            },
-          },
-        ],
-      },
-      primitive: { topology: 'line-list' },
-      depthStencil: {
-        format: 'depth24plus',
-        depthWriteEnabled: true,
-        depthCompare: 'less',
-      },
-    });
-
-    // -------------------------------------------------------------------------
     // Create Face Render Pipeline
     // -------------------------------------------------------------------------
 
@@ -442,11 +387,11 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
-    // Create Vertex Buffer (faces + edges)
+    // Create Vertex Buffer (faces)
     // -------------------------------------------------------------------------
 
-    // Allocate for face vertices (36 × 10 floats) + edge vertices (24 × 7 floats) + headroom
-    this.lineVertexData = new Float32Array(720);
+    // Allocate for face vertices (36 × 10 floats)
+    this.lineVertexData = new Float32Array(360);
     this.lineVertexBuffer = device.createBuffer({
       size: this.lineVertexData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -471,11 +416,6 @@ export class Renderer {
     // -------------------------------------------------------------------------
     // Create Static Bind Groups
     // -------------------------------------------------------------------------
-
-    this.lineBindGroup = device.createBindGroup({
-      layout: this.linePipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
-    });
 
     this.faceBindGroup = device.createBindGroup({
       layout: this.facePipeline.getBindGroupLayout(0),
@@ -577,14 +517,13 @@ export class Renderer {
 
   private buildObstacleGeometry(config: ParticlesConfig): {
     faceCount: number;
-    edgeCount: number;
   } {
     const hx = config.obstacleSize.x * 0.5;
     const hy = config.obstacleSize.y * 0.5;
     const hz = config.obstacleSize.z * 0.5;
 
     if (hx <= 0 || hy <= 0 || hz <= 0) {
-      return { faceCount: 0, edgeCount: 0 };
+      return { faceCount: 0 };
     }
 
     const cx = config.obstacleCentre.x;
@@ -668,16 +607,6 @@ export class Renderer {
       this.lineVertexData[offset++] = alpha;
     };
 
-    const edgeVert = (p: [number, number, number]) => {
-      this.lineVertexData[offset++] = p[0];
-      this.lineVertexData[offset++] = p[1];
-      this.lineVertexData[offset++] = p[2];
-      this.lineVertexData[offset++] = color.r;
-      this.lineVertexData[offset++] = color.g;
-      this.lineVertexData[offset++] = color.b;
-      this.lineVertexData[offset++] = alpha;
-    };
-
     const faces = [
       [0, 2, 1, 0, 3, 2],
       [4, 5, 6, 4, 6, 7],
@@ -696,20 +625,7 @@ export class Renderer {
 
     const faceCount = 36;
 
-    const edges = [
-      [0, 1], [1, 2], [2, 3], [3, 0],
-      [4, 5], [5, 6], [6, 7], [7, 4],
-      [0, 4], [1, 5], [2, 6], [3, 7],
-    ];
-
-    for (const [a, b] of edges) {
-      edgeVert(c[a]);
-      edgeVert(c[b]);
-    }
-
-    const edgeCount = 24;
-
-    return { faceCount, edgeCount };
+    return { faceCount };
   }
 
   // ===========================================================================
@@ -860,18 +776,17 @@ export class Renderer {
     this.device.queue.writeBuffer(this.shadowUniformBuffer, 0, shadowUniforms);
 
     // -------------------------------------------------------------------------
-    // Build & Upload Obstacle Geometry (faces + edges)
+    // Build & Upload Obstacle Geometry (faces)
     // -------------------------------------------------------------------------
 
-    const { faceCount, edgeCount } = this.buildObstacleGeometry(config);
-    const totalVerts = faceCount + edgeCount;
-    if (totalVerts > 0) {
+    const { faceCount } = this.buildObstacleGeometry(config);
+    if (faceCount > 0) {
       this.device.queue.writeBuffer(
         this.lineVertexBuffer,
         0,
         this.lineVertexData.buffer,
         this.lineVertexData.byteOffset,
-        (faceCount * 10 + edgeCount * 7) * 4
+        faceCount * 10 * 4
       );
     }
 
@@ -950,12 +865,7 @@ export class Renderer {
       pass.draw(faceCount);
     }
 
-    if (edgeCount > 0) {
-      pass.setPipeline(this.linePipeline);
-      pass.setBindGroup(0, this.lineBindGroup);
-      pass.setVertexBuffer(0, this.lineVertexBuffer, faceCount * 40);
-      pass.draw(edgeCount);
-    }
+
 
     pass.end();
   }
