@@ -489,7 +489,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
           let ambient = env.floorAmbient;
           let obsNormal = obstacleHit.yzw;
           let sun = max(0.0, dot(obsNormal, env.dirToSun)) * env.sunBrightness;
-          let lit = env.obstacleColor * (ambient + sun);
+          let obsPos = rayPos + rayDir * obstacleT;
+          let shadow = sampleShadow(obsPos, max(0.0, dot(obsNormal, env.dirToSun)));
+          let lit = env.obstacleColor * (ambient + sun * shadow);
           
           let a = clamp(env.obstacleAlpha, 0.0, 1.0);
           totalLight = totalLight + lit * totalTransmittance * a;

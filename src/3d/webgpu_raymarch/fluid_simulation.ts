@@ -876,7 +876,7 @@ export class FluidSimulation {
       this.context.getCurrentTexture().createView(),
       camera,
       this.config,
-      this.config.particleCount
+      this.buffers.particleCount
     );
 
     this.device.queue.submit([encoder.finish()]);
