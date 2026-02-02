@@ -307,10 +307,11 @@ async function switchAdapter(name: string): Promise<void> {
   if (activeAdapter) {
     syncAdapterConfig(activeAdapter, nextAdapter);
     activeAdapter.destroy?.();
+  } else {
+    nextAdapter.applyCameraDefaults(camera);
   }
 
   activeAdapter = nextAdapter;
-  activeAdapter.applyCameraDefaults(camera);
   syncInputConfig(activeAdapter.config);
 
   setCanvasSize();
