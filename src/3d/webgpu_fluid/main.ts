@@ -12,6 +12,7 @@ import { adapterRegistry } from './adapters/registry.ts';
 import type { FluidAppAdapter } from './types.ts';
 import GUI from 'lil-gui';
 import Stats from 'stats-gl';
+import { rgbToHex, hexToRgb } from '../common/color_utils.ts';
 
 function createCanvas(app: HTMLDivElement): HTMLCanvasElement {
   // Clean container
@@ -87,7 +88,7 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
   t.collisionDamping = s.collisionDamping;
   t.smoothingRadius = s.smoothingRadius;
   t.spawnDensity = s.spawnDensity;
-  t.viscosityStrength = s.viscosityStrength; // Sync viscosity even if defaults differ
+  t.viscosityStrength = s.viscosityStrength; 
   
   // Sync container bounds
   t.boundsSize.x = s.boundsSize.x;
@@ -98,7 +99,7 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
   t.interactionRadius = s.interactionRadius;
   t.interactionStrength = s.interactionStrength;
 
-  // Sync obstacle (if present in both, usually yes as part of SimConfig)
+  // Sync obstacle
   t.obstacleSize.x = s.obstacleSize.x;
   t.obstacleSize.y = s.obstacleSize.y;
   t.obstacleSize.z = s.obstacleSize.z;
@@ -109,7 +110,6 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
   t.obstacleRotation.y = s.obstacleRotation.y;
   t.obstacleRotation.z = s.obstacleRotation.z;
   
-  // Try to sync obstacle color/alpha if they exist
   if (s.obstacleColor && t.obstacleColor) {
     t.obstacleColor.r = s.obstacleColor.r;
     t.obstacleColor.g = s.obstacleColor.g;
@@ -119,7 +119,7 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
     t.obstacleAlpha = s.obstacleAlpha;
   }
   
-  // Sync Environment if available (checked via type casting or property existence)
+  // Sync Environment
   const sEnv = s as any;
   const tEnv = t as any;
   if (sEnv.floorAmbient !== undefined && tEnv.floorAmbient !== undefined) {
@@ -128,7 +128,6 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
       tEnv.sunBrightness = sEnv.sunBrightness;
       tEnv.debugFloorMode = sEnv.debugFloorMode;
       
-      // Sync Tile Colors
       if (sEnv.tileCol1 && tEnv.tileCol1) Object.assign(tEnv.tileCol1, sEnv.tileCol1);
       if (sEnv.tileCol2 && tEnv.tileCol2) Object.assign(tEnv.tileCol2, sEnv.tileCol2);
       if (sEnv.tileCol3 && tEnv.tileCol3) Object.assign(tEnv.tileCol3, sEnv.tileCol3);
@@ -137,15 +136,13 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
 }
 
 function updateGui(adapter: FluidAppAdapter): void {
-  // Clear existing folders (Environment, Particles, etc.)
-  // We keep the top-level controllers (Renderer, Reset)
+  // Clear existing folders
   const folders = [...mainGui.folders];
   for (const folder of folders) {
     folder.destroy();
   }
 
   // Populate GUI with new adapter's config
-  // Pass mainGui and mainStats to reuse them
   setupGui(
     adapter.config,
     {
@@ -153,20 +150,148 @@ function updateGui(adapter: FluidAppAdapter): void {
       onSmoothingRadiusChange: () => {},
     },
     {
-      trackGPU: true, // Stats already created, but this option keeps logic consistent
+      trackGPU: true,
     },
     mainGui,
     mainStats
   );
 
-  // Add extra controls for Particles adapter
+  const config = adapter.config as any;
+
+  // -------------------------------------------------------------------------
+  // Particles Adapter Controls
+  // -------------------------------------------------------------------------
   if (adapter.name === 'Particles') {
     const particlesFolder = mainGui.folders.find((f) => f._title === 'Particles');
     if (particlesFolder) {
       particlesFolder
-        .add(adapter.config as any, 'particleRadius', 1, 5, 0.1)
+        .add(config, 'particleRadius', 1, 5, 0.1)
         .name('Particle Radius');
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Raymarch Adapter Controls
+  // -------------------------------------------------------------------------
+  else if (adapter.name === 'Raymarch') {
+    const raymarchFolder = mainGui.addFolder('Raymarch');
+    raymarchFolder.close();
+    raymarchFolder
+      .add(config, 'densityTextureRes', 32, 256, 1)
+      .name('Density Texture Res')
+      .onFinishChange(() => activeAdapter?.reset());
+    raymarchFolder.add(config, 'densityOffset', 0, 400, 1).name('Density Offset');
+    raymarchFolder
+      .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
+      .name('Density Multiplier');
+    raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
+    raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
+    raymarchFolder
+      .add(config, 'tileDarkFactor', 0.1, 0.9, 0.01)
+      .name('Tile Dark Factor');
+  }
+
+  // -------------------------------------------------------------------------
+  // Marching Cubes Adapter Controls
+  // -------------------------------------------------------------------------
+  else if (adapter.name === 'Marching Cubes') {
+    const marchingFolder = mainGui.addFolder('Marching Cubes');
+    marchingFolder.close();
+    marchingFolder
+      .add(config, 'densityTextureRes', 32, 256, 1)
+      .name('Density Texture Res')
+      .onFinishChange(() => activeAdapter?.reset());
+    marchingFolder.add(config, 'isoLevel', 0, 200, 1).name('Iso Level');
+
+    const surfaceColorState = {
+      surfaceColor: rgbToHex(config.surfaceColor),
+    };
+
+    marchingFolder
+      .addColor(surfaceColorState, 'surfaceColor')
+      .name('Surface Color')
+      .onChange((value: string) => {
+        const rgb = hexToRgb(value);
+        config.surfaceColor.r = rgb.r / 255;
+        config.surfaceColor.g = rgb.g / 255;
+        config.surfaceColor.b = rgb.b / 255;
+      });
+  }
+
+  // -------------------------------------------------------------------------
+  // Screen Space Adapter Controls
+  // -------------------------------------------------------------------------
+  else if (adapter.name === 'Screen Space') {
+    const particlesFolder = mainGui.folders.find((f) => f._title === 'Particles');
+    if (particlesFolder) {
+      particlesFolder
+        .add(config, 'particleRadius', 1, 5, 0.1)
+        .name('Particle Radius');
+    }
+
+    const foamFolder = mainGui.addFolder('Foam');
+    foamFolder.close();
+    foamFolder.add(config, 'foamSpawnRate', 0, 1000, 1).name('Spawn Rate');
+    foamFolder.add(config, 'trappedAirVelocityMin', 0, 50, 0.1).name('Air Vel Min');
+    foamFolder
+      .add(config, 'trappedAirVelocityMax', 0, 100, 0.1)
+      .name('Air Vel Max');
+    foamFolder.add(config, 'foamKineticEnergyMin', 0, 50, 0.1).name('Kinetic Min');
+    foamFolder.add(config, 'foamKineticEnergyMax', 0, 200, 0.1).name('Kinetic Max');
+    foamFolder.add(config, 'bubbleBuoyancy', 0, 5, 0.1).name('Buoyancy');
+    foamFolder.add(config, 'bubbleScale', 0, 2, 0.01).name('Scale');
+    foamFolder.add(config, 'foamLifetimeMin', 0, 30, 0.1).name('Lifetime Min');
+    foamFolder.add(config, 'foamLifetimeMax', 0, 60, 0.1).name('Lifetime Max');
+    foamFolder.addColor(config, 'foamColor').name('Color');
+    foamFolder.add(config, 'foamOpacity', 0, 20, 0.1).name('Opacity');
+    foamFolder
+      .add(config, 'sprayClassifyMaxNeighbours', 0, 20, 1)
+      .name('Spray Max Neighbors');
+    foamFolder
+      .add(config, 'bubbleClassifyMinNeighbours', 0, 50, 1)
+      .name('Bubble Min Neighbors');
+    foamFolder
+      .add(config, 'foamParticleRadius', 0.1, 5, 0.1)
+      .name('Particle Radius');
+    foamFolder
+      .add(config, 'spawnRateFadeInTime', 0, 5, 0.01)
+      .name('Spawn Fade-In Time');
+    foamFolder
+      .add(config, 'spawnRateFadeStartTime', 0, 5, 0.01)
+      .name('Spawn Fade Start');
+    foamFolder
+      .add(config, 'bubbleChangeScaleSpeed', 0, 20, 0.1)
+      .name('Bubble Scale Speed');
+
+    const renderingFolder = mainGui.addFolder('Rendering');
+    renderingFolder.close();
+    renderingFolder
+      .add(config.extinctionCoeff, 'x', 0, 5, 0.01)
+      .name('Extinction R');
+    renderingFolder
+      .add(config.extinctionCoeff, 'y', 0, 5, 0.01)
+      .name('Extinction G');
+    renderingFolder
+      .add(config.extinctionCoeff, 'z', 0, 5, 0.01)
+      .name('Extinction B');
+    renderingFolder
+      .add(config, 'extinctionMultiplier', 0, 10, 0.01)
+      .name('Extinction Multiplier');
+    renderingFolder
+      .add(config, 'refractionStrength', 0, 20, 0.01)
+      .name('Refraction Strength');
+
+    const debugFolder = mainGui.addFolder('Debug');
+    debugFolder.close();
+    debugFolder
+      .add(config, 'screenSpaceDebugMode', {
+        Shaded: 4,
+        Depth: 0,
+        Thickness: 1,
+        Normal: 2,
+        Smooth: 3,
+      })
+      .name('Screen-Space View');
   }
 }
 
@@ -177,30 +302,24 @@ async function switchAdapter(name: string): Promise<void> {
 
   isSwitching = true;
   
-  // 1. Create new adapter
   const nextAdapter = entry.create();
   
-  // 2. Sync Configuration (preserve values from current adapter)
   if (activeAdapter) {
     syncAdapterConfig(activeAdapter, nextAdapter);
     activeAdapter.destroy?.();
   }
 
-  // 3. Set as active
   activeAdapter = nextAdapter;
   activeAdapter.applyCameraDefaults(camera);
   syncInputConfig(activeAdapter.config);
 
-  // 4. Initialize Graphics
   setCanvasSize();
   configureContext(context, device, format);
   activeAdapter.init({ device, context, canvas, format });
   activeAdapter.resize();
 
-  // 5. Update GUI (Clear old folders, add new ones with synced config)
   updateGui(activeAdapter);
 
-  // 6. Ensure state matches GUI (Fixes chaotic start)
   if (activeAdapter.name === 'Particles') {
     activeAdapter.reset();
   }
@@ -236,14 +355,12 @@ async function main() {
     throw new Error('No adapters registered');
   }
 
-  // Initial load
   await switchAdapter(initialAdapter.name);
 
-  // Animation Loop
   let lastTime: number | null = null;
   const frame = async (now: number) => {
     if (lastTime === null) lastTime = now;
-    mainStats.begin(); // Use mainStats directly
+    mainStats.begin();
     const dt = Math.min(0.033, (now - lastTime) / 1000);
     lastTime = now;
 
