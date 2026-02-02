@@ -279,7 +279,7 @@ async function main() {
   // -------------------------------------------------------------------------
 
   /** Timestamp of the last frame for delta time calculation */
-  let lastTime = performance.now();
+  let lastTime: number | null = null;
 
   /**
    * Main animation loop callback.
@@ -288,6 +288,7 @@ async function main() {
    * @param now - Current timestamp in milliseconds
    */
   const frame = async (now: number) => {
+    if (lastTime === null) lastTime = now;
     stats.begin(); // Start frame timing
 
     // Calculate delta time in seconds

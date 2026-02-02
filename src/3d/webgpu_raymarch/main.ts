@@ -102,7 +102,7 @@ const config: RaymarchConfig = {
   viscosityStrength: 0,
   iterationsPerFrame: 2,
   densityTextureRes: 150,
-  densityOffset: 0,
+  densityOffset: 200,
   densityMultiplier: 0.03,
   stepSize: 0.08,
   lightStepSize: 0.1,
@@ -247,7 +247,7 @@ async function main() {
   // -------------------------------------------------------------------------
 
   /** Timestamp of the last frame for delta time calculation */
-  let lastTime = performance.now();
+  let lastTime: number | null = null;
 
   /**
    * Main animation loop callback.
@@ -256,6 +256,7 @@ async function main() {
    * @param now - Current timestamp in milliseconds
    */
   const frame = async (now: number) => {
+    if (lastTime === null) lastTime = now;
     stats.begin(); // Start frame timing
 
     // Calculate delta time in seconds
