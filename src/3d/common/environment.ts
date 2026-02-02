@@ -30,8 +30,8 @@ export function createDefaultEnvironmentConfig(): EnvironmentConfig {
   return {
     // Lighting (from Raymarch demo defaults)
     dirToSun: { x: 0.83, y: 0.42, z: 0.36 }, // Approximate normalized vector
-    floorAmbient: 1.0,
-    sceneExposure: 1.4,
+    floorAmbient: 0.58,
+    sceneExposure: 1.1,
     sunBrightness: 1.0,
 
     // Sky (Matches raymarch.wgsl hardcoded values)

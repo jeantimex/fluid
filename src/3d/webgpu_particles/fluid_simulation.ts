@@ -19,6 +19,7 @@ import { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import { ComputePipelinesLinear } from './compute_pipelines_linear.ts';
 import { Renderer } from './renderer.ts';
 import { mat4Perspective, mat4Multiply } from './math_utils.ts';
+import { DensitySplatPipeline } from './density_splat_pipeline.ts';
 
 /**
  * Orchestrates the full SPH fluid simulation pipeline on the GPU.
@@ -59,6 +60,9 @@ export class FluidSimulation {
 
   /** Render pipeline manager — owns the particle / wireframe render passes. */
   private renderer: Renderer;
+
+  /** Density volume splat pipeline for shadowing. */
+  private splatPipeline: DensitySplatPipeline;
 
   /** CPU-side snapshot of simulation state (positions, velocities, input). */
   private state!: SimState;
@@ -144,6 +148,7 @@ export class FluidSimulation {
 
     this.pipelines = new ComputePipelinesLinear(device);
     this.renderer = new Renderer(device, canvas, format, config);
+    this.splatPipeline = new DensitySplatPipeline(device);
 
     this.reset();
   }
@@ -188,10 +193,8 @@ export class FluidSimulation {
     );
 
     this.pipelines.createBindGroups(this.buffers);
-    this.renderer.createBindGroup(this.buffers); // Renderer type might need update if it depends on buffer type?
-    // Renderer expects 'SimulationBuffers'. I need to check if SimulationBuffersLinear is compatible.
-    // It has positions, velocities, visibleIndices, indirectDraw.
-    // It should be compatible structurally for what Renderer uses.
+    this.splatPipeline.recreate(this.config, this.buffers.predicted);
+    this.renderer.createBindGroup(this.buffers, this.splatPipeline.textureView);
   }
 
   /**
@@ -321,6 +324,10 @@ export class FluidSimulation {
 
       device.queue.submit([encoder.finish()]);
     }
+
+    const splatEncoder = device.createCommandEncoder();
+    this.splatPipeline.dispatch(splatEncoder, buffers.particleCount, config);
+    device.queue.submit([splatEncoder.finish()]);
   }
 
   /**

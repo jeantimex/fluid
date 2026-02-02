@@ -130,6 +130,8 @@ export function setupGui(
       Normal: 0,
       'Red Hit': 1,
       'Flat Colors': 2,
+      'Shadow Debug': 3,
+      'Density Debug': 4,
     }).name('Floor Mode');
 
     // Tile Colors
@@ -151,6 +153,22 @@ export function setupGui(
     envFolder.addColor(tileColorState, 'tileCol2').name('Tile Color 2').onChange(updateTileColor('tileCol2'));
     envFolder.addColor(tileColorState, 'tileCol3').name('Tile Color 3').onChange(updateTileColor('tileCol3'));
     envFolder.addColor(tileColorState, 'tileCol4').name('Tile Color 4').onChange(updateTileColor('tileCol4'));
+  }
+
+  if ('densityTextureRes' in config) {
+    const shadowFolder = gui.addFolder('Density Shadow');
+    shadowFolder.close();
+    const shadowConfig = config as any;
+    shadowFolder
+      .add(shadowConfig, 'densityTextureRes', 32, 256, 1)
+      .name('Volume Res')
+      .onFinishChange(() => callbacks.onReset());
+    shadowFolder.add(shadowConfig, 'densityOffset', 0, 500, 1).name('Density Offset');
+    shadowFolder
+      .add(shadowConfig, 'densityMultiplier', 0.0, 0.2, 0.001)
+      .name('Density Multiplier');
+    shadowFolder.add(shadowConfig, 'lightStepSize', 0.01, 0.5, 0.01).name('Light Step');
+    shadowFolder.add(shadowConfig, 'shadowSoftness', 0.0, 4.0, 0.05).name('Softness');
   }
 
   const particlesFolder = gui.addFolder('Particles');

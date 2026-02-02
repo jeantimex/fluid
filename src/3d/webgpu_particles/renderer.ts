@@ -125,7 +125,7 @@ export class Renderer {
   private particleBindGroup!: GPUBindGroup;
   private lineBindGroup: GPUBindGroup;
   private faceBindGroup: GPUBindGroup;
-  private backgroundBindGroup: GPUBindGroup;
+  private backgroundBindGroup!: GPUBindGroup;
 
   // ===========================================================================
   // Line Rendering Resources
@@ -142,6 +142,13 @@ export class Renderer {
   private depthTexture!: GPUTexture;
   private depthWidth = 0;
   private depthHeight = 0;
+
+  // ===========================================================================
+  // Density Shadow
+  // ===========================================================================
+
+  private densitySampler: GPUSampler;
+  private densityUniformBuffer: GPUBuffer;
 
   // ===========================================================================
   // Constructor
@@ -176,6 +183,12 @@ export class Renderer {
     // Actually struct FragmentUniforms has 4 vec4s = 64 bytes
     this.camUniformBuffer = device.createBuffer({
       size: 80, // Updated to 80 bytes
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Density shadow uniforms for background: 64 bytes (aligned)
+    this.densityUniformBuffer = device.createBuffer({
+      size: 64,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -357,14 +370,6 @@ export class Renderer {
       },
     });
 
-    this.backgroundBindGroup = device.createBindGroup({
-      layout: this.backgroundPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.envUniformBuffer } },
-        { binding: 1, resource: { buffer: this.camUniformBuffer } },
-      ],
-    });
-
     // -------------------------------------------------------------------------
     // Create Vertex Buffer (faces + edges)
     // -------------------------------------------------------------------------
@@ -387,6 +392,14 @@ export class Renderer {
     this.faceBindGroup = device.createBindGroup({
       layout: this.facePipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+    });
+
+    this.densitySampler = this.device.createSampler({
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+      addressModeW: 'clamp-to-edge',
+      magFilter: 'linear',
+      minFilter: 'linear',
     });
 
     this.resize();
@@ -422,7 +435,10 @@ export class Renderer {
   // Bind Group Management
   // ===========================================================================
 
-  createBindGroup(buffers: SimulationBuffersLinear) {
+  createBindGroup(
+    buffers: SimulationBuffersLinear,
+    densityTextureView: GPUTextureView
+  ) {
     this.particleBindGroup = this.device.createBindGroup({
       layout: this.particlePipeline.getBindGroupLayout(0),
       entries: [
@@ -431,6 +447,17 @@ export class Renderer {
         { binding: 2, resource: { buffer: this.uniformBuffer } },
         { binding: 3, resource: { buffer: this.gradientBuffer } },
         { binding: 4, resource: { buffer: buffers.visibleIndices } },
+      ],
+    });
+
+    this.backgroundBindGroup = this.device.createBindGroup({
+      layout: this.backgroundPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.envUniformBuffer } },
+        { binding: 1, resource: { buffer: this.camUniformBuffer } },
+        { binding: 2, resource: densityTextureView },
+        { binding: 3, resource: this.densitySampler },
+        { binding: 4, resource: { buffer: this.densityUniformBuffer } },
       ],
     });
   }
@@ -612,6 +639,25 @@ export class Renderer {
     camFullData[16] = Math.PI / 3;
     camFullData[17] = aspect;
     this.device.queue.writeBuffer(this.camUniformBuffer, 0, camFullData);
+
+    // -------------------------------------------------------------------------
+    // Density Shadow Params (volume-based)
+    // -------------------------------------------------------------------------
+
+    const densityUniforms = new Float32Array(16);
+    densityUniforms[0] = config.boundsSize.x;
+    densityUniforms[1] = config.boundsSize.y;
+    densityUniforms[2] = config.boundsSize.z;
+    densityUniforms[3] = config.densityOffset;
+    densityUniforms[4] = config.densityMultiplier;
+    densityUniforms[5] = config.lightStepSize;
+    densityUniforms[6] = config.shadowSoftness;
+    densityUniforms[7] = 0.0;
+    densityUniforms[8] = config.extinctionCoefficients.x;
+    densityUniforms[9] = config.extinctionCoefficients.y;
+    densityUniforms[10] = config.extinctionCoefficients.z;
+    densityUniforms[11] = 0.0;
+    this.device.queue.writeBuffer(this.densityUniformBuffer, 0, densityUniforms);
 
     // -------------------------------------------------------------------------
     // Build & Upload Obstacle Geometry (faces + edges)

@@ -100,6 +100,12 @@ const config: ParticlesConfig = {
   iterationsPerFrame: 3,
   velocityDisplayMax: 6.5,
   gradientResolution: 64,
+  densityTextureRes: 150,
+  densityOffset: 0,
+  densityMultiplier: 0.02,
+  lightStepSize: 0.1,
+  shadowSoftness: 1.0,
+  extinctionCoefficients: { x: 2.12, y: 0.43, z: 0.3 },
   colorKeys: [
     { t: 4064 / 65535, r: 0.13363299, g: 0.34235913, b: 0.7264151 }, // Slow: blue
     { t: 33191 / 65535, r: 0.2980392, g: 1, b: 0.56327766 }, // Medium: cyan-green
