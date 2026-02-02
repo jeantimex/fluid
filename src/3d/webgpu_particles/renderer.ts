@@ -60,11 +60,18 @@
 
 import particleShader from './shaders/particle3d.wgsl?raw';
 import lineShader from './shaders/line3d.wgsl?raw';
+import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
+import shadowShader from './shaders/shadow.wgsl?raw';
 import backgroundShader from './shaders/background.wgsl?raw';
 import environmentShader from '../common/shaders/environment.wgsl?raw';
 import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import type { ParticlesConfig } from './types.ts';
-import { mat4Perspective, mat4Multiply } from './math_utils.ts';
+import {
+  mat4Perspective,
+  mat4Multiply,
+  mat4LookAt,
+  mat4Ortho,
+} from './math_utils.ts';
 import { buildGradientLut } from '../common/kernels.ts';
 import { writeEnvironmentUniforms } from '../common/environment.ts';
 import { preprocessShader } from '../common/shader_preprocessor.ts';
@@ -102,6 +109,12 @@ export class Renderer {
   /** Pipeline for rendering the environment background. */
   private backgroundPipeline: GPURenderPipeline;
 
+  /** Pipeline for particle shadow map rendering. */
+  private shadowParticlePipeline: GPURenderPipeline;
+
+  /** Pipeline for obstacle shadow map rendering. */
+  private shadowObstaclePipeline: GPURenderPipeline;
+
   // ===========================================================================
   // GPU Buffers
   // ===========================================================================
@@ -118,6 +131,9 @@ export class Renderer {
   /** Uniform buffer for camera settings (for background shader). */
   private camUniformBuffer: GPUBuffer;
 
+  /** Uniform buffer for shadow map settings. */
+  private shadowUniformBuffer: GPUBuffer;
+
   // ===========================================================================
   // Bind Groups
   // ===========================================================================
@@ -126,6 +142,8 @@ export class Renderer {
   private lineBindGroup: GPUBindGroup;
   private faceBindGroup: GPUBindGroup;
   private backgroundBindGroup!: GPUBindGroup;
+  private shadowParticleBindGroup!: GPUBindGroup;
+  private shadowObstacleBindGroup!: GPUBindGroup;
 
   // ===========================================================================
   // Line Rendering Resources
@@ -142,6 +160,14 @@ export class Renderer {
   private depthTexture!: GPUTexture;
   private depthWidth = 0;
   private depthHeight = 0;
+
+  // ===========================================================================
+  // Shadow Map
+  // ===========================================================================
+
+  private shadowTexture!: GPUTexture;
+  private shadowMapSize = 2048;
+  private shadowSampler: GPUSampler;
 
   // ===========================================================================
   // Density Shadow
@@ -167,9 +193,9 @@ export class Renderer {
     // Create Uniform Buffers
     // -------------------------------------------------------------------------
 
-    // Render uniforms: 96 bytes
+    // Render uniforms: 112 bytes
     this.uniformBuffer = device.createBuffer({
-      size: 96,
+      size: 112,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -189,6 +215,12 @@ export class Renderer {
     // Density shadow uniforms for background: 64 bytes (aligned)
     this.densityUniformBuffer = device.createBuffer({
       size: 64,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Shadow uniforms: lightViewProjection (64) + softness + particleRadius + padding = 80 bytes (round to 96)
+    this.shadowUniformBuffer = device.createBuffer({
+      size: 96,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -298,23 +330,25 @@ export class Renderer {
     // Create Face Render Pipeline
     // -------------------------------------------------------------------------
 
+    const faceModule = device.createShaderModule({ code: obstacleFaceShader });
     this.facePipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: {
-        module: lineModule,
+        module: faceModule,
         entryPoint: 'vs_main',
         buffers: [
           {
-            arrayStride: 28,
+            arrayStride: 40,
             attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x3' },
-              { shaderLocation: 1, offset: 12, format: 'float32x4' },
+              { shaderLocation: 0, offset: 0, format: 'float32x3' }, // pos
+              { shaderLocation: 1, offset: 12, format: 'float32x3' }, // normal
+              { shaderLocation: 2, offset: 24, format: 'float32x4' }, // color
             ],
           },
         ],
       },
       fragment: {
-        module: lineModule,
+        module: faceModule,
         entryPoint: 'fs_main',
         targets: [
           {
@@ -334,7 +368,7 @@ export class Renderer {
           },
         ],
       },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: {
         format: 'depth24plus',
         depthWriteEnabled: false,
@@ -371,13 +405,67 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
+    // Create Shadow Render Pipelines
+    // -------------------------------------------------------------------------
+
+    const shadowModule = device.createShaderModule({ code: shadowShader });
+
+    this.shadowParticlePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: shadowModule, entryPoint: 'vs_particles' },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    this.shadowObstaclePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: shadowModule,
+        entryPoint: 'vs_obstacle',
+        buffers: [
+          {
+            arrayStride: 40,
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+          },
+        ],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    // -------------------------------------------------------------------------
     // Create Vertex Buffer (faces + edges)
     // -------------------------------------------------------------------------
 
-    this.lineVertexData = new Float32Array(72 * 7);
+    // Allocate for face vertices (36 × 10 floats) + edge vertices (24 × 7 floats) + headroom
+    this.lineVertexData = new Float32Array(720);
     this.lineVertexBuffer = device.createBuffer({
       size: this.lineVertexData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+
+    // -------------------------------------------------------------------------
+    // Create Shadow Resources
+    // -------------------------------------------------------------------------
+
+    this.shadowTexture = this.device.createTexture({
+      size: [this.shadowMapSize, this.shadowMapSize],
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
+    this.shadowSampler = this.device.createSampler({
+      compare: 'less',
+      magFilter: 'linear',
+      minFilter: 'linear',
     });
 
     // -------------------------------------------------------------------------
@@ -391,7 +479,17 @@ export class Renderer {
 
     this.faceBindGroup = device.createBindGroup({
       layout: this.facePipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+      entries: [
+        { binding: 0, resource: { buffer: this.uniformBuffer } },
+        { binding: 1, resource: this.shadowTexture.createView() },
+        { binding: 2, resource: this.shadowSampler },
+        { binding: 3, resource: { buffer: this.shadowUniformBuffer } },
+      ],
+    });
+
+    this.shadowObstacleBindGroup = device.createBindGroup({
+      layout: this.shadowObstaclePipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.shadowUniformBuffer } }],
     });
 
     this.densitySampler = this.device.createSampler({
@@ -447,6 +545,17 @@ export class Renderer {
         { binding: 2, resource: { buffer: this.uniformBuffer } },
         { binding: 3, resource: { buffer: this.gradientBuffer } },
         { binding: 4, resource: { buffer: buffers.visibleIndices } },
+        { binding: 5, resource: this.shadowTexture.createView() },
+        { binding: 6, resource: this.shadowSampler },
+        { binding: 7, resource: { buffer: this.shadowUniformBuffer } },
+      ],
+    });
+
+    this.shadowParticleBindGroup = this.device.createBindGroup({
+      layout: this.shadowParticlePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.shadowUniformBuffer } },
+        { binding: 1, resource: { buffer: buffers.positions } },
       ],
     });
 
@@ -518,8 +627,48 @@ export class Renderer {
       rotate(-hx, +hy, +hz),
     ];
 
+    const rotateDir = (
+      lx: number,
+      ly: number,
+      lz: number
+    ): [number, number, number] => {
+      const y1 = ly * cosX - lz * sinX;
+      const z1 = ly * sinX + lz * cosX;
+      const x2 = lx * cosY + z1 * sinY;
+      const z2 = -lx * sinY + z1 * cosY;
+      const x3 = x2 * cosZ - y1 * sinZ;
+      const y3 = x2 * sinZ + y1 * cosZ;
+      return [x3, y3, z2];
+    };
+
+    const faceNormals: [number, number, number][] = [
+      rotateDir(0, 0, -1),
+      rotateDir(0, 0, +1),
+      rotateDir(-1, 0, 0),
+      rotateDir(+1, 0, 0),
+      rotateDir(0, -1, 0),
+      rotateDir(0, +1, 0),
+    ];
+
     let offset = 0;
-    const vert = (p: [number, number, number]) => {
+
+    const faceVert = (
+      p: [number, number, number],
+      n: [number, number, number]
+    ) => {
+      this.lineVertexData[offset++] = p[0];
+      this.lineVertexData[offset++] = p[1];
+      this.lineVertexData[offset++] = p[2];
+      this.lineVertexData[offset++] = n[0];
+      this.lineVertexData[offset++] = n[1];
+      this.lineVertexData[offset++] = n[2];
+      this.lineVertexData[offset++] = color.r;
+      this.lineVertexData[offset++] = color.g;
+      this.lineVertexData[offset++] = color.b;
+      this.lineVertexData[offset++] = alpha;
+    };
+
+    const edgeVert = (p: [number, number, number]) => {
       this.lineVertexData[offset++] = p[0];
       this.lineVertexData[offset++] = p[1];
       this.lineVertexData[offset++] = p[2];
@@ -538,9 +687,10 @@ export class Renderer {
       [3, 7, 6, 3, 6, 2],
     ];
 
-    for (const face of faces) {
-      for (const idx of face) {
-        vert(c[idx]);
+    for (let fi = 0; fi < faces.length; fi++) {
+      const n = faceNormals[fi];
+      for (const idx of faces[fi]) {
+        faceVert(c[idx], n);
       }
     }
 
@@ -553,8 +703,8 @@ export class Renderer {
     ];
 
     for (const [a, b] of edges) {
-      vert(c[a]);
-      vert(c[b]);
+      edgeVert(c[a]);
+      edgeVert(c[b]);
     }
 
     const edgeCount = 24;
@@ -596,13 +746,20 @@ export class Renderer {
     const dpr = window.devicePixelRatio || 1;
 
     // Pack uniform data
-    const uniforms = new Float32Array(24);
+    const uniforms = new Float32Array(28);
     uniforms.set(viewProj); // [0-15]: viewProjection matrix
     uniforms[16] = this.canvas.width; // canvasSize.x
     uniforms[17] = this.canvas.height; // canvasSize.y
     uniforms[18] = config.particleRadius * dpr; // particleRadius in device pixels
     uniforms[19] = config.velocityDisplayMax; // For velocity → color mapping
     uniforms[20] = config.sceneExposure;
+    uniforms[21] = config.floorAmbient;
+    uniforms[22] = config.sunBrightness;
+    uniforms[23] = 0.0;
+    uniforms[24] = config.dirToSun.x;
+    uniforms[25] = config.dirToSun.y;
+    uniforms[26] = config.dirToSun.z;
+    uniforms[27] = 0.0;
 
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
@@ -660,6 +817,49 @@ export class Renderer {
     this.device.queue.writeBuffer(this.densityUniformBuffer, 0, densityUniforms);
 
     // -------------------------------------------------------------------------
+    // Shadow Pass Calculations
+    // -------------------------------------------------------------------------
+
+    const bounds = config.boundsSize;
+    const floor = config.floorSize;
+    const sunDir = config.dirToSun;
+
+    const lightDistance = Math.max(bounds.x + bounds.z, floor.x + floor.z);
+    const orthoSize = lightDistance * 0.6;
+
+    const lightPos = {
+      x: sunDir.x * lightDistance,
+      y: sunDir.y * lightDistance,
+      z: sunDir.z * lightDistance,
+    };
+
+    const lightView = mat4LookAt(
+      lightPos,
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 }
+    );
+
+    const lightProj = mat4Ortho(
+      -orthoSize,
+      orthoSize,
+      -orthoSize,
+      orthoSize,
+      0.1,
+      -lightDistance * 3.0
+    );
+
+    const lightViewProj = mat4Multiply(lightProj, lightView);
+
+    const shadowParticleRadius = Math.max(0.001, config.smoothingRadius);
+    const shadowParticleRadiusNdc = shadowParticleRadius / orthoSize;
+
+    const shadowUniforms = new Float32Array(20);
+    shadowUniforms.set(lightViewProj);
+    shadowUniforms[16] = config.shadowSoftness ?? 1.0;
+    shadowUniforms[17] = shadowParticleRadiusNdc;
+    this.device.queue.writeBuffer(this.shadowUniformBuffer, 0, shadowUniforms);
+
+    // -------------------------------------------------------------------------
     // Build & Upload Obstacle Geometry (faces + edges)
     // -------------------------------------------------------------------------
 
@@ -671,9 +871,36 @@ export class Renderer {
         0,
         this.lineVertexData.buffer,
         this.lineVertexData.byteOffset,
-        totalVerts * 7 * 4 // bytes
+        (faceCount * 10 + edgeCount * 7) * 4
       );
     }
+
+    // -------------------------------------------------------------------------
+    // Shadow Pass
+    // -------------------------------------------------------------------------
+
+    const shadowPass = encoder.beginRenderPass({
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: this.shadowTexture.createView(),
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    });
+
+    shadowPass.setPipeline(this.shadowParticlePipeline);
+    shadowPass.setBindGroup(0, this.shadowParticleBindGroup);
+    shadowPass.draw(6, buffers.particleCount, 0, 0);
+
+    if (faceCount > 0) {
+      shadowPass.setPipeline(this.shadowObstaclePipeline);
+      shadowPass.setBindGroup(0, this.shadowObstacleBindGroup);
+      shadowPass.setVertexBuffer(0, this.lineVertexBuffer, 0);
+      shadowPass.draw(faceCount);
+    }
+
+    shadowPass.end();
 
     // -------------------------------------------------------------------------
     // Begin Render Pass
@@ -726,7 +953,7 @@ export class Renderer {
     if (edgeCount > 0) {
       pass.setPipeline(this.linePipeline);
       pass.setBindGroup(0, this.lineBindGroup);
-      pass.setVertexBuffer(0, this.lineVertexBuffer, faceCount * 28);
+      pass.setVertexBuffer(0, this.lineVertexBuffer, faceCount * 40);
       pass.draw(edgeCount);
     }
 
