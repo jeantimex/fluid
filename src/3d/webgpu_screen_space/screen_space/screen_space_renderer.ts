@@ -184,11 +184,11 @@ export class ScreenSpaceRenderer {
     const bounds = this.config.boundsSize;
     const halfX = bounds.x * 0.6;
     const halfY = bounds.y * 0.6;
-    const lightDir = { x: 0.3, y: 1.0, z: 0.4 };
+    const sunDir = this.config.dirToSun;
     const lightPos = {
-      x: -lightDir.x * (bounds.x + bounds.z),
-      y: -lightDir.y * (bounds.x + bounds.z),
-      z: -lightDir.z * (bounds.x + bounds.z),
+      x: sunDir.x * (bounds.x + bounds.z),
+      y: sunDir.y * (bounds.x + bounds.z),
+      z: sunDir.z * (bounds.x + bounds.z),
     };
     const lightView = mat4LookAt(
       lightPos,
@@ -216,12 +216,6 @@ export class ScreenSpaceRenderer {
       foamParticleRadius: this.config.foamParticleRadius * dpr,
       near,
       far,
-      // Overwrite dirToSun to ensure it's normalized if config one isn't (though EnvironmentConfig usually is)
-      dirToSun: {
-        x: lightDir.x / Math.sqrt(lightDir.x**2 + lightDir.y**2 + lightDir.z**2),
-        y: lightDir.y / Math.sqrt(lightDir.x**2 + lightDir.y**2 + lightDir.z**2),
-        z: lightDir.z / Math.sqrt(lightDir.x**2 + lightDir.y**2 + lightDir.z**2),
-      },
       // Calculate derived obstacleHalfSize
       obstacleHalfSize: {
         x: this.config.obstacleSize.x * 0.5,
