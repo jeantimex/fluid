@@ -336,6 +336,11 @@ export class MarchingCubesRenderer {
     });
     this.device.queue.writeBuffer(this.edgeBBuffer, 0, marchingCubesEdgeB);
 
+    this.faceBindGroup = device.createBindGroup({
+      layout: this.facePipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.renderUniformBuffer } }],
+    });
+
     this.shadowObstacleBindGroup = device.createBindGroup({
       layout: this.shadowObstaclePipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.shadowUniformBuffer } }],
