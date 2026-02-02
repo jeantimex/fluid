@@ -182,13 +182,17 @@ export class ScreenSpaceRenderer {
     const dpr = window.devicePixelRatio || 1;
 
     const bounds = this.config.boundsSize;
-    const halfX = bounds.x * 0.6;
-    const halfY = bounds.y * 0.6;
+    const floor = this.config.floorSize;
     const sunDir = this.config.dirToSun;
+    const lightDistance = Math.max(bounds.x + bounds.z, floor.x + floor.z);
+    
+    // Use a safe square frustum that covers the rotation of the floor/bounds
+    const orthoSize = lightDistance * 0.6;
+
     const lightPos = {
-      x: sunDir.x * (bounds.x + bounds.z),
-      y: sunDir.y * (bounds.x + bounds.z),
-      z: sunDir.z * (bounds.x + bounds.z),
+      x: sunDir.x * lightDistance,
+      y: sunDir.y * lightDistance,
+      z: sunDir.z * lightDistance,
     };
     const lightView = mat4LookAt(
       lightPos,
@@ -196,23 +200,26 @@ export class ScreenSpaceRenderer {
       { x: 0, y: 1, z: 0 }
     );
     const lightProj = mat4Ortho(
-      -halfX,
-      halfX,
-      -halfY,
-      halfY,
+      -orthoSize,
+      orthoSize,
+      -orthoSize,
+      orthoSize,
       0.1,
-      bounds.x + bounds.z
+      -lightDistance * 3.0
     );
     const lightViewProj = mat4Multiply(lightProj, lightView);
+    const lightScale = { x: 1 / orthoSize, y: 1 / orthoSize };
 
     const frame: ScreenSpaceFrame = {
       ...this.config, // Spread first to provide base EnvironmentConfig
       viewProjection: viewProj,
       inverseViewProjection: invViewProj,
       lightViewProjection: lightViewProj,
+      lightScale,
       canvasWidth: this.canvas.width,
       canvasHeight: this.canvas.height,
       particleRadius: this.config.particleRadius * dpr, // Override with DPR-scaled value
+      shadowRadius: this.config.smoothingRadius * this.config.shadowRadiusScale,
       foamParticleRadius: this.config.foamParticleRadius * dpr,
       near,
       far,

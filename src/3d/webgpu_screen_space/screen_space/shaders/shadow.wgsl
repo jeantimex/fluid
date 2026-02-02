@@ -1,7 +1,7 @@
 struct Uniforms {
   viewProjection: mat4x4<f32>,
-  canvasSize: vec2<f32>,
   particleRadius: f32,
+  lightScale: vec2<f32>,
   _pad: f32,
 };
 
@@ -33,8 +33,8 @@ fn vs_main(
 
   let clipPos = uniforms.viewProjection * vec4<f32>(pos, 1.0);
   let radiusNdc = vec2<f32>(
-    uniforms.particleRadius / uniforms.canvasSize.x * 2.0,
-    uniforms.particleRadius / uniforms.canvasSize.y * 2.0
+    uniforms.particleRadius * uniforms.lightScale.x,
+    uniforms.particleRadius * uniforms.lightScale.y
   );
   let offset = quadPos * radiusNdc * clipPos.w;
 

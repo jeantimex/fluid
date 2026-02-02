@@ -125,6 +125,12 @@ export function setupGui(
     envFolder.add(envConfig, 'floorAmbient', 0, 1, 0.01).name('Ambient Light');
     envFolder.add(envConfig, 'sceneExposure', 0.1, 5, 0.1).name('Exposure');
     envFolder.add(envConfig, 'sunBrightness', 0, 5, 0.1).name('Sun Brightness');
+    if (!('densityTextureRes' in config) && 'shadowSoftness' in config) {
+      envFolder.add(envConfig, 'shadowSoftness', 0, 4, 0.05).name('Shadow Softness');
+      if ('shadowRadiusScale' in config) {
+        envFolder.add(envConfig, 'shadowRadiusScale', 0.2, 3.0, 0.05).name('Shadow Radius');
+      }
+    }
     
     envFolder.add(envConfig, 'debugFloorMode', {
       Normal: 0,

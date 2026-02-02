@@ -27,4 +27,6 @@ export interface ScreenSpaceConfig extends SimConfig, EnvironmentConfig {
   extinctionCoeff: Vec3;
   extinctionMultiplier: number;
   refractionStrength: number;
+  shadowSoftness: number;
+  shadowRadiusScale: number;
 }

@@ -243,9 +243,9 @@ export class CompositePass {
       uniforms[38] = frame.extinctionCoeff.z;
       uniforms[39] = frame.extinctionMultiplier;
       uniforms[40] = frame.refractionStrength;
-      uniforms[41] = 0; // pad
-      uniforms[42] = 0; // pad
-      uniforms[43] = 0; // pad
+      uniforms[41] = frame.shadowSoftness;
+      uniforms[42] = 1 / frame.canvasWidth;
+      uniforms[43] = 1 / frame.canvasHeight;
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
       // Environment uniforms

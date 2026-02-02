@@ -19,7 +19,7 @@ export class ShadowPass {
     this.device = device;
 
     this.uniformBuffer = device.createBuffer({
-      size: 80,
+      size: 96,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -77,12 +77,13 @@ export class ShadowPass {
       return;
     }
 
-    const uniforms = new Float32Array(20);
+    const uniforms = new Float32Array(24);
     uniforms.set(frame.lightViewProjection);
-    uniforms[16] = frame.canvasWidth;
-    uniforms[17] = frame.canvasHeight;
-    uniforms[18] = frame.particleRadius;
-    uniforms[19] = 0.0;
+    uniforms[16] = frame.shadowRadius;
+    uniforms[17] = 0.0;
+    uniforms[18] = frame.lightScale.x;
+    uniforms[19] = frame.lightScale.y;
+    uniforms[20] = 0.0;
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
     const pass = encoder.beginRenderPass({

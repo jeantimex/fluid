@@ -1,5 +1,5 @@
 import type { SimulationBuffersLinear } from '../simulation_buffers_linear.ts';
-import type { RGB, Vec3 } from '../../common/types.ts';
+import type { RGB, Vec3, Vec2 } from '../../common/types.ts';
 import type { EnvironmentConfig } from '../../common/environment.ts';
 
 export type SimBuffers = SimulationBuffersLinear;
@@ -18,9 +18,11 @@ export interface ScreenSpaceFrame extends EnvironmentConfig {
   viewProjection: Float32Array;
   inverseViewProjection: Float32Array;
   lightViewProjection: Float32Array;
+  lightScale: Vec2;
   canvasWidth: number;
   canvasHeight: number;
   particleRadius: number;
+  shadowRadius: number;
   foamParticleRadius: number;
   near: number;
   far: number;
@@ -29,6 +31,8 @@ export interface ScreenSpaceFrame extends EnvironmentConfig {
   extinctionCoeff: Vec3;
   extinctionMultiplier: number;
   refractionStrength: number;
+  shadowSoftness: number;
+  shadowRadiusScale: number;
   // Overlapping fields removed as they are in EnvironmentConfig: dirToSun
   
   // Obstacle fields (from SimConfig)
