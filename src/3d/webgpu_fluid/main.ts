@@ -186,6 +186,7 @@ function updateGui(adapter: FluidAppAdapter): void {
       .name('Density Multiplier');
     raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
     raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
+    raymarchFolder.add(config, 'shadowSoftness', 0.0, 4.0, 0.05).name('Softness');
     raymarchFolder
       .add(config, 'tileDarkFactor', 0.1, 0.9, 0.01)
       .name('Tile Dark Factor');

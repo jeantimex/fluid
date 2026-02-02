@@ -102,10 +102,11 @@ const config: RaymarchConfig = {
   viscosityStrength: 0,
   iterationsPerFrame: 2,
   densityTextureRes: 150,
-  densityOffset: 200,
-  densityMultiplier: 0.05,
+  densityOffset: 0,
+  densityMultiplier: 0.03,
   stepSize: 0.08,
   lightStepSize: 0.1,
+  shadowSoftness: 1.0,
   maxSteps: 512,
   extinctionCoefficients: { x: 18, y: 8, z: 2 },
   indexOfRefraction: 1.33,
@@ -149,11 +150,12 @@ raymarchFolder
   .name('Density Texture Res')
   .onFinishChange(() => simulation?.reset());
 raymarchFolder.add(config, 'densityOffset', 0, 400, 1).name('Density Offset');
-raymarchFolder
-  .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
-  .name('Density Multiplier');
-raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
-raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
+    raymarchFolder
+      .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
+      .name('Density Multiplier');
+    raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
+    raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
+    raymarchFolder.add(config, 'shadowSoftness', 0.0, 4.0, 0.05).name('Softness');
 raymarchFolder
   .add(config, 'tileDarkFactor', 0.1, 0.9, 0.01)
   .name('Tile Dark Factor');

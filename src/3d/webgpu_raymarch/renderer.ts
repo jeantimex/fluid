@@ -349,7 +349,7 @@ export class RaymarchRenderer {
     // 20-23: densityMultiplier, stepSize, lightStepSize, aspect
     this.uniformData[20] = config.densityMultiplier / 1000; // Scale down for shader
     this.uniformData[21] = config.stepSize;
-    this.uniformData[22] = config.lightStepSize;
+    this.uniformData[22] = config.lightStepSize * (1.0 + config.shadowSoftness);
     this.uniformData[23] = aspect;
 
     // 24-27: fovY, maxSteps, indexOfRefraction, numRefractions

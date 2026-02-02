@@ -265,6 +265,82 @@ fn transmittance(opticalDepth: f32) -> vec3<f32> {
 }
 
 // =============================================================================
+// Environment Sampling (Shadowed Floor)
+// =============================================================================
+
+fn getEnvironmentColorShadowed(origin: vec3<f32>, dir: vec3<f32>, env: EnvironmentUniforms) -> vec3<f32> {
+  let floorMin = env.floorCenter - 0.5 * env.floorSize;
+  let floorMax = env.floorCenter + 0.5 * env.floorSize;
+  let floorHit = envRayBoxIntersection(origin, dir, floorMin, floorMax);
+  let hasFloorHit = floorHit.y >= max(floorHit.x, 0.0);
+  let floorT = select(floorHit.x, 0.0, floorHit.x < 0.0);
+
+  var bgCol: vec3<f32>;
+
+  if (hasFloorHit) {
+    let hitPos = origin + dir * floorT;
+
+    if (env.debugFloorMode >= 2.5) {
+      let shadowDepth = calculateDensityForShadow(hitPos, env.dirToSun, 100.0);
+      let shadowMap = transmittance(shadowDepth * 4.0);
+      return shadowMap;
+    }
+
+    if (env.debugFloorMode >= 1.5) {
+      var debugTileCol = env.tileCol1;
+      if (hitPos.x >= 0.0) { debugTileCol = env.tileCol2; }
+      if (hitPos.z < 0.0) {
+        if (hitPos.x < 0.0) { debugTileCol = env.tileCol3; }
+        else { debugTileCol = env.tileCol4; }
+      }
+      bgCol = envSrgbToLinear(debugTileCol);
+    } else if (env.debugFloorMode >= 0.5) {
+      bgCol = vec3<f32>(1.0, 0.0, 0.0);
+    } else {
+      var tileCol = env.tileCol1;
+      if (hitPos.x >= 0.0) { tileCol = env.tileCol2; }
+      if (hitPos.z < 0.0) {
+        if (hitPos.x < 0.0) { tileCol = env.tileCol3; }
+        else { tileCol = env.tileCol4; }
+      }
+
+      let tileCoord = floor(hitPos.xz * env.tileScale);
+      let isDarkTile = envModulo(tileCoord.x, 2.0) == envModulo(tileCoord.y, 2.0);
+      if (isDarkTile) {
+        tileCol = tileCol * env.tileDarkFactor;
+      }
+
+      if (any(env.tileColVariation != vec3<f32>(0.0))) {
+        var rngState = envHashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
+        let randomVariation = envRandomSNorm3(&rngState) * env.tileColVariation * 0.1;
+        tileCol = envTweakHsv(tileCol, randomVariation);
+      }
+
+      let shadowDepth = calculateDensityForShadow(hitPos, env.dirToSun, 100.0);
+      let shadowMap = transmittance(shadowDepth * 4.0);
+      let ambient = clamp(env.floorAmbient, 0.0, 1.0);
+      let lighting = shadowMap * (1.0 - ambient) + ambient;
+      bgCol = tileCol * lighting;
+    }
+  } else {
+    bgCol = getSkyColor(dir, env);
+  }
+
+  let obs = getObstacleHit(origin, dir, env);
+  let obsT = obs.x;
+  let obsNormal = obs.yzw;
+  if (obsT >= 0.0 && (!hasFloorHit || obsT < floorT)) {
+    let a = clamp(env.obstacleAlpha, 0.0, 1.0);
+    let ambient = clamp(env.floorAmbient, 0.0, 1.0);
+    let sun = max(0.0, dot(obsNormal, env.dirToSun)) * env.sunBrightness;
+    let lit = env.obstacleColor * (ambient + sun);
+    return mix(bgCol, lit, a);
+  }
+
+  return bgCol;
+}
+
+// =============================================================================
 // Fresnel Reflection & Refraction (Snell's Law)
 // =============================================================================
 
@@ -405,7 +481,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
      travellingThroughFluid = (traceRefractedRay != travellingThroughFluid);
 
      if (traceRefractedRay) {
-        let reflectLight = getEnvironmentColor(surfaceInfo.pos, response.reflectDir, env);
+        let reflectLight = getEnvironmentColorShadowed(surfaceInfo.pos, response.reflectDir, env);
         let reflectTrans = transmittance(densityReflect);
         totalLight = totalLight + reflectLight * totalTransmittance * reflectTrans * response.reflectWeight;
 
@@ -413,7 +489,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         rayDir = response.refractDir;
         totalTransmittance = totalTransmittance * response.refractWeight;
      } else {
-        let refractLight = getEnvironmentColor(surfaceInfo.pos, response.refractDir, env);
+        let refractLight = getEnvironmentColorShadowed(surfaceInfo.pos, response.refractDir, env);
         let refractTrans = transmittance(densityRefract);
         totalLight = totalLight + refractLight * totalTransmittance * refractTrans * response.refractWeight;
 
@@ -426,7 +502,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let densityRemainder = calculateDensityForShadow(rayPos, rayDir, 1000.0);
   
   // Use shared environment sampling
-  let finalBg = getEnvironmentColor(rayPos, rayDir, env);
+  let finalBg = getEnvironmentColorShadowed(rayPos, rayDir, env);
   
   totalLight = totalLight + finalBg * totalTransmittance * transmittance(densityRemainder);
 

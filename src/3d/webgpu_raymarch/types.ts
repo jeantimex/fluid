@@ -55,6 +55,8 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
 
   /** World-space distance between successive samples along shadow/light rays. */
   lightStepSize: number;
+  /** Scales shadow ray step size for softer shadows. */
+  shadowSoftness: number;
 
   /** Maximum number of ray steps before the march terminates. */
   maxSteps: number;

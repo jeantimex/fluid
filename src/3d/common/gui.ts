@@ -159,16 +159,32 @@ export function setupGui(
     const shadowFolder = gui.addFolder('Density Shadow');
     shadowFolder.close();
     const shadowConfig = config as any;
-    shadowFolder
-      .add(shadowConfig, 'densityTextureRes', 32, 256, 1)
-      .name('Volume Res')
-      .onFinishChange(() => callbacks.onReset());
-    shadowFolder.add(shadowConfig, 'densityOffset', 0, 500, 1).name('Density Offset');
-    shadowFolder
-      .add(shadowConfig, 'densityMultiplier', 0.0, 0.2, 0.001)
-      .name('Density Multiplier');
-    shadowFolder.add(shadowConfig, 'lightStepSize', 0.01, 0.5, 0.01).name('Light Step');
-    shadowFolder.add(shadowConfig, 'shadowSoftness', 0.0, 4.0, 0.05).name('Softness');
+    if (typeof shadowConfig.densityTextureRes === 'number') {
+      shadowFolder
+        .add(shadowConfig, 'densityTextureRes', 32, 256, 1)
+        .name('Volume Res')
+        .onFinishChange(() => callbacks.onReset());
+    }
+    if (typeof shadowConfig.densityOffset === 'number') {
+      shadowFolder
+        .add(shadowConfig, 'densityOffset', 0, 500, 1)
+        .name('Density Offset');
+    }
+    if (typeof shadowConfig.densityMultiplier === 'number') {
+      shadowFolder
+        .add(shadowConfig, 'densityMultiplier', 0.0, 0.2, 0.001)
+        .name('Density Multiplier');
+    }
+    if (typeof shadowConfig.lightStepSize === 'number') {
+      shadowFolder
+        .add(shadowConfig, 'lightStepSize', 0.01, 0.5, 0.01)
+        .name('Light Step');
+    }
+    if (typeof shadowConfig.shadowSoftness === 'number') {
+      shadowFolder
+        .add(shadowConfig, 'shadowSoftness', 0.0, 4.0, 0.05)
+        .name('Softness');
+    }
   }
 
   const particlesFolder = gui.addFolder('Particles');
