@@ -118,6 +118,15 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
   if (typeof s.obstacleAlpha === 'number' && typeof t.obstacleAlpha === 'number') {
     t.obstacleAlpha = s.obstacleAlpha;
   }
+
+  // Sync Raymarch specific
+  const sRay = s as any;
+  const tRay = t as any;
+  if (sRay.fluidColor && tRay.fluidColor) {
+    tRay.fluidColor.r = sRay.fluidColor.r;
+    tRay.fluidColor.g = sRay.fluidColor.g;
+    tRay.fluidColor.b = sRay.fluidColor.b;
+  }
   
   // Sync Environment
   const sEnv = s as any;
@@ -176,6 +185,7 @@ function updateGui(adapter: FluidAppAdapter): void {
   else if (adapter.name === 'Raymarch') {
     const raymarchFolder = mainGui.addFolder('Raymarch');
     raymarchFolder.close();
+    raymarchFolder.addColor(config, 'fluidColor').name('Fluid Color');
     raymarchFolder
       .add(config, 'densityTextureRes', 32, 256, 1)
       .name('Density Texture Res')
@@ -187,6 +197,10 @@ function updateGui(adapter: FluidAppAdapter): void {
     raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
     raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
     raymarchFolder.add(config, 'shadowSoftness', 0.0, 4.0, 0.05).name('Softness');
+    const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
+    extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');
+    extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
+    extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
     raymarchFolder
       .add(config, 'tileDarkFactor', 0.1, 0.9, 0.01)
       .name('Tile Dark Factor');

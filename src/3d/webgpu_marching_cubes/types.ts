@@ -29,4 +29,7 @@ export interface MarchingCubesConfig extends SimConfig, EnvironmentConfig {
    * Base surface color for the generated mesh (linear RGB).
    */
   surfaceColor: { r: number; g: number; b: number };
+
+  /** Scales shadow ray step size for softer shadows. */
+  shadowSoftness: number;
 }

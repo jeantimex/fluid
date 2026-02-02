@@ -237,7 +237,7 @@ export class RaymarchRenderer {
     // Uniform Buffer
     // -------------------------------------------------------------------------
 
-    this.uniformData = new Float32Array(32); // 32 floats = 128 bytes
+    this.uniformData = new Float32Array(36); // 36 floats = 144 bytes
 
     this.uniformBuffer = device.createBuffer({
       size: this.uniformData.byteLength,
@@ -594,6 +594,12 @@ export class RaymarchRenderer {
     this.uniformData[29] = config.extinctionCoefficients.y;
     this.uniformData[30] = config.extinctionCoefficients.z;
     this.uniformData[31] = 0;
+
+    // 32-35: fluidColor, pad
+    this.uniformData[32] = config.fluidColor.r;
+    this.uniformData[33] = config.fluidColor.g;
+    this.uniformData[34] = config.fluidColor.b;
+    this.uniformData[35] = 0;
 
     // Upload RaymarchParams to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

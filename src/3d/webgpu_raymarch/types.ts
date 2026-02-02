@@ -10,7 +10,7 @@
  * @module types
  */
 
-import type { SimConfig } from '../common/types.ts';
+import type { SimConfig, RGB } from '../common/types.ts';
 import type { EnvironmentConfig } from '../common/environment.ts';
 
 /**
@@ -21,6 +21,9 @@ import type { EnvironmentConfig } from '../common/environment.ts';
  * pipeline and the full-screen raymarch fragment shader.
  */
 export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
+  /** Base color of the fluid. */
+  fluidColor: RGB;
+
   // ---------------------------------------------------------------------------
   // Density Volume
   // ---------------------------------------------------------------------------

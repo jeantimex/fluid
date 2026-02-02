@@ -101,6 +101,7 @@ const config: RaymarchConfig = {
   ...createDefaultEnvironmentConfig(),
   viscosityStrength: 0,
   iterationsPerFrame: 2,
+  fluidColor: { r: 0.4, g: 0.7, b: 1.0 },
   densityTextureRes: 150,
   densityOffset: 200,
   densityMultiplier: 0.03,
@@ -145,6 +146,7 @@ const { stats, gui } = setupGui(
 
 const raymarchFolder = gui.addFolder('Raymarch');
 raymarchFolder.close();
+raymarchFolder.addColor(config, 'fluidColor').name('Fluid Color');
 raymarchFolder
   .add(config, 'densityTextureRes', 32, 256, 1)
   .name('Density Texture Res')
@@ -156,6 +158,10 @@ raymarchFolder.add(config, 'densityOffset', 0, 400, 1).name('Density Offset');
     raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
     raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
     raymarchFolder.add(config, 'shadowSoftness', 0.0, 4.0, 0.05).name('Softness');
+    const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
+    extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');
+    extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
+    extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
 raymarchFolder
   .add(config, 'tileDarkFactor', 0.1, 0.9, 0.01)
   .name('Tile Dark Factor');

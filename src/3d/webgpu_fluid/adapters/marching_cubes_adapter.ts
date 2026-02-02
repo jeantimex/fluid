@@ -24,6 +24,7 @@ export class MarchingCubesAdapter
     densityTextureRes: 150,
     isoLevel: 75,
     surfaceColor: { r: 15 / 255, g: 91 / 255, b: 234 / 255 },
+    shadowSoftness: 1.0,
   };
 
   private device!: GPUDevice;

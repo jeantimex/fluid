@@ -30,6 +30,8 @@ struct RaymarchParams {
   numRefractions: f32,
   extinctionCoefficients: vec3<f32>,
   pad4: f32,
+  fluidColor: vec3<f32>,
+  pad5: f32,
 };
 
 struct ShadowUniforms {
@@ -271,7 +273,12 @@ fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) 
 }
 
 fn transmittance(opticalDepth: f32) -> vec3<f32> {
-  return exp(-opticalDepth * params.extinctionCoefficients);
+  // Base extinction from coefficients
+  let T = exp(-opticalDepth * params.extinctionCoefficients);
+  // Apply fluid color tint as an exponential filter
+  // This ensures that thicker fluid appears more strongly colored
+  let colorFilter = pow(max(params.fluidColor, vec3<f32>(0.001)), vec3<f32>(max(opticalDepth * 5.0, 0.0)));
+  return T * colorFilter;
 }
 
 fn sampleShadow(worldPos: vec3<f32>, ndotl: f32) -> f32 {
@@ -521,7 +528,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
      let ndotl = max(dot(normal, env.dirToSun), 0.0);
      let shadow = sampleShadow(surfaceInfo.pos, ndotl);
      let diffuse = ndotl * 0.5 + 0.5;
-     let surfaceLighting = clamp(env.floorAmbient, 0.0, 1.0) + diffuse * env.sunBrightness * shadow;
+     let surfaceLighting = (clamp(env.floorAmbient, 0.0, 1.0) + diffuse * env.sunBrightness * shadow) * params.fluidColor;
 
      let response = calculateReflectionAndRefraction(rayDir, normal, select(iorAir, iorFluid, travellingThroughFluid), select(iorFluid, iorAir, travellingThroughFluid));
 

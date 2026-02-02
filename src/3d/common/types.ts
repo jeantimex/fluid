@@ -4,6 +4,11 @@ export interface Vec3 {
   z: number;
 }
 
+export interface Vec2 {
+  x: number;
+  y: number;
+}
+
 export interface ColorKey {
   t: number;
   r: number;
