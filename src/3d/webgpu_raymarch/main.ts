@@ -47,9 +47,47 @@
 
 import './style.css';
 import { createConfig } from '../common/config.ts';
-import { createDefaultEnvironmentConfig } from '../common/environment.ts';
 import { setupGui } from '../common/gui.ts';
 
+/**
+ * Converts a normalized RGB color (components in [0, 1]) to a hex string.
+ *
+ * Used to bridge the config's normalized color values with lil-gui's
+ * `addColor` control, which expects CSS hex strings like `"#7eb7e7"`.
+ *
+ * @param rgb - Color with r, g, b in [0, 1]
+ * @returns Hex string in the form `"#rrggbb"`
+ */
+function rgbToHex(rgb: { r: number; g: number; b: number }): string {
+  const toByte = (value: number): number =>
+    Math.max(0, Math.min(255, Math.round(value * 255)));
+  const r = toByte(rgb.r).toString(16).padStart(2, '0');
+  const g = toByte(rgb.g).toString(16).padStart(2, '0');
+  const b = toByte(rgb.b).toString(16).padStart(2, '0');
+  return `#${r}${g}${b}`;
+}
+
+/**
+ * Converts a CSS hex color string to an RGB object with byte values (0–255).
+ *
+ * The caller divides each component by 255 before writing back to the config
+ * to restore the normalized [0, 1] range used by the shader uniforms.
+ *
+ * @param hex - Hex string, with or without leading `#` (e.g. `"#7eb7e7"`)
+ * @returns RGB object with r, g, b in [0, 255]
+ */
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const normalized = hex.trim().replace('#', '');
+  if (normalized.length !== 6) {
+    return { r: 0, g: 0, b: 0 };
+  }
+  const value = Number.parseInt(normalized, 16);
+  return {
+    r: (value >> 16) & 0xff,
+    g: (value >> 8) & 0xff,
+    b: value & 0xff,
+  };
+}
 import { FluidSimulation } from './fluid_simulation.ts';
 import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import {
@@ -57,7 +95,7 @@ import {
   configureContext,
   WebGPUInitError,
 } from '../webgpu_particles/webgpu_utils.ts';
-import { setupInputHandlers } from '../webgpu_particles/input_handler.ts';
+import { setupInputHandlers } from './input_handler.ts';
 import type { RaymarchConfig } from './types.ts';
 
 /**
@@ -98,20 +136,32 @@ const canvas = createCanvas(app);
 // floor tile colors, extinction coefficients, and refraction settings.
 const config: RaymarchConfig = {
   ...createConfig(),
-  ...createDefaultEnvironmentConfig(),
   viscosityStrength: 0,
   iterationsPerFrame: 2,
-  fluidColor: { r: 0.4, g: 0.7, b: 1.0 },
   densityTextureRes: 150,
   densityOffset: 200,
-  densityMultiplier: 0.03,
+  densityMultiplier: 0.05,
   stepSize: 0.08,
   lightStepSize: 0.1,
   shadowSoftness: 1.0,
   maxSteps: 512,
+  tileCol1: { r: 126 / 255, g: 183 / 255, b: 231 / 255 }, // Blue
+  tileCol2: { r: 210 / 255, g: 165 / 255, b: 240 / 255 }, // Purple
+  tileCol3: { r: 153 / 255, g: 229 / 255, b: 199 / 255 }, // Green
+  tileCol4: { r: 237 / 255, g: 225 / 255, b: 167 / 255 }, // Yellow
+  tileColVariation: { x: 0, y: 0, z: 0 },
+  tileScale: 1,
+  tileDarkOffset: -0.35,
+  tileDarkFactor: 0.5,
+  floorAmbient: 0.15,
+  sceneExposure: 1.1,
+  debugFloorMode: 0,
   extinctionCoefficients: { x: 18, y: 8, z: 2 },
   indexOfRefraction: 1.33,
   numRefractions: 4,
+  floorSize: { x: 80, y: 0.05, z: 80 },
+  obstacleColor: { r: 1.0, g: 0.0, b: 0.0 },
+  obstacleAlpha: 0.8,
 };
 
 // Simulation instance (initialized asynchronously in main())
@@ -119,9 +169,9 @@ let simulation: FluidSimulation | null = null;
 
 // Initialize the orbit camera with default view position
 const camera = new OrbitCamera();
-camera.radius = 30.0; // Distance from target
-camera.theta = Math.PI / 6; // 30 degrees horizontal rotation
-camera.phi = Math.PI / 2.5; // ~72 degrees from vertical (looking slightly down)
+camera.radius = 28.0; // Moved back to see the whole water volume
+camera.theta = 0.39; // Rotated 160 degrees from original position
+camera.phi = 1.27; // Adjusted to match Unity (approx 72.7 degrees)
 
 // Set up the GUI controls panel
 const { stats, gui } = setupGui(
@@ -146,25 +196,71 @@ const { stats, gui } = setupGui(
 
 const raymarchFolder = gui.addFolder('Raymarch');
 raymarchFolder.close();
-raymarchFolder.addColor(config, 'fluidColor').name('Fluid Color');
 raymarchFolder
   .add(config, 'densityTextureRes', 32, 256, 1)
   .name('Density Texture Res')
   .onFinishChange(() => simulation?.reset());
 raymarchFolder.add(config, 'densityOffset', 0, 400, 1).name('Density Offset');
-    raymarchFolder
-      .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
-      .name('Density Multiplier');
-    raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
-    raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
-    raymarchFolder.add(config, 'shadowSoftness', 0.0, 4.0, 0.05).name('Softness');
-    const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
-    extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');
-    extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
-    extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
+raymarchFolder
+  .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
+  .name('Density Multiplier');
+raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
+raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
 raymarchFolder
   .add(config, 'tileDarkFactor', 0.1, 0.9, 0.01)
   .name('Tile Dark Factor');
+
+// Proxy state object holding hex-string versions of the tile colors.
+// lil-gui's addColor binds to these strings; onChange callbacks convert
+// back to normalized [0,1] and write into the config for the shader.
+const tileColorState = {
+  tileCol1: rgbToHex(config.tileCol1),
+  tileCol2: rgbToHex(config.tileCol2),
+  tileCol3: rgbToHex(config.tileCol3),
+  tileCol4: rgbToHex(config.tileCol4),
+};
+
+
+raymarchFolder
+  .addColor(tileColorState, 'tileCol1')
+  .name('Tile Color 1')
+  .onChange((value: string) => {
+    const rgb = hexToRgb(value);
+    config.tileCol1.r = rgb.r / 255;
+    config.tileCol1.g = rgb.g / 255;
+    config.tileCol1.b = rgb.b / 255;
+  });
+
+raymarchFolder
+  .addColor(tileColorState, 'tileCol2')
+  .name('Tile Color 2')
+  .onChange((value: string) => {
+    const rgb = hexToRgb(value);
+    config.tileCol2.r = rgb.r / 255;
+    config.tileCol2.g = rgb.g / 255;
+    config.tileCol2.b = rgb.b / 255;
+  });
+
+raymarchFolder
+  .addColor(tileColorState, 'tileCol3')
+  .name('Tile Color 3')
+  .onChange((value: string) => {
+    const rgb = hexToRgb(value);
+    config.tileCol3.r = rgb.r / 255;
+    config.tileCol3.g = rgb.g / 255;
+    config.tileCol3.b = rgb.b / 255;
+  });
+
+raymarchFolder
+  .addColor(tileColorState, 'tileCol4')
+  .name('Tile Color 4')
+  .onChange((value: string) => {
+    const rgb = hexToRgb(value);
+    config.tileCol4.r = rgb.r / 255;
+    config.tileCol4.g = rgb.g / 255;
+    config.tileCol4.b = rgb.b / 255;
+  });
+
 
 /**
  * Main Application Entry Point
@@ -253,7 +349,7 @@ async function main() {
   // -------------------------------------------------------------------------
 
   /** Timestamp of the last frame for delta time calculation */
-  let lastTime: number | null = null;
+  let lastTime = performance.now();
 
   /**
    * Main animation loop callback.
@@ -262,7 +358,6 @@ async function main() {
    * @param now - Current timestamp in milliseconds
    */
   const frame = async (now: number) => {
-    if (lastTime === null) lastTime = now;
     stats.begin(); // Start frame timing
 
     // Calculate delta time in seconds

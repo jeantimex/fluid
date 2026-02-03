@@ -63,11 +63,8 @@
 import raymarchShader from './shaders/raymarch.wgsl?raw';
 import blitShader from './shaders/blit.wgsl?raw';
 import shadowShader from '../webgpu_particles/shaders/shadow.wgsl?raw';
-import environmentShader from '../common/shaders/environment.wgsl?raw';
 import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import type { RaymarchConfig } from './types.ts';
-import { preprocessShader } from '../common/shader_preprocessor.ts';
-import { writeEnvironmentUniforms } from '../common/environment.ts';
 import { mat4LookAt, mat4Multiply, mat4Ortho } from '../webgpu_particles/math_utils.ts';
 
 /**
@@ -92,17 +89,21 @@ export class RaymarchRenderer {
   /** Uniform buffer holding camera, bounds, and rendering parameters. */
   private uniformBuffer: GPUBuffer;
 
-  /** Uniform buffer holding environment parameters. */
-  private envUniformBuffer: GPUBuffer;
-
-  /** Uniform buffer for shadow map settings. */
-  private shadowUniformBuffer: GPUBuffer;
-
   /** Trilinear sampler for the 3D density texture (clamp-to-edge). */
   private sampler: GPUSampler;
 
   /** Bind group for the raymarch pass (density texture + sampler + uniforms). */
   private bindGroup!: GPUBindGroup;
+
+  /** CPU-side typed array mirroring the uniform buffer contents (84 floats). */
+  private uniformData = new Float32Array(28);
+
+  // ---------------------------------------------------------------------------
+  // Shadow Map Rendering (Particles + Obstacle)
+  // ---------------------------------------------------------------------------
+
+  /** Uniform buffer for shadow map settings. */
+  private shadowUniformBuffer: GPUBuffer;
 
   /** Bind group for particle shadow rendering. */
   private shadowParticleBindGroup!: GPUBindGroup;
@@ -110,8 +111,26 @@ export class RaymarchRenderer {
   /** Bind group for obstacle shadow rendering. */
   private shadowObstacleBindGroup!: GPUBindGroup;
 
-  /** CPU-side typed array mirroring the uniform buffer contents (32 floats). */
-  private uniformData!: Float32Array<ArrayBuffer>;
+  /** Pipeline for particle shadow map rendering. */
+  private shadowParticlePipeline: GPURenderPipeline;
+
+  /** Pipeline for obstacle shadow map rendering. */
+  private shadowObstaclePipeline: GPURenderPipeline;
+
+  /** Depth texture for shadow map. */
+  private shadowTexture!: GPUTexture;
+
+  /** Shadow map resolution (square). */
+  private shadowMapSize = 2048;
+
+  /** Comparison sampler for shadow map sampling. */
+  private shadowSampler: GPUSampler;
+
+  /** Obstacle face vertex buffer for shadow rendering. */
+  private lineVertexBuffer: GPUBuffer;
+
+  /** CPU-side obstacle face vertex data. */
+  private lineVertexData: Float32Array;
 
   // ---------------------------------------------------------------------------
   // Blit / Half-Resolution Rendering
@@ -138,31 +157,6 @@ export class RaymarchRenderer {
   /** Current height of the offscreen texture (canvas.height / 2). */
   private offscreenHeight = 0;
 
-  // ---------------------------------------------------------------------------
-  // Shadow Map Rendering
-  // ---------------------------------------------------------------------------
-
-  /** Pipeline for particle shadow map rendering. */
-  private shadowParticlePipeline: GPURenderPipeline;
-
-  /** Pipeline for obstacle shadow map rendering. */
-  private shadowObstaclePipeline: GPURenderPipeline;
-
-  /** Depth texture for shadow map. */
-  private shadowTexture!: GPUTexture;
-
-  /** Shadow map resolution (square). */
-  private shadowMapSize = 2048;
-
-  /** Comparison sampler for shadow map sampling. */
-  private shadowSampler: GPUSampler;
-
-  /** Obstacle face vertex buffer for shadow rendering. */
-  private lineVertexBuffer: GPUBuffer;
-
-  /** CPU-side obstacle face vertex data. */
-  private lineVertexData: Float32Array;
-
   /**
    * Creates the raymarch and blit pipelines, samplers, and uniform buffer.
    *
@@ -183,10 +177,7 @@ export class RaymarchRenderer {
     // Raymarch Pipeline
     // -------------------------------------------------------------------------
 
-    const raymarchCode = preprocessShader(raymarchShader, {
-      '../../common/shaders/environment.wgsl': environmentShader,
-    });
-    const module = device.createShaderModule({ code: raymarchCode });
+    const module = device.createShaderModule({ code: raymarchShader });
 
     this.pipeline = device.createRenderPipeline({
       layout: 'auto',
@@ -237,15 +228,10 @@ export class RaymarchRenderer {
     // Uniform Buffer
     // -------------------------------------------------------------------------
 
-    this.uniformData = new Float32Array(36); // 36 floats = 144 bytes
+    this.uniformData = new Float32Array(84); // 84 floats = 336 bytes
 
     this.uniformBuffer = device.createBuffer({
       size: this.uniformData.byteLength,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    this.envUniformBuffer = device.createBuffer({
-      size: 240, // 60 floats
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -340,10 +326,9 @@ export class RaymarchRenderer {
         { binding: 0, resource: densityTextureView },
         { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: this.uniformBuffer } },
-        { binding: 3, resource: { buffer: this.envUniformBuffer } },
-        { binding: 4, resource: this.shadowTexture.createView() },
-        { binding: 5, resource: this.shadowSampler },
-        { binding: 6, resource: { buffer: this.shadowUniformBuffer } },
+        { binding: 3, resource: this.shadowTexture.createView() },
+        { binding: 4, resource: this.shadowSampler },
+        { binding: 5, resource: { buffer: this.shadowUniformBuffer } },
       ],
     });
 
@@ -361,11 +346,58 @@ export class RaymarchRenderer {
     });
   }
 
+  /**
+   * Ensures the offscreen half-resolution texture matches the current canvas
+   * size. Recreates the texture and blit bind group only when dimensions change.
+   *
+   * @param canvasWidth  - Current canvas pixel width
+   * @param canvasHeight - Current canvas pixel height
+   */
+  private ensureOffscreenTexture(
+    canvasWidth: number,
+    canvasHeight: number
+  ): void {
+    const halfW = Math.max(1, Math.floor(canvasWidth / 2));
+    const halfH = Math.max(1, Math.floor(canvasHeight / 2));
+
+    // Skip recreation if dimensions haven't changed
+    if (halfW === this.offscreenWidth && halfH === this.offscreenHeight) {
+      return;
+    }
+
+    if (this.offscreenTexture) {
+      this.offscreenTexture.destroy();
+    }
+
+    this.offscreenWidth = halfW;
+    this.offscreenHeight = halfH;
+
+    this.offscreenTexture = this.device.createTexture({
+      size: { width: halfW, height: halfH },
+      format: this.format,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
+    this.offscreenTextureView = this.offscreenTexture.createView();
+
+    // Rebind the blit pass to sample from the new offscreen texture
+    this.blitBindGroup = this.device.createBindGroup({
+      layout: this.blitPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.offscreenTextureView },
+        { binding: 1, resource: this.blitSampler },
+      ],
+    });
+  }
+
   // ===========================================================================
-  // Obstacle Geometry Builder
+  // Obstacle Geometry Builder (for shadow map)
   // ===========================================================================
 
-  private buildObstacleGeometry(config: RaymarchConfig): { faceCount: number } {
+  private buildObstacleGeometry(config: RaymarchConfig): {
+    faceCount: number;
+  } {
     const hx = config.obstacleSize.x * 0.5;
     const hy = config.obstacleSize.y * 0.5;
     const hz = config.obstacleSize.z * 0.5;
@@ -471,52 +503,9 @@ export class RaymarchRenderer {
       }
     }
 
-    return { faceCount: 36 };
-  }
+    const faceCount = 36;
 
-  /**
-   * Ensures the offscreen half-resolution texture matches the current canvas
-   * size. Recreates the texture and blit bind group only when dimensions change.
-   *
-   * @param canvasWidth  - Current canvas pixel width
-   * @param canvasHeight - Current canvas pixel height
-   */
-  private ensureOffscreenTexture(
-    canvasWidth: number,
-    canvasHeight: number
-  ): void {
-    const halfW = Math.max(1, Math.floor(canvasWidth / 2));
-    const halfH = Math.max(1, Math.floor(canvasHeight / 2));
-
-    // Skip recreation if dimensions haven't changed
-    if (halfW === this.offscreenWidth && halfH === this.offscreenHeight) {
-      return;
-    }
-
-    if (this.offscreenTexture) {
-      this.offscreenTexture.destroy();
-    }
-
-    this.offscreenWidth = halfW;
-    this.offscreenHeight = halfH;
-
-    this.offscreenTexture = this.device.createTexture({
-      size: { width: halfW, height: halfH },
-      format: this.format,
-      usage:
-        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-
-    this.offscreenTextureView = this.offscreenTexture.createView();
-
-    // Rebind the blit pass to sample from the new offscreen texture
-    this.blitBindGroup = this.device.createBindGroup({
-      layout: this.blitPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: this.offscreenTextureView },
-        { binding: 1, resource: this.blitSampler },
-      ],
-    });
+    return { faceCount };
   }
 
   /**
@@ -546,76 +535,132 @@ export class RaymarchRenderer {
     const aspect = this.canvas.width / this.canvas.height;
     const fovY = Math.PI / 3; // 60° vertical field of view
 
-    // --- RaymarchParams (128 bytes) ---
-    // 0-3: viewPos, pad0
+    // --- Camera vectors (vec4-aligned with padding) ---
     this.uniformData[0] = pos.x;
     this.uniformData[1] = pos.y;
     this.uniformData[2] = pos.z;
     this.uniformData[3] = 0; // pad
 
-    // 4-7: cameraRight, pad1
     this.uniformData[4] = basis.right.x;
     this.uniformData[5] = basis.right.y;
     this.uniformData[6] = basis.right.z;
     this.uniformData[7] = 0; // pad
 
-    // 8-11: cameraUp, pad2
     this.uniformData[8] = basis.up.x;
     this.uniformData[9] = basis.up.y;
     this.uniformData[10] = basis.up.z;
     this.uniformData[11] = 0; // pad
 
-    // 12-15: cameraForward, pad3
     this.uniformData[12] = basis.forward.x;
     this.uniformData[13] = basis.forward.y;
     this.uniformData[14] = basis.forward.z;
     this.uniformData[15] = 0; // pad
 
-    // 16-19: boundsSize, densityOffset
+    // --- Volume & density parameters ---
     this.uniformData[16] = config.boundsSize.x;
     this.uniformData[17] = config.boundsSize.y;
     this.uniformData[18] = config.boundsSize.z;
     this.uniformData[19] = config.densityOffset;
 
-    // 20-23: densityMultiplier, stepSize, lightStepSize, aspect
     this.uniformData[20] = config.densityMultiplier / 1000; // Scale down for shader
     this.uniformData[21] = config.stepSize;
-    this.uniformData[22] = config.lightStepSize * (1.0 + config.shadowSoftness);
+    this.uniformData[22] = config.lightStepSize;
     this.uniformData[23] = aspect;
 
-    // 24-27: fovY, maxSteps, indexOfRefraction, numRefractions
     this.uniformData[24] = fovY;
     this.uniformData[25] = config.maxSteps;
-    this.uniformData[26] = config.indexOfRefraction;
-    this.uniformData[27] = config.numRefractions;
+    this.uniformData[26] = config.tileScale;
+    this.uniformData[27] = config.tileDarkOffset;
 
-    // 28-31: extinctionCoefficients, pad
-    this.uniformData[28] = config.extinctionCoefficients.x;
-    this.uniformData[29] = config.extinctionCoefficients.y;
-    this.uniformData[30] = config.extinctionCoefficients.z;
-    this.uniformData[31] = 0;
+    // --- Tile colors (4 quadrant colors, linear space) ---
+    this.uniformData[28] = config.tileCol1.r;
+    this.uniformData[29] = config.tileCol1.g;
+    this.uniformData[30] = config.tileCol1.b;
+    this.uniformData[31] = 0; // pad
 
-    // 32-35: fluidColor, pad
-    this.uniformData[32] = config.fluidColor.r;
-    this.uniformData[33] = config.fluidColor.g;
-    this.uniformData[34] = config.fluidColor.b;
-    this.uniformData[35] = 0;
+    this.uniformData[32] = config.tileCol2.r;
+    this.uniformData[33] = config.tileCol2.g;
+    this.uniformData[34] = config.tileCol2.b;
+    this.uniformData[35] = 0; // pad
 
-    // Upload RaymarchParams to GPU
+    this.uniformData[36] = config.tileCol3.r;
+    this.uniformData[37] = config.tileCol3.g;
+    this.uniformData[38] = config.tileCol3.b;
+    this.uniformData[39] = 0; // pad
+
+    this.uniformData[40] = config.tileCol4.r;
+    this.uniformData[41] = config.tileCol4.g;
+    this.uniformData[42] = config.tileCol4.b;
+    this.uniformData[43] = 0; // pad
+
+    // --- Color variation & debug ---
+    this.uniformData[44] = config.tileColVariation.x;
+    this.uniformData[45] = config.tileColVariation.y;
+    this.uniformData[46] = config.tileColVariation.z;
+    this.uniformData[47] = config.debugFloorMode;
+
+    // --- Sun direction (hardcoded normalized vector) ---
+    const sunDir = { x: 0.83, y: 0.42, z: 0.36 };
+    this.uniformData[48] = sunDir.x; // dirToSun.x
+    this.uniformData[49] = sunDir.y; // dirToSun.y
+    this.uniformData[50] = sunDir.z; // dirToSun.z
+    this.uniformData[51] = 0; // pad
+
+    // --- Extinction coefficients for Beer–Lambert transmittance ---
+    this.uniformData[52] = config.extinctionCoefficients.x;
+    this.uniformData[53] = config.extinctionCoefficients.y;
+    this.uniformData[54] = config.extinctionCoefficients.z;
+    this.uniformData[55] = 0; // pad
+
+    // --- Optical & lighting parameters ---
+    this.uniformData[56] = config.indexOfRefraction;
+    this.uniformData[57] = config.numRefractions;
+    this.uniformData[58] = config.tileDarkFactor;
+    this.uniformData[59] = config.floorAmbient;
+
+    // --- Floor geometry ---
+    this.uniformData[60] = config.floorSize.x;
+    this.uniformData[61] = config.floorSize.y;
+    this.uniformData[62] = config.floorSize.z;
+    this.uniformData[63] = config.sceneExposure;
+
+    // Floor center: horizontally centered, positioned just below the fluid bounds
+    this.uniformData[64] = 0; // floorCenter.x
+    this.uniformData[65] =
+      -config.boundsSize.y * 0.5 - config.floorSize.y * 0.5; // floorCenter.y
+    this.uniformData[66] = 0; // floorCenter.z
+    this.uniformData[67] = 0; // pad
+
+    // --- Obstacle box ---
+    this.uniformData[68] = config.obstacleCentre.x;
+    this.uniformData[69] = config.obstacleCentre.y;
+    this.uniformData[70] = config.obstacleCentre.z;
+    this.uniformData[71] = 0; // pad
+
+    this.uniformData[72] = config.obstacleSize.x * 0.5;
+    this.uniformData[73] = config.obstacleSize.y * 0.5;
+    this.uniformData[74] = config.obstacleSize.z * 0.5;
+    this.uniformData[75] = 0; // pad
+
+    this.uniformData[76] = config.obstacleRotation.x;
+    this.uniformData[77] = config.obstacleRotation.y;
+    this.uniformData[78] = config.obstacleRotation.z;
+    this.uniformData[79] = 0; // pad
+
+    this.uniformData[80] = config.obstacleColor.r;
+    this.uniformData[81] = config.obstacleColor.g;
+    this.uniformData[82] = config.obstacleColor.b;
+    this.uniformData[83] = config.obstacleAlpha;
+
+    // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);
 
-    // --- EnvironmentUniforms (240 bytes) ---
-    const envData = new Float32Array(60);
-    writeEnvironmentUniforms(envData, 0, config, config);
-    this.device.queue.writeBuffer(this.envUniformBuffer, 0, envData);
-
     // -------------------------------------------------------------------------
-    // Shadow Pass Calculations
+    // Shadow Pass (particles + obstacle)
     // -------------------------------------------------------------------------
 
     const bounds = config.boundsSize;
     const floor = config.floorSize;
-    const sunDir = config.dirToSun;
 
     const lightDistance = Math.max(bounds.x + bounds.z, floor.x + floor.z);
     const orthoSize = lightDistance * 0.6;
@@ -663,10 +708,6 @@ export class RaymarchRenderer {
       );
     }
 
-    // -------------------------------------------------------------------------
-    // Shadow Pass (Particles + Obstacle)
-    // -------------------------------------------------------------------------
-
     const shadowPass = encoder.beginRenderPass({
       colorAttachments: [],
       depthStencilAttachment: {
@@ -700,7 +741,7 @@ export class RaymarchRenderer {
           view: this.offscreenTextureView,
           loadOp: 'clear',
           storeOp: 'store',
-          clearValue: { r: 0.03, g: 0.05, b: 0.08, a: 1 }, // Dark blue-gray background (overwritten by env)
+          clearValue: { r: 0.03, g: 0.05, b: 0.08, a: 1 }, // Dark blue-gray background
         },
       ],
     });

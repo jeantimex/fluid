@@ -45,5 +45,14 @@ struct VSOut {
 
 /// Samples the offscreen texture and converts from linear to sRGB.
 @fragment fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-  return textureSample(blitTexture, blitSampler, in.uv);
+  let color = textureSample(blitTexture, blitSampler, in.uv);
+
+  // Piecewise linear-to-sRGB conversion (IEC 61966-2-1):
+  //   lo: for values ≤ 0.0031308, multiply by 12.92
+  //   hi: for values > 0.0031308, apply 1.055 × v^(1/2.4) − 0.055
+  let lo = color.rgb * 12.92;
+  let hi = 1.055 * pow(color.rgb, vec3<f32>(1.0 / 2.4)) - 0.055;
+  let srgb = select(hi, lo, color.rgb <= vec3<f32>(0.0031308));
+
+  return vec4<f32>(srgb, color.a);
 }
