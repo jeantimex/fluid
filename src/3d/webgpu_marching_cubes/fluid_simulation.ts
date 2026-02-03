@@ -80,8 +80,8 @@
 
 import type { SimState } from '../common/types.ts';
 import { createSpawnData } from '../common/spawn.ts';
-import { SimulationBuffers } from '../webgpu_particles/simulation_buffers.ts';
-import { ComputePipelines } from '../webgpu_particles/compute_pipelines.ts';
+import { SimulationBuffersLinear } from '../webgpu_particles/simulation_buffers_linear.ts';
+import { ComputePipelinesLinear } from '../webgpu_particles/compute_pipelines_linear.ts';
 import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import { MarchingCubesRenderer } from './renderer.ts';
 import { SplatPipeline } from './splat_pipeline.ts';
@@ -116,10 +116,10 @@ export class FluidSimulation {
   // ===========================================================================
 
   /** Manages all GPU buffer allocations */
-  private buffers!: SimulationBuffers;
+  private buffers!: SimulationBuffersLinear;
 
   /** Manages compute shader pipelines and bind groups */
-  private pipelines: ComputePipelines;
+  private pipelines: ComputePipelinesLinear;
 
   /** Manages the 3-pass density splatting system */
   private splatPipeline: SplatPipeline;
@@ -140,6 +140,16 @@ export class FluidSimulation {
    * Total threads = ceil(particleCount / 256) * 256
    */
   private workgroupSize = 256;
+
+  // ===========================================================================
+  // Grid Configuration
+  // ===========================================================================
+
+  /** Linear grid resolution along each axis: ceil(boundsSize / smoothingRadius). */
+  private gridRes = { x: 0, y: 0, z: 0 };
+
+  /** Total number of cells in the linear grid (gridRes.x × gridRes.y × gridRes.z). */
+  private gridTotalCells = 0;
 
   // ===========================================================================
   // Pre-allocated Uniform Data Arrays
@@ -164,11 +174,8 @@ export class FluidSimulation {
    */
   private integrateData = new Float32Array(20);
 
-  /**
-   * Spatial hash uniform data.
-   * Layout: [smoothingRadius, particleCount, padding, padding]
-   */
-  private hashParamsData = new Float32Array(4);
+  /** Hash params: [radius, particleCount, minBoundsX/Y/Z, gridResX/Y/Z]. */
+  private hashParamsData = new Float32Array(8);
 
   /**
    * Sort uniform data.
@@ -194,26 +201,13 @@ export class FluidSimulation {
    */
   private scanParamsDataL2 = new Uint32Array(4);
 
-  /**
-   * Density calculation uniform data.
-   * Layout: [radius, spikyPow2Scale, spikyPow3Scale, particleCount,
-   *          padding, padding, padding, padding]
-   */
-  private densityParamsData = new Float32Array(8);
+  /** Density params: [radius, spikyPow2Scale, spikyPow3Scale, particleCount, minBounds(3), pad, gridRes(3), pad]. */
+  private densityParamsData = new Float32Array(12);
 
-  /**
-   * Pressure calculation uniform data.
-   * Layout: [dt, targetDensity, pressureMultiplier, nearPressureMultiplier,
-   *          radius, spikyPow2DerivScale, spikyPow3DerivScale, particleCount,
-   *          padding, padding, padding, padding]
-   */
-  private pressureParamsData = new Float32Array(12);
+  /** Pressure params: [dt, targetDensity, pressureMul, nearPressureMul, radius, pow2DerivScale, pow3DerivScale, count, minBounds(3), pad, gridRes(3), pad]. */
+  private pressureParamsData = new Float32Array(16);
 
-  /**
-   * Viscosity calculation uniform data.
-   * Layout: [dt, viscosityStrength, radius, poly6Scale,
-   *          particleCount, padding, padding, padding, ...]
-   */
+  /** Viscosity params: [dt, viscosity, radius, poly6Scale, count, minBounds(3), gridRes(3), pad]. */
   private viscosityParamsData = new Float32Array(12);
 
   // ===========================================================================
@@ -241,7 +235,7 @@ export class FluidSimulation {
     this.config = config;
 
     // Create compute pipelines (compiles all shaders)
-    this.pipelines = new ComputePipelines(device);
+    this.pipelines = new ComputePipelinesLinear(device);
 
     // Create splat pipeline (density volume splatting)
     this.splatPipeline = new SplatPipeline(device);
@@ -288,6 +282,14 @@ export class FluidSimulation {
       this.buffers.destroy();
     }
 
+    const { boundsSize, smoothingRadius } = this.config;
+    this.gridRes = {
+      x: Math.ceil(boundsSize.x / smoothingRadius),
+      y: Math.ceil(boundsSize.y / smoothingRadius),
+      z: Math.ceil(boundsSize.z / smoothingRadius),
+    };
+    this.gridTotalCells = this.gridRes.x * this.gridRes.y * this.gridRes.z;
+
     // Generate initial particle positions and velocities
     const spawn = createSpawnData(this.config);
 
@@ -295,7 +297,11 @@ export class FluidSimulation {
     this.state = this.createStateFromSpawn(spawn);
 
     // Allocate GPU buffers with initial data
-    this.buffers = new SimulationBuffers(this.device, spawn);
+    this.buffers = new SimulationBuffersLinear(
+      this.device,
+      spawn,
+      this.gridTotalCells
+    );
 
     // Recreate bind groups to point to new buffers
     this.pipelines.createBindGroups(this.buffers);
@@ -537,42 +543,35 @@ export class FluidSimulation {
     const { pipelines, buffers } = this;
     const workgroups = Math.ceil(buffers.particleCount / this.workgroupSize);
 
-    // -------------------------------------------------------------------------
-    // Calculate Block Counts for Hierarchical Prefix Sum
-    // -------------------------------------------------------------------------
-
-    // Level 0: Each block processes 512 particles
-    const blocksL0 = Math.ceil(buffers.particleCount / 512);
-
-    // Level 1: Each block processes 512 L0 block sums
+    // Scan block counts (based on grid total cells for Linear Grid)
+    const blocksL0 = Math.ceil((this.gridTotalCells + 1) / 512);
     const blocksL1 = Math.ceil(blocksL0 / 512);
-
-    // Level 2: Each block processes 512 L1 block sums (usually just 1 block)
     const blocksL2 = Math.ceil(blocksL1 / 512);
 
-    // -------------------------------------------------------------------------
-    // Update Uniform Buffers
-    // -------------------------------------------------------------------------
-
-    // Hash parameters
+    // Update Uniforms
     this.hashParamsData[0] = this.config.smoothingRadius;
     this.hashParamsData[1] = buffers.particleCount;
+    this.hashParamsData[2] = -this.config.boundsSize.x * 0.5;
+    this.hashParamsData[3] = -this.config.boundsSize.y * 0.5;
+    this.hashParamsData[4] = -this.config.boundsSize.z * 0.5;
+    this.hashParamsData[5] = this.gridRes.x;
+    this.hashParamsData[6] = this.gridRes.y;
+    this.hashParamsData[7] = this.gridRes.z;
     this.device.queue.writeBuffer(
       pipelines.uniformBuffers.hash,
       0,
       this.hashParamsData
     );
 
-    // Sort parameters
     this.sortParamsData[0] = buffers.particleCount;
+    this.sortParamsData[1] = this.gridTotalCells;
     this.device.queue.writeBuffer(
       pipelines.uniformBuffers.sort,
       0,
       this.sortParamsData
     );
 
-    // Scan parameters for each level
-    this.scanParamsDataL0[0] = buffers.particleCount;
+    this.scanParamsDataL0[0] = this.gridTotalCells + 1;
     this.device.queue.writeBuffer(
       pipelines.uniformBuffers.scanParamsL0,
       0,
@@ -593,47 +592,34 @@ export class FluidSimulation {
       this.scanParamsDataL2
     );
 
-    // -------------------------------------------------------------------------
-    // Stage 1: Hash
-    // -------------------------------------------------------------------------
-    // Compute spatial hash key for each particle based on predicted position.
-    // Also stores original particle index for later reordering.
+    // 1. Hash
     const hashPass = encoder.beginComputePass();
     hashPass.setPipeline(pipelines.hash);
     hashPass.setBindGroup(0, pipelines.hashBindGroup);
     hashPass.dispatchWorkgroups(workgroups);
     hashPass.end();
 
-    // -------------------------------------------------------------------------
-    // Stage 2: Clear + Count (Histogram)
-    // -------------------------------------------------------------------------
-    // Clear the offset array, then count particles per cell using atomics
+    // 2. Clear
     const clearPass = encoder.beginComputePass();
     clearPass.setPipeline(pipelines.clearOffsets);
     clearPass.setBindGroup(0, pipelines.clearOffsetsBindGroup);
-    clearPass.dispatchWorkgroups(workgroups);
+    clearPass.dispatchWorkgroups(Math.ceil((this.gridTotalCells + 1) / 256));
     clearPass.end();
 
+    // 3. Count
     const countPass = encoder.beginComputePass();
     countPass.setPipeline(pipelines.countOffsets);
     countPass.setBindGroup(1, pipelines.countOffsetsBindGroup);
     countPass.dispatchWorkgroups(workgroups);
     countPass.end();
 
-    // -------------------------------------------------------------------------
-    // Stage 3: Hierarchical Prefix Sum
-    // -------------------------------------------------------------------------
-    // Convert histogram to exclusive prefix sum (running total).
-    // This tells us where each cell's particles should be placed in sorted array.
-
-    // Level 0: Scan particle data → write block sums to L1
+    // 4. Prefix Sum
     const scanPass0 = encoder.beginComputePass();
     scanPass0.setPipeline(pipelines.prefixScan);
     scanPass0.setBindGroup(0, pipelines.scanPass0BindGroup);
     scanPass0.dispatchWorkgroups(blocksL0);
     scanPass0.end();
 
-    // Level 1: Scan L1 block sums → write to L2
     if (blocksL0 > 1) {
       const scanPass1 = encoder.beginComputePass();
       scanPass1.setPipeline(pipelines.prefixScan);
@@ -642,7 +628,6 @@ export class FluidSimulation {
       scanPass1.end();
     }
 
-    // Level 2: Scan L2 block sums
     if (blocksL1 > 1) {
       const scanPass2 = encoder.beginComputePass();
       scanPass2.setPipeline(pipelines.prefixScan);
@@ -651,7 +636,6 @@ export class FluidSimulation {
       scanPass2.end();
     }
 
-    // Combine Level 1: Add scanned L2 sums back to L1 block results
     if (blocksL1 > 1) {
       const combinePass1 = encoder.beginComputePass();
       combinePass1.setPipeline(pipelines.prefixCombine);
@@ -660,7 +644,6 @@ export class FluidSimulation {
       combinePass1.end();
     }
 
-    // Combine Level 0: Add scanned L1 sums back to original data
     if (blocksL0 > 1) {
       const combinePass0 = encoder.beginComputePass();
       combinePass0.setPipeline(pipelines.prefixCombine);
@@ -669,49 +652,21 @@ export class FluidSimulation {
       combinePass0.end();
     }
 
-    // -------------------------------------------------------------------------
-    // Stage 4: Scatter
-    // -------------------------------------------------------------------------
-    // Use prefix sum results to place particles into their sorted positions.
-    // Atomic increment ensures no collisions when multiple particles hash to same cell.
+    // 5. Scatter
     const scatterPass = encoder.beginComputePass();
     scatterPass.setPipeline(pipelines.scatter);
     scatterPass.setBindGroup(0, pipelines.scatterBindGroup);
     scatterPass.dispatchWorkgroups(workgroups);
     scatterPass.end();
 
-    // -------------------------------------------------------------------------
-    // Stage 5: Spatial Offsets
-    // -------------------------------------------------------------------------
-    // Build lookup table: spatialOffsets[key] = first index in sorted array for that key.
-    // First initialize all to sentinel value, then find boundaries between different keys.
-    const initSpatialPass = encoder.beginComputePass();
-    initSpatialPass.setPipeline(pipelines.initSpatialOffsets);
-    initSpatialPass.setBindGroup(0, pipelines.initSpatialOffsetsBindGroup);
-    initSpatialPass.dispatchWorkgroups(workgroups);
-    initSpatialPass.end();
-
-    const updateSpatialPass = encoder.beginComputePass();
-    updateSpatialPass.setPipeline(pipelines.updateSpatialOffsets);
-    updateSpatialPass.setBindGroup(0, pipelines.updateSpatialOffsetsBindGroup);
-    updateSpatialPass.dispatchWorkgroups(workgroups);
-    updateSpatialPass.end();
-
-    // -------------------------------------------------------------------------
-    // Stage 6: Reorder
-    // -------------------------------------------------------------------------
-    // Physically copy particle data to sorted order for cache-coherent access.
-    // This is the key optimization that makes neighbor search 10-50x faster.
+    // 6. Reorder
     const reorderPass = encoder.beginComputePass();
     reorderPass.setPipeline(pipelines.reorder);
     reorderPass.setBindGroup(0, pipelines.reorderBindGroup);
     reorderPass.dispatchWorkgroups(workgroups);
     reorderPass.end();
 
-    // -------------------------------------------------------------------------
-    // Stage 7: Copy Back
-    // -------------------------------------------------------------------------
-    // Copy sorted data back to main buffers for use in next frame.
+    // 7. Copy Back
     const copyBackPass = encoder.beginComputePass();
     copyBackPass.setPipeline(pipelines.copyBack);
     copyBackPass.setBindGroup(0, pipelines.copyBackBindGroup);
@@ -743,6 +698,14 @@ export class FluidSimulation {
     this.densityParamsData[1] = spikyPow2Scale;
     this.densityParamsData[2] = spikyPow3Scale;
     this.densityParamsData[3] = this.buffers.particleCount;
+    this.densityParamsData[4] = -this.config.boundsSize.x * 0.5;
+    this.densityParamsData[5] = -this.config.boundsSize.y * 0.5;
+    this.densityParamsData[6] = -this.config.boundsSize.z * 0.5;
+    this.densityParamsData[7] = 0; // pad
+    this.densityParamsData[8] = this.gridRes.x;
+    this.densityParamsData[9] = this.gridRes.y;
+    this.densityParamsData[10] = this.gridRes.z;
+    this.densityParamsData[11] = 0; // pad
 
     this.device.queue.writeBuffer(
       this.pipelines.uniformBuffers.density,
@@ -777,6 +740,14 @@ export class FluidSimulation {
     this.pressureParamsData[5] = spikyPow2DerivScale;
     this.pressureParamsData[6] = spikyPow3DerivScale;
     this.pressureParamsData[7] = this.buffers.particleCount;
+    this.pressureParamsData[8] = -this.config.boundsSize.x * 0.5;
+    this.pressureParamsData[9] = -this.config.boundsSize.y * 0.5;
+    this.pressureParamsData[10] = -this.config.boundsSize.z * 0.5;
+    this.pressureParamsData[11] = 0; // pad
+    this.pressureParamsData[12] = this.gridRes.x;
+    this.pressureParamsData[13] = this.gridRes.y;
+    this.pressureParamsData[14] = this.gridRes.z;
+    this.pressureParamsData[15] = 0; // pad
 
     this.device.queue.writeBuffer(
       this.pipelines.uniformBuffers.pressure,
@@ -807,6 +778,13 @@ export class FluidSimulation {
     this.viscosityParamsData[2] = radius;
     this.viscosityParamsData[3] = poly6Scale;
     this.viscosityParamsData[4] = this.buffers.particleCount;
+    this.viscosityParamsData[5] = -this.config.boundsSize.x * 0.5;
+    this.viscosityParamsData[6] = -this.config.boundsSize.y * 0.5;
+    this.viscosityParamsData[7] = -this.config.boundsSize.z * 0.5;
+    this.viscosityParamsData[8] = this.gridRes.x;
+    this.viscosityParamsData[9] = this.gridRes.y;
+    this.viscosityParamsData[10] = this.gridRes.z;
+    this.viscosityParamsData[11] = 0; // pad
 
     this.device.queue.writeBuffer(
       this.pipelines.uniformBuffers.viscosity,
