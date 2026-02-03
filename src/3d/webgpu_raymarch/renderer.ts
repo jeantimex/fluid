@@ -64,9 +64,12 @@
 import raymarchShader from './shaders/raymarch.wgsl?raw';
 import blitShader from './shaders/blit.wgsl?raw';
 import shadowShader from '../webgpu_particles/shaders/shadow.wgsl?raw';
+import modelShader from '../webgpu_particles/shaders/model.wgsl?raw';
+import modelShadowShader from '../webgpu_particles/shaders/model_shadow.wgsl?raw';
 import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import type { RaymarchConfig } from './types.ts';
-import { mat4LookAt, mat4Multiply, mat4Ortho } from '../webgpu_particles/math_utils.ts';
+import type { GpuModel } from '../common/model_loader.ts';
+import { mat4LookAt, mat4Multiply, mat4Ortho, mat4Perspective } from '../webgpu_particles/math_utils.ts';
 
 /**
  * Two-pass volume renderer: raymarch at half resolution, then blit to canvas.
@@ -106,11 +109,23 @@ export class RaymarchRenderer {
   /** Uniform buffer for shadow map settings. */
   private shadowUniformBuffer: GPUBuffer;
 
+  /** Uniform buffer for model rendering. */
+  private modelUniformBuffer: GPUBuffer;
+
+  /** Uniform buffer for model shadow rendering. */
+  private modelShadowUniformBuffer: GPUBuffer;
+
   /** Bind group for particle shadow rendering. */
   private shadowParticleBindGroup!: GPUBindGroup;
 
   /** Bind group for obstacle shadow rendering. */
   private shadowObstacleBindGroup!: GPUBindGroup;
+
+  /** Bind group for model rendering. */
+  private modelBindGroup?: GPUBindGroup;
+
+  /** Bind group for model shadow rendering. */
+  private modelShadowBindGroup?: GPUBindGroup;
 
   /** Pipeline for particle shadow map rendering. */
   private shadowParticlePipeline: GPURenderPipeline;
@@ -118,8 +133,17 @@ export class RaymarchRenderer {
   /** Pipeline for obstacle shadow map rendering. */
   private shadowObstaclePipeline: GPURenderPipeline;
 
+  /** Pipeline for model rendering. */
+  private modelPipeline: GPURenderPipeline;
+
+  /** Pipeline for model shadow rendering. */
+  private modelShadowPipeline: GPURenderPipeline;
+
   /** Depth texture for shadow map. */
   private shadowTexture!: GPUTexture;
+
+  /** Depth texture for occluder (model) shadow map. */
+  private occluderShadowTexture!: GPUTexture;
 
   /** Shadow map resolution (square). */
   private shadowMapSize = 2048;
@@ -132,6 +156,20 @@ export class RaymarchRenderer {
 
   /** CPU-side obstacle face vertex data. */
   private lineVertexData: Float32Array;
+
+  /** The 3D model to render. */
+  private model: GpuModel | null = null;
+  private modelUniformData = new Float32Array(36);
+  private modelScale = 0.04;
+
+  // ---------------------------------------------------------------------------
+  // Scene Rendering (Duck Color/Depth)
+  // ---------------------------------------------------------------------------
+
+  private sceneTexture!: GPUTexture;
+  private sceneTextureView!: GPUTextureView;
+  private sceneDepthTexture!: GPUTexture;
+  private sceneDepthTextureView!: GPUTextureView;
 
   // ---------------------------------------------------------------------------
   // Blit / Half-Resolution Rendering
@@ -157,6 +195,10 @@ export class RaymarchRenderer {
 
   /** Current height of the offscreen texture (canvas.height / 2). */
   private offscreenHeight = 0;
+
+  // Stored references for recreating bind group on resize
+  private densityTextureView?: GPUTextureView;
+  private positionsBuffer?: GPUBuffer;
 
   /**
    * Creates the raymarch and blit pipelines, samplers, and uniform buffer.
@@ -242,6 +284,18 @@ export class RaymarchRenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
+    // Model uniforms: viewProj (64) + model (64) + lightDir/pad (16) = 144 bytes
+    this.modelUniformBuffer = device.createBuffer({
+      size: 144,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Model shadow uniforms: lightViewProjection (64) + model (64) = 128 bytes
+    this.modelShadowUniformBuffer = device.createBuffer({
+      size: 128,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
     // -------------------------------------------------------------------------
     // Density Volume Sampler (trilinear, clamp-to-edge on all axes)
     // -------------------------------------------------------------------------
@@ -255,10 +309,12 @@ export class RaymarchRenderer {
     });
 
     // -------------------------------------------------------------------------
-    // Shadow Map Pipelines
+    // Shadow & Model Pipelines
     // -------------------------------------------------------------------------
 
     const shadowModule = device.createShaderModule({ code: shadowShader });
+    const modelModule = device.createShaderModule({ code: modelShader });
+    const modelShadowModule = device.createShaderModule({ code: modelShadowShader });
 
     this.shadowParticlePipeline = device.createRenderPipeline({
       layout: 'auto',
@@ -291,6 +347,57 @@ export class RaymarchRenderer {
       },
     });
 
+    this.modelPipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: modelModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 32,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+              { shaderLocation: 2, offset: 24, format: 'float32x2' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: modelModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    this.modelShadowPipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: modelShadowModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 32,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            ],
+          },
+        ],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
     // Allocate for face vertices (36 × 10 floats)
     this.lineVertexData = new Float32Array(360);
     this.lineVertexBuffer = device.createBuffer({
@@ -304,11 +411,20 @@ export class RaymarchRenderer {
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
+    this.occluderShadowTexture = this.device.createTexture({
+      size: [this.shadowMapSize, this.shadowMapSize],
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
     this.shadowSampler = this.device.createSampler({
       compare: 'less',
       magFilter: 'linear',
       minFilter: 'linear',
     });
+
+    // Initialize offscreen textures immediately
+    this.ensureOffscreenTexture(this.canvas.width, this.canvas.height);
   }
 
   /**
@@ -321,6 +437,9 @@ export class RaymarchRenderer {
     densityTextureView: GPUTextureView,
     positionsBuffer: GPUBuffer
   ): void {
+    this.densityTextureView = densityTextureView;
+    this.positionsBuffer = positionsBuffer;
+
     this.bindGroup = this.device.createBindGroup({
       layout: this.pipeline.getBindGroupLayout(0),
       entries: [
@@ -330,6 +449,9 @@ export class RaymarchRenderer {
         { binding: 3, resource: this.shadowTexture.createView() },
         { binding: 4, resource: this.shadowSampler },
         { binding: 5, resource: { buffer: this.shadowUniformBuffer } },
+        { binding: 6, resource: this.occluderShadowTexture.createView() },
+        { binding: 7, resource: this.sceneTextureView },
+        { binding: 8, resource: this.sceneDepthTextureView },
       ],
     });
 
@@ -344,6 +466,33 @@ export class RaymarchRenderer {
     this.shadowObstacleBindGroup = this.device.createBindGroup({
       layout: this.shadowObstaclePipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.shadowUniformBuffer } }],
+    });
+  }
+
+  setModel(model: GpuModel | null): void {
+    this.model = model;
+    if (!model) {
+      this.modelBindGroup = undefined;
+      this.modelShadowBindGroup = undefined;
+      return;
+    }
+
+    this.modelBindGroup = this.device.createBindGroup({
+      layout: this.modelPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.modelUniformBuffer } },
+        { binding: 1, resource: model.textureView },
+        { binding: 2, resource: model.sampler },
+        { binding: 3, resource: this.shadowTexture.createView() },
+        { binding: 4, resource: this.shadowSampler },
+        { binding: 5, resource: { buffer: this.shadowUniformBuffer } },
+        { binding: 6, resource: this.occluderShadowTexture.createView() },
+      ],
+    });
+
+    this.modelShadowBindGroup = this.device.createBindGroup({
+      layout: this.modelShadowPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.modelShadowUniformBuffer } }],
     });
   }
 
@@ -375,12 +524,28 @@ export class RaymarchRenderer {
 
     this.offscreenTexture = this.device.createTexture({
       size: { width: halfW, height: halfH },
-      format: this.format,
+      format: this.format, // Use same format for scene color
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
     this.offscreenTextureView = this.offscreenTexture.createView();
+
+    // Scene Texture (for Model Color)
+    this.sceneTexture = this.device.createTexture({
+      size: { width: halfW, height: halfH },
+      format: this.format,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    this.sceneTextureView = this.sceneTexture.createView();
+
+    // Scene Depth (for Model Depth)
+    this.sceneDepthTexture = this.device.createTexture({
+      size: { width: halfW, height: halfH },
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    this.sceneDepthTextureView = this.sceneDepthTexture.createView();
 
     // Rebind the blit pass to sample from the new offscreen texture
     this.blitBindGroup = this.device.createBindGroup({
@@ -390,6 +555,11 @@ export class RaymarchRenderer {
         { binding: 1, resource: this.blitSampler },
       ],
     });
+
+    // Recreate main bind group to link new scene textures
+    if (this.densityTextureView && this.positionsBuffer) {
+      this.createBindGroup(this.densityTextureView, this.positionsBuffer);
+    }
   }
 
   // ===========================================================================
@@ -704,6 +874,29 @@ export class RaymarchRenderer {
     shadowUniforms[17] = shadowParticleRadiusNdc;
     this.device.queue.writeBuffer(this.shadowUniformBuffer, 0, shadowUniforms);
 
+    const modelScale = this.modelScale;
+    const modelTx = 0;
+    const modelTy = -config.boundsSize.y * 0.5 - (this.model?.boundsMinY ?? 0) * modelScale;
+    const modelTz = 0;
+    const modelMatrix = [
+      -modelScale, 0, 0, 0,
+      0, modelScale, 0, 0,
+      0, 0, -modelScale, 0,
+      modelTx, modelTy, modelTz, 1,
+    ];
+
+    if (this.model && this.modelShadowBindGroup) {
+      this.modelUniformData.set(lightViewProj, 0);
+      this.modelUniformData.set(modelMatrix, 16);
+      this.device.queue.writeBuffer(
+        this.modelShadowUniformBuffer,
+        0,
+        this.modelUniformData,
+        0,
+        32
+      );
+    }
+
     const { faceCount } = this.buildObstacleGeometry(config);
     if (faceCount > 0) {
       this.device.queue.writeBuffer(
@@ -715,6 +908,37 @@ export class RaymarchRenderer {
       );
     }
 
+    // 1. Occluder Shadow Pass
+    const occluderShadowPass = encoder.beginRenderPass({
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: this.occluderShadowTexture.createView(),
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    });
+
+    if (this.model && this.modelShadowBindGroup) {
+      occluderShadowPass.setPipeline(this.modelShadowPipeline);
+      occluderShadowPass.setBindGroup(0, this.modelShadowBindGroup);
+      occluderShadowPass.setVertexBuffer(0, this.model.vertexBuffer);
+      occluderShadowPass.setIndexBuffer(
+        this.model.indexBuffer,
+        this.model.indexFormat
+      );
+      occluderShadowPass.drawIndexed(this.model.indexCount);
+    }
+
+    if (faceCount > 0) {
+      occluderShadowPass.setPipeline(this.shadowObstaclePipeline);
+      occluderShadowPass.setBindGroup(0, this.shadowObstacleBindGroup);
+      occluderShadowPass.setVertexBuffer(0, this.lineVertexBuffer, 0);
+      occluderShadowPass.draw(faceCount);
+    }
+    occluderShadowPass.end();
+
+    // 2. Particle Shadow Pass
     const shadowPass = encoder.beginRenderPass({
       colorAttachments: [],
       depthStencilAttachment: {
@@ -728,18 +952,54 @@ export class RaymarchRenderer {
     shadowPass.setPipeline(this.shadowParticlePipeline);
     shadowPass.setBindGroup(0, this.shadowParticleBindGroup);
     shadowPass.draw(6, particleCount, 0, 0);
-
-    if (faceCount > 0) {
-      shadowPass.setPipeline(this.shadowObstaclePipeline);
-      shadowPass.setBindGroup(0, this.shadowObstacleBindGroup);
-      shadowPass.setVertexBuffer(0, this.lineVertexBuffer, 0);
-      shadowPass.draw(faceCount);
-    }
-
     shadowPass.end();
 
+    // 3. Scene Render Pass (Duck)
+    const scenePass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: this.sceneTextureView,
+          loadOp: 'clear',
+          storeOp: 'store',
+          clearValue: { r: 0, g: 0, b: 0, a: 0 }, // Clear to transparent
+        },
+      ],
+      depthStencilAttachment: {
+        view: this.sceneDepthTextureView,
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    });
+
+    // We don't draw background here, Raymarch pass does it.
+    // Only draw the Duck and Obstacle.
+
+    const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 200.0);
+    const viewProj = mat4Multiply(projection, camera.viewMatrix);
+
+    if (this.model && this.modelBindGroup) {
+      this.modelUniformData.set(viewProj, 0);
+      this.modelUniformData.set(modelMatrix, 16);
+      this.modelUniformData[32] = config.dirToSun.x;
+      this.modelUniformData[33] = config.dirToSun.y;
+      this.modelUniformData[34] = config.dirToSun.z;
+      this.modelUniformData[35] = 0;
+      this.device.queue.writeBuffer(
+        this.modelUniformBuffer,
+        0,
+        this.modelUniformData
+      );
+      scenePass.setPipeline(this.modelPipeline);
+      scenePass.setBindGroup(0, this.modelBindGroup);
+      scenePass.setVertexBuffer(0, this.model.vertexBuffer);
+      scenePass.setIndexBuffer(this.model.indexBuffer, this.model.indexFormat);
+      scenePass.drawIndexed(this.model.indexCount);
+    }
+    scenePass.end();
+
     // -------------------------------------------------------------------------
-    // Pass 1: Raymarch into half-res offscreen texture
+    // Pass 4: Raymarch into half-res offscreen texture
     // -------------------------------------------------------------------------
 
     const raymarchPass = encoder.beginRenderPass({

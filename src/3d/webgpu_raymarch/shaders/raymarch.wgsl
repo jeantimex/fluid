@@ -122,6 +122,15 @@ struct ShadowUniforms {
 /// Shadow map uniforms.
 @group(0) @binding(5) var<uniform> shadowUniforms: ShadowUniforms;
 
+/// Occluder (Model) shadow map.
+@group(0) @binding(6) var occluderShadowTex: texture_depth_2d;
+
+/// Scene Color (Duck).
+@group(0) @binding(7) var sceneColorTex: texture_2d<f32>;
+
+/// Scene Depth (Duck).
+@group(0) @binding(8) var sceneDepthTex: texture_depth_2d;
+
 // =============================================================================
 // Vertex Stage
 // =============================================================================
@@ -601,7 +610,52 @@ fn sampleShadow(worldPos: vec3<f32>, ndotl: f32) -> f32 {
   sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
   sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
 
-  return sum * 0.2;
+  let particleShadow = sum * 0.2;
+  
+  // Sample Occluder Shadow (Hard)
+  let occluderShadow = textureSampleCompareLevel(occluderShadowTex, shadowSampler, uv, depth);
+  
+  return min(particleShadow, occluderShadow);
+}
+
+fn getSceneDepth(uv: vec2<f32>) -> f32 {
+  // Use textureLoad to avoid sampler validation issues with depth textures
+  let dim = textureDimensions(sceneDepthTex);
+  // Flip Y because textureLoad is top-down (0,0 is top-left) 
+  // while our raymarch UVs are bottom-up (0,0 is bottom-left)
+  let coords = vec2<i32>(vec2<f32>(uv.x, 1.0 - uv.y) * vec2<f32>(dim));
+  return textureLoad(sceneDepthTex, coords, 0);
+}
+
+fn getSceneColor(uv: vec2<f32>) -> vec4<f32> {
+  let dim = textureDimensions(sceneColorTex);
+  let coords = vec2<i32>(vec2<f32>(uv.x, 1.0 - uv.y) * vec2<f32>(dim));
+  return textureLoad(sceneColorTex, coords, 0);
+}
+
+fn linearizeDepth(depth: f32) -> f32 {
+  // WebGPU depth is already linear? No, standard perspective projection is non-linear.
+  // z_ndc = depth
+  // z_view = -P[3][2] / (z_ndc + P[2][2]) ?
+  // Simple check: if depth == 1.0 (clear), distance is infinite.
+  // We need to convert depth buffer value to ray distance (t).
+  // t = depth / dot(rayDir, cameraForward) ? No.
+  //
+  // Correct way: Unproject (uv, depth) to world space.
+  // worldPos = Unproject(uv, depth)
+  // dist = distance(viewPos, worldPos)
+  
+  // Since we don't have the inverse VP matrix here, we can approximate or pass it.
+  // Or just pass the linear depth if we rendered it? No, we rendered standard depth.
+  
+  // Let's assume standard perspective projection params:
+  let near = 0.1;
+  let far = 200.0;
+  let z_ndc = depth; // [0, 1]
+  // For WebGPU [0, 1] depth range:
+  // z_view = (near * far) / (far - z_ndc * (far - near));
+  let z_view = (near * far) / (far - depth * (far - near));
+  return z_view;
 }
 
 // =============================================================================
@@ -864,6 +918,19 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   // Check if the camera is already inside the fluid
   var travellingThroughFluid = isInsideFluid(rayPos);
 
+  // --- Depth Compositing (Duck) ---
+  let sceneDepth = getSceneDepth(in.uv);
+  let near = 0.1;
+  let far = 200.0;
+  // Linearize depth (view-space Z)
+  // For WebGPU [0, 1] projection (n->0, f->1): z = nf / (f - d(f-n))
+  let viewZ = (near * far) / (far - sceneDepth * (far - near));
+  // Convert to ray distance (Euclidean distance from camera)
+  // rayDir is normalized. cameraForward is normalized.
+  let cosTheta = dot(rayDir, params.cameraForward);
+  let duckDist = viewZ / cosTheta;
+  let hasDuck = sceneDepth < 1.0;
+
   // Accumulated light and transmittance across all bounces
   var totalTransmittance = vec3<f32>(1.0); // Starts fully transparent
   var totalLight = vec3<f32>(0.0);         // Accumulated radiance
@@ -887,10 +954,49 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
      // Determine search mode: looking for fluid entry or exit?
      let searchForNextFluidEntryPoint = !travellingThroughFluid;
 
+     // Limit search distance by Duck if this is the PRIMARY ray (i == 0)
+     let limitDist = select(1000.0, duckDist, i == 0 && hasDuck);
+
      // Find the next fluid surface along the current ray
      let obstacleHit = obstacleHitInfo(rayPos, rayDir);
      let hasObstacleHit = obstacleHit.hit;
-     let surfaceInfo = findNextSurface(rayPos, rayDir, searchForNextFluidEntryPoint, &rngState, 1000.0);
+     let surfaceInfo = findNextSurface(rayPos, rayDir, searchForNextFluidEntryPoint, &rngState, limitDist);
+
+     // Check if we hit the Duck (Primary Ray only)
+     // If we found NO surface, or the surface is BEHIND the duck, we hit the duck.
+     if (i == 0 && hasDuck) {
+        let distToSurface = distance(rayPos, surfaceInfo.pos);
+        if (!surfaceInfo.foundSurface || distToSurface > duckDist) {
+           // Hit Duck!
+           // Add fluid transmittance up to duck
+           let distInFluid = max(0.0, duckDist); // Simplified, assuming we started at 0
+           // Actually, findNextSurface calculates densityAlongRay up to the surface found.
+           // If we stopped early at duckDist, we need the density up to duckDist.
+           // findNextSurface doesn't support "stop at X and return density".
+           // Re-calculating density up to duck is expensive.
+           // Approximation: Use the density returned by findNextSurface (it likely accumulated some).
+           // Better: If we hit duck, we stop.
+           
+           // We need to sample the duck color.
+           let duckColor = getSceneColor(in.uv).rgb;
+           
+           // Apply lighting/shadow to duck?
+           // The scene pass already lit the duck. We just composite it.
+           // But we need to apply the transmittance of the fluid IN FRONT of the duck.
+           // If we are outside fluid, transmittance is 1.0.
+           // If inside fluid, we need transmittance(duckDist).
+           
+           var fluidTransmittance = vec3<f32>(1.0);
+           if (travellingThroughFluid) {
+              let d = calculateDensityForShadow(rayPos, rayDir, duckDist);
+              fluidTransmittance = transmittance(d);
+           }
+           
+           totalLight = totalLight + duckColor * totalTransmittance * fluidTransmittance;
+           totalTransmittance = vec3<f32>(0.0); // Opaque
+           break;
+        }
+     }
 
      // If we're in air and the obstacle is closer than the next fluid surface,
      // alpha-blend the obstacle and continue marching behind it.

@@ -219,7 +219,10 @@ fn sampleSDF(modelPos: vec3<f32>) -> f32 {
 
 // Compute normal from SDF gradient
 fn computeSDFNormal(modelPos: vec3<f32>) -> vec3<f32> {
-  let eps = 0.05; // Larger epsilon for smoother gradients
+  // Epsilon should be comparable to voxel size for smooth normals.
+  // Model is ~250 units, grid 64 -> voxel ~4 units.
+  // Using eps = 1.0 gives reasonable smoothing.
+  let eps = 1.0; 
   let dx = sampleSDF(modelPos + vec3<f32>(eps, 0.0, 0.0)) - sampleSDF(modelPos - vec3<f32>(eps, 0.0, 0.0));
   let dy = sampleSDF(modelPos + vec3<f32>(0.0, eps, 0.0)) - sampleSDF(modelPos - vec3<f32>(0.0, eps, 0.0));
   let dz = sampleSDF(modelPos + vec3<f32>(0.0, 0.0, eps)) - sampleSDF(modelPos - vec3<f32>(0.0, 0.0, eps));
@@ -261,7 +264,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   // Convert World Space particle radius (approx 0.1) to Model Space
   // Model Scale is 0.04, so Model Units = World Units / 0.04
   let modelScale = 0.04;
-  let particleRadiusWorld = 0.1; 
+  let particleRadiusWorld = 0.2; 
   let particleRadiusModel = particleRadiusWorld / modelScale; 
   
   if (dist < particleRadiusModel) {
@@ -273,7 +276,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let penetrationModel = particleRadiusModel - dist;
     
     // Convert penetration to World Space
-    let penetrationWorld = penetrationModel * modelScale;
+    // Clamp to max 0.5 world units to prevent explosions from deep penetration
+    let penetrationWorld = min(penetrationModel * modelScale, 0.5);
     
     // Push out
     pos = pos + worldNormal * penetrationWorld;

@@ -28,6 +28,8 @@ export class RaymarchAdapter implements FluidAppAdapter<RaymarchConfig> {
     tileDarkOffset: 0.1,
     obstacleColor: { r: 1, g: 0, b: 0 },
     obstacleAlpha: 0.8,
+    dirToSun: { x: 0.83, y: 0.42, z: 0.36 },
+    sunBrightness: 1.0,
   };
 
   private device!: GPUDevice;

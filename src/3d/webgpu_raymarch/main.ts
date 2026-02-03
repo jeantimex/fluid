@@ -97,6 +97,7 @@ import {
 } from '../webgpu_particles/webgpu_utils.ts';
 import { setupInputHandlers } from './input_handler.ts';
 import type { RaymarchConfig } from './types.ts';
+import { loadGltfModel } from '../common/model_loader.ts';
 
 /**
  * Creates and inserts a canvas element into the application container.
@@ -160,9 +161,12 @@ const config: RaymarchConfig = {
   extinctionCoefficients: { x: 18, y: 8, z: 2 },
   indexOfRefraction: 1.33,
   numRefractions: 4,
-  floorSize: { x: 80, y: 0.05, z: 80 },
   obstacleColor: { r: 1.0, g: 0.0, b: 0.0 },
   obstacleAlpha: 0.8,
+  dirToSun: { x: 0.83, y: 0.42, z: 0.36 },
+  sunBrightness: 1.0,
+  floorSize: { x: 80, y: 0.05, z: 80 },
+  floorCenter: { x: 0, y: -5.025, z: 0 },
 };
 
 // Simulation instance (initialized asynchronously in main())
@@ -331,6 +335,13 @@ async function main() {
   // -------------------------------------------------------------------------
 
   simulation = new FluidSimulation(device, context, canvas, config, format);
+
+  try {
+    const model = await loadGltfModel(device, '/models/duck/Duck.gltf');
+    await simulation.setModel(model);
+  } catch (error) {
+    console.warn('Failed to load model:', error);
+  }
 
   // Set up input handlers (camera control + particle interaction)
   const updateInertia = setupInputHandlers(

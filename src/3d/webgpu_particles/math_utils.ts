@@ -110,11 +110,11 @@ export function mat4Perspective(
   out[5] = f;
 
   // Column 2: Z transformation for WebGPU's [0, 1] depth range
-  out[10] = (far + near) * nf;
+  out[10] = far * nf;
   out[11] = -1; // Perspective divide indicator (w = -z)
 
   // Column 3: Z translation
-  out[14] = 2 * far * near * nf;
+  out[14] = far * near * nf;
 
   return out;
 }

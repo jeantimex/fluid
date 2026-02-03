@@ -86,6 +86,9 @@ import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import { RaymarchRenderer } from './renderer.ts';
 import { SplatPipeline } from './splat_pipeline.ts';
 import type { RaymarchConfig } from './types.ts';
+import type { GpuModel } from '../common/model_loader.ts';
+import { SDFGenerator } from '../common/sdf_generator.ts';
+import { mat4Invert } from '../webgpu_particles/math_utils.ts';
 
 /**
  * Main orchestrator class for the 3D SPH fluid simulation.
@@ -123,6 +126,10 @@ export class FluidSimulation {
 
   /** Manages the 3-pass density splatting system */
   private splatPipeline: SplatPipeline;
+
+  /** SDF Generator for mesh collision */
+  private sdfGenerator: SDFGenerator;
+  private model: GpuModel | null = null;
 
   /** Handles raymarch rendering */
   private renderer: RaymarchRenderer;
@@ -240,6 +247,8 @@ export class FluidSimulation {
     // Create splat pipeline (density volume splatting)
     this.splatPipeline = new SplatPipeline(device);
 
+    this.sdfGenerator = new SDFGenerator(device);
+
     // Create renderer (raymarched volume)
     this.renderer = new RaymarchRenderer(device, canvas, format);
 
@@ -304,7 +313,10 @@ export class FluidSimulation {
     );
 
     // Recreate bind groups to point to new buffers
-    this.pipelines.createBindGroups(this.buffers);
+    this.pipelines.createBindGroups(
+      this.buffers,
+      this.sdfGenerator.textureView
+    );
 
     this.splatPipeline.recreate(this.config, this.buffers.predicted);
     this.renderer.createBindGroup(
@@ -482,6 +494,7 @@ export class FluidSimulation {
       // 6. Integration (Position Update + Collision)
       // -----------------------------------------------------------------------
       this.updateIntegrateUniforms(timeStep);
+      this.updateSDFUniforms();
       const integratePass = encoder.beginComputePass();
       integratePass.setPipeline(pipelines.integrate);
       integratePass.setBindGroup(0, pipelines.integrateBindGroup);
@@ -500,6 +513,61 @@ export class FluidSimulation {
     const splatEncoder = device.createCommandEncoder();
     this.splatPipeline.dispatch(splatEncoder, buffers.particleCount, config);
     device.queue.submit([splatEncoder.finish()]);
+  }
+
+  async setModel(model: GpuModel | null): Promise<void> {
+    this.model = model;
+    this.renderer.setModel(model);
+    
+    if (model) {
+      await this.sdfGenerator.generate(model);
+      this.pipelines.createBindGroups(
+        this.buffers,
+        this.sdfGenerator.textureView
+      );
+    }
+  }
+
+  private updateSDFUniforms(): void {
+    const { config, model } = this;
+    const { min, max } = this.sdfGenerator.bounds;
+
+    // Calculate Model Matrix (same as in renderer)
+    const modelScale = 0.04;
+    const modelTx = 0;
+    const modelTy = -config.boundsSize.y * 0.5 - (model?.boundsMinY ?? 0) * modelScale;
+    const modelTz = 0;
+
+    // Construct Model Matrix (Column-Major)
+    const modelMatrix = new Float32Array([
+      -modelScale, 0, 0, 0,
+      0, modelScale, 0, 0,
+      0, 0, -modelScale, 0,
+      modelTx, modelTy, modelTz, 1,
+    ]);
+
+    // Calculate Inverse Model Matrix (for transforming particles to model space)
+    const modelInv = mat4Invert(modelMatrix);
+
+    const data = new Float32Array(40); // 3+1 + 3+1 + 16 + 16
+    
+    // minBounds (vec3 + pad)
+    data[0] = min[0]; data[1] = min[1]; data[2] = min[2]; data[3] = 0;
+    
+    // maxBounds (vec3 + pad)
+    data[4] = max[0]; data[5] = max[1]; data[6] = max[2]; data[7] = 0;
+    
+    // modelInv (mat4)
+    data.set(modelInv, 8);
+    
+    // modelMatrix (mat4)
+    data.set(modelMatrix, 24);
+
+    this.device.queue.writeBuffer(
+      this.pipelines.uniformBuffers.sdfParams,
+      0,
+      data
+    );
   }
 
   // ===========================================================================

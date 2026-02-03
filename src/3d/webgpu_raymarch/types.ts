@@ -10,7 +10,7 @@
  * @module types
  */
 
-import type { SimConfig, RGB } from '../common/types.ts';
+import type { SimConfig, RGB, Vec3 } from '../common/types.ts';
 
 /**
  * Configuration for the raymarch-based fluid renderer.
@@ -107,6 +107,12 @@ export interface RaymarchConfig extends SimConfig {
    */
   debugFloorMode: number;
 
+  /** Normalized direction vector toward the sun light source. */
+  dirToSun: Vec3;
+
+  /** Intensity multiplier for the sun light. */
+  sunBrightness: number;
+
   // ---------------------------------------------------------------------------
   // Optical Properties
   // ---------------------------------------------------------------------------
@@ -138,6 +144,9 @@ export interface RaymarchConfig extends SimConfig {
 
   /** Dimensions (width, height, depth) of the floor slab in world units. */
   floorSize: { x: number; y: number; z: number };
+
+  /** Center position of the floor slab (world units). */
+  floorCenter: { x: number; y: number; z: number };
 
   /** Solid color used to render the obstacle box (linear RGB). */
   obstacleColor: { r: number; g: number; b: number };
