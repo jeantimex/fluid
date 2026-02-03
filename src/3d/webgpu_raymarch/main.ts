@@ -145,6 +145,7 @@ const config: RaymarchConfig = {
   lightStepSize: 0.1,
   shadowSoftness: 1.0,
   maxSteps: 512,
+  fluidColor: { r: 0.4, g: 0.7, b: 1.0 },
   tileCol1: { r: 126 / 255, g: 183 / 255, b: 231 / 255 }, // Blue
   tileCol2: { r: 210 / 255, g: 165 / 255, b: 240 / 255 }, // Purple
   tileCol3: { r: 153 / 255, g: 229 / 255, b: 199 / 255 }, // Green
@@ -196,6 +197,16 @@ const { stats, gui } = setupGui(
 
 const raymarchFolder = gui.addFolder('Raymarch');
 raymarchFolder.close();
+const fluidColorState = { fluidColor: rgbToHex(config.fluidColor) };
+raymarchFolder
+  .addColor(fluidColorState, 'fluidColor')
+  .name('Fluid Color')
+  .onChange((value: string) => {
+    const rgb = hexToRgb(value);
+    config.fluidColor.r = rgb.r / 255;
+    config.fluidColor.g = rgb.g / 255;
+    config.fluidColor.b = rgb.b / 255;
+  });
 raymarchFolder
   .add(config, 'densityTextureRes', 32, 256, 1)
   .name('Density Texture Res')
@@ -206,6 +217,12 @@ raymarchFolder
   .name('Density Multiplier');
 raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
 raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
+
+const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
+extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');
+extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
+extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
+
 raymarchFolder
   .add(config, 'tileDarkFactor', 0.1, 0.9, 0.01)
   .name('Tile Dark Factor');

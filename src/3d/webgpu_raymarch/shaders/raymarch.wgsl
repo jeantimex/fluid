@@ -72,6 +72,8 @@ struct RaymarchParams {
   pad10: f32,
   extinctionCoefficients: vec3<f32>, // Per-channel absorption for Beer–Lambert
   pad11: f32,
+  fluidColor: vec3<f32>,             // Absorption tint (linear RGB)
+  pad12: f32,
   indexOfRefraction: f32,            // Fluid IOR (water ≈ 1.33)
   numRefractions: f32,               // Number of refraction bounces per pixel
   tileDarkFactor: f32,               // Multiplier for dark checkerboard tiles (0–1)
@@ -568,7 +570,9 @@ fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) 
 /// T = exp(−τ × σ) where σ is the per-channel extinction coefficient.
 /// Higher extinction → more absorption → darker color for that channel.
 fn transmittance(opticalDepth: f32) -> vec3<f32> {
-  return exp(-opticalDepth * params.extinctionCoefficients);
+  let T = exp(-opticalDepth * params.extinctionCoefficients);
+  let colorFilter = pow(max(params.fluidColor, vec3<f32>(0.001)), vec3<f32>(max(opticalDepth * 5.0, 0.0)));
+  return T * colorFilter;
 }
 
 /// Samples the particle shadow map at a world position.

@@ -17,7 +17,7 @@
  * The half-resolution strategy halves the pixel count (4× fewer fragments),
  * which is critical because the raymarch shader is extremely expensive per pixel.
  *
- * ## Uniform Buffer Layout (84 floats = 336 bytes)
+ * ## Uniform Buffer Layout (88 floats = 352 bytes)
  *
  * | Offset | Name                   | Type      |
  * |--------|------------------------|-----------|
@@ -43,19 +43,20 @@
  * | 47     | debugFloorMode         | f32       |
  * | 48–50  | dirToSun               | vec3<f32> |
  * | 52–54  | extinctionCoefficients | vec3<f32> |
- * | 56     | indexOfRefraction       | f32       |
- * | 57     | numRefractions         | f32       |
- * | 58     | tileDarkFactor         | f32       |
- * | 59     | floorAmbient           | f32       |
- * | 60–62  | floorSize              | vec3<f32> |
- * | 63     | sceneExposure          | f32       |
- * | 64–66  | floorCenter            | vec3<f32> |
- * | 68–70  | obstacleCenter         | vec3<f32> |
- * | 72–74  | obstacleHalfSize       | vec3<f32> |
- * | 76–78  | obstacleRotation       | vec3<f32> |
- * | 79     | pad                    | f32       |
- * | 80–82  | obstacleColor          | vec3<f32> |
- * | 83     | obstacleAlpha          | f32       |
+ * | 56–58  | fluidColor             | vec3<f32> |
+ * | 60     | indexOfRefraction       | f32       |
+ * | 61     | numRefractions         | f32       |
+ * | 62     | tileDarkFactor         | f32       |
+ * | 63     | floorAmbient           | f32       |
+ * | 64–66  | floorSize              | vec3<f32> |
+ * | 67     | sceneExposure          | f32       |
+ * | 68–70  | floorCenter            | vec3<f32> |
+ * | 72–74  | obstacleCenter         | vec3<f32> |
+ * | 76–78  | obstacleHalfSize       | vec3<f32> |
+ * | 80–82  | obstacleRotation       | vec3<f32> |
+ * | 83     | pad                    | f32       |
+ * | 84–86  | obstacleColor          | vec3<f32> |
+ * | 87     | obstacleAlpha          | f32       |
  *
  * @module renderer
  */
@@ -95,7 +96,7 @@ export class RaymarchRenderer {
   /** Bind group for the raymarch pass (density texture + sampler + uniforms). */
   private bindGroup!: GPUBindGroup;
 
-  /** CPU-side typed array mirroring the uniform buffer contents (84 floats). */
+  /** CPU-side typed array mirroring the uniform buffer contents (88 floats). */
   private uniformData = new Float32Array(28);
 
   // ---------------------------------------------------------------------------
@@ -228,7 +229,7 @@ export class RaymarchRenderer {
     // Uniform Buffer
     // -------------------------------------------------------------------------
 
-    this.uniformData = new Float32Array(84); // 84 floats = 336 bytes
+    this.uniformData = new Float32Array(88); // 88 floats = 352 bytes
 
     this.uniformBuffer = device.createBuffer({
       size: this.uniformData.byteLength,
@@ -612,45 +613,51 @@ export class RaymarchRenderer {
     this.uniformData[54] = config.extinctionCoefficients.z;
     this.uniformData[55] = 0; // pad
 
+    // --- Fluid absorption color ---
+    this.uniformData[56] = config.fluidColor.r;
+    this.uniformData[57] = config.fluidColor.g;
+    this.uniformData[58] = config.fluidColor.b;
+    this.uniformData[59] = 0; // pad
+
     // --- Optical & lighting parameters ---
-    this.uniformData[56] = config.indexOfRefraction;
-    this.uniformData[57] = config.numRefractions;
-    this.uniformData[58] = config.tileDarkFactor;
-    this.uniformData[59] = config.floorAmbient;
+    this.uniformData[60] = config.indexOfRefraction;
+    this.uniformData[61] = config.numRefractions;
+    this.uniformData[62] = config.tileDarkFactor;
+    this.uniformData[63] = config.floorAmbient;
 
     // --- Floor geometry ---
-    this.uniformData[60] = config.floorSize.x;
-    this.uniformData[61] = config.floorSize.y;
-    this.uniformData[62] = config.floorSize.z;
-    this.uniformData[63] = config.sceneExposure;
+    this.uniformData[64] = config.floorSize.x;
+    this.uniformData[65] = config.floorSize.y;
+    this.uniformData[66] = config.floorSize.z;
+    this.uniformData[67] = config.sceneExposure;
 
     // Floor center: horizontally centered, positioned just below the fluid bounds
-    this.uniformData[64] = 0; // floorCenter.x
-    this.uniformData[65] =
+    this.uniformData[68] = 0; // floorCenter.x
+    this.uniformData[69] =
       -config.boundsSize.y * 0.5 - config.floorSize.y * 0.5; // floorCenter.y
-    this.uniformData[66] = 0; // floorCenter.z
-    this.uniformData[67] = 0; // pad
-
-    // --- Obstacle box ---
-    this.uniformData[68] = config.obstacleCentre.x;
-    this.uniformData[69] = config.obstacleCentre.y;
-    this.uniformData[70] = config.obstacleCentre.z;
+    this.uniformData[70] = 0; // floorCenter.z
     this.uniformData[71] = 0; // pad
 
-    this.uniformData[72] = config.obstacleSize.x * 0.5;
-    this.uniformData[73] = config.obstacleSize.y * 0.5;
-    this.uniformData[74] = config.obstacleSize.z * 0.5;
+    // --- Obstacle box ---
+    this.uniformData[72] = config.obstacleCentre.x;
+    this.uniformData[73] = config.obstacleCentre.y;
+    this.uniformData[74] = config.obstacleCentre.z;
     this.uniformData[75] = 0; // pad
 
-    this.uniformData[76] = config.obstacleRotation.x;
-    this.uniformData[77] = config.obstacleRotation.y;
-    this.uniformData[78] = config.obstacleRotation.z;
+    this.uniformData[76] = config.obstacleSize.x * 0.5;
+    this.uniformData[77] = config.obstacleSize.y * 0.5;
+    this.uniformData[78] = config.obstacleSize.z * 0.5;
     this.uniformData[79] = 0; // pad
 
-    this.uniformData[80] = config.obstacleColor.r;
-    this.uniformData[81] = config.obstacleColor.g;
-    this.uniformData[82] = config.obstacleColor.b;
-    this.uniformData[83] = config.obstacleAlpha;
+    this.uniformData[80] = config.obstacleRotation.x;
+    this.uniformData[81] = config.obstacleRotation.y;
+    this.uniformData[82] = config.obstacleRotation.z;
+    this.uniformData[83] = 0; // pad
+
+    this.uniformData[84] = config.obstacleColor.r;
+    this.uniformData[85] = config.obstacleColor.g;
+    this.uniformData[86] = config.obstacleColor.b;
+    this.uniformData[87] = config.obstacleAlpha;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

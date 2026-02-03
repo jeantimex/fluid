@@ -10,7 +10,7 @@
  * @module types
  */
 
-import type { SimConfig } from '../common/types.ts';
+import type { SimConfig, RGB } from '../common/types.ts';
 
 /**
  * Configuration for the raymarch-based fluid renderer.
@@ -110,6 +110,9 @@ export interface RaymarchConfig extends SimConfig {
   // ---------------------------------------------------------------------------
   // Optical Properties
   // ---------------------------------------------------------------------------
+
+  /** Base color used for absorption tinting of the fluid. */
+  fluidColor: RGB;
 
   /**
    * Per-channel extinction (absorption) coefficients for Beer–Lambert
