@@ -67,7 +67,7 @@ import modelShadowShader from './shaders/model_shadow.wgsl?raw';
 import environmentShader from '../common/shaders/environment.wgsl?raw';
 import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import type { ParticlesConfig } from './types.ts';
-import type { GpuModel } from './model_loader.ts';
+import type { GpuModel } from '../common/model_loader.ts';
 import {
   mat4Perspective,
   mat4Multiply,

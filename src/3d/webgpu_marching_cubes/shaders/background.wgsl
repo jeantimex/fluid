@@ -15,6 +15,7 @@ struct ShadowUniforms {
 @group(0) @binding(2) var shadowTex: texture_depth_2d;
 @group(0) @binding(3) var shadowSampler: sampler_comparison;
 @group(0) @binding(4) var<uniform> shadowUniforms: ShadowUniforms;
+@group(0) @binding(5) var occluderShadowTex: texture_depth_2d;
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -53,7 +54,7 @@ struct FragmentUniforms {
 
 @group(0) @binding(1) var<uniform> camera: FragmentUniforms;
 
-fn sampleShadow(worldPos: vec3<f32>) -> f32 {
+fn sampleShadowMap(shadowMap: texture_depth_2d, worldPos: vec3<f32>) -> f32 {
   let lightPos = shadowUniforms.lightViewProjection * vec4<f32>(worldPos, 1.0);
   let ndc = lightPos.xyz / lightPos.w;
   let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
@@ -67,16 +68,16 @@ fn sampleShadow(worldPos: vec3<f32>) -> f32 {
   let softness = shadowUniforms.shadowSoftness;
 
   if (softness <= 0.001) {
-    return textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
+    return textureSampleCompareLevel(shadowMap, shadowSampler, uv, depth);
   }
 
   let texel = vec2<f32>(1.0 / 2048.0) * softness;
   var sum = 0.0;
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv, depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
   
   return sum * 0.2;
 }
@@ -128,7 +129,9 @@ fn getShadowedEnv(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         }
 
         // Apply Shadow
-        let shadow = sampleShadow(hitPos);
+        let fluidShadow = sampleShadowMap(shadowTex, hitPos);
+        let occluderShadow = sampleShadowMap(occluderShadowTex, hitPos);
+        let shadow = min(fluidShadow, occluderShadow);
         
         let ambient = clamp(uniforms.floorAmbient, 0.0, 1.0);
         let sun = max(0.0, uniforms.dirToSun.y) * uniforms.sunBrightness;

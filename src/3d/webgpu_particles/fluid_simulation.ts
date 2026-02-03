@@ -20,8 +20,8 @@ import { ComputePipelinesLinear } from './compute_pipelines_linear.ts';
 import { Renderer } from './renderer.ts';
 import { mat4Perspective, mat4Multiply, mat4Invert } from './math_utils.ts';
 import { DensitySplatPipeline } from './density_splat_pipeline.ts';
-import type { GpuModel } from './model_loader.ts';
-import { SDFGenerator } from './sdf_generator.ts';
+import type { GpuModel } from '../common/model_loader.ts';
+import { SDFGenerator } from '../common/sdf_generator.ts';
 
 /**
  * Orchestrates the full SPH fluid simulation pipeline on the GPU.

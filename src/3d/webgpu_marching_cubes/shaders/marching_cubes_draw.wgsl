@@ -23,6 +23,7 @@ struct ShadowUniforms {
 @group(0) @binding(2) var shadowTex: texture_depth_2d;
 @group(0) @binding(3) var shadowSampler: sampler_comparison;
 @group(0) @binding(4) var<uniform> shadowUniforms: ShadowUniforms;
+@group(0) @binding(5) var occluderShadowTex: texture_depth_2d;
 
 struct VSOut {
   @builtin(position) position: vec4<f32>,
@@ -40,7 +41,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VSOut {
   return out;
 }
 
-fn sampleShadow(worldPos: vec3<f32>, ndotl: f32) -> f32 {
+fn sampleShadowMap(shadowMap: texture_depth_2d, worldPos: vec3<f32>, ndotl: f32) -> f32 {
   let lightPos = shadowUniforms.lightViewProjection * vec4<f32>(worldPos, 1.0);
   let ndc = lightPos.xyz / lightPos.w;
   let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
@@ -55,17 +56,17 @@ fn sampleShadow(worldPos: vec3<f32>, ndotl: f32) -> f32 {
   let softness = shadowUniforms.shadowSoftness;
 
   if (softness <= 0.001) {
-    return textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
+    return textureSampleCompareLevel(shadowMap, shadowSampler, uv, depth);
   }
 
   // PCF 5-tap pattern
   let texel = vec2<f32>(1.0 / 2048.0) * softness;
   var sum = 0.0;
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv, depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
   
   return sum * 0.2;
 }
@@ -76,7 +77,9 @@ fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
   let l = normalize(uniforms.lightDir);
   let ndotl = max(dot(n, l), 0.0);
   
-  let shadow = sampleShadow(input.worldPos, ndotl);
+  let fluidShadow = sampleShadowMap(shadowTex, input.worldPos, ndotl);
+  let occluderShadow = sampleShadowMap(occluderShadowTex, input.worldPos, ndotl);
+  let shadow = min(fluidShadow, occluderShadow);
   
   let diffuse = ndotl * 0.5 + 0.5; // Half-Lambert
   let shading = uniforms.ambient + diffuse * uniforms.sunBrightness * shadow;
