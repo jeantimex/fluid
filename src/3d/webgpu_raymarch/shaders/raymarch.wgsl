@@ -1060,7 +1060,15 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
      // Sun shadowing from obstacle/particles (shadow map) applied to surface lighting only.
      let ndotl = max(dot(normal, params.dirToSun), 0.0);
      let shadow = sampleShadow(surfaceInfo.pos, ndotl);
-     let surfaceLighting = clamp(params.floorAmbient, 0.0, 1.0) + ndotl * shadow * (1.0 - clamp(params.floorAmbient, 0.0, 1.0));
+     
+     // Ambient term
+     let ambient = clamp(params.floorAmbient, 0.0, 1.0);
+     // Diffuse term from Sun
+     let diffuse = ndotl * (1.0 - ambient);
+     
+     // Apply shadow to BOTH ambient and diffuse to make it darker
+     // Keep a small base ambient (0.2) even in shadow to prevent pitch black
+     let surfaceLighting = (ambient + diffuse) * (0.2 + 0.8 * shadow);
 
      // --- Heuristic: which ray to trace? ---
      // Probe density along both directions to estimate which path
