@@ -128,6 +128,7 @@ struct Uniforms {
 //   Binding 5: shadowTex         - Shadow map depth texture
 //   Binding 6: shadowSampler     - Comparison sampler for shadow map
 //   Binding 7: shadowUniforms    - Light view-projection + softness
+//   Binding 8: occluderShadowTex - Shadow map for obstacles/models
 // ============================================================================
 
 @group(0) @binding(0) var<storage, read> positions: array<vec4<f32>>;
@@ -137,6 +138,7 @@ struct Uniforms {
 @group(0) @binding(4) var<storage, read> visibleIndices: array<u32>;
 @group(0) @binding(5) var shadowTex: texture_depth_2d;
 @group(0) @binding(6) var shadowSampler: sampler_comparison;
+@group(0) @binding(8) var occluderShadowTex: texture_depth_2d;
 
 struct ShadowUniforms {
   lightViewProjection: mat4x4<f32>,
@@ -302,7 +304,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) ins
   return out;
 }
 
-fn sampleShadow(worldPos: vec3<f32>) -> f32 {
+fn sampleShadowMap(shadowMap: texture_depth_2d, worldPos: vec3<f32>) -> f32 {
   let lightPos = shadowUniforms.lightViewProjection * vec4<f32>(worldPos, 1.0);
   let ndc = lightPos.xyz / lightPos.w;
   let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
@@ -315,16 +317,16 @@ fn sampleShadow(worldPos: vec3<f32>) -> f32 {
   let softness = shadowUniforms.shadowSoftness;
 
   if (softness <= 0.001) {
-    return textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
+    return textureSampleCompareLevel(shadowMap, shadowSampler, uv, depth);
   }
 
   let texel = vec2<f32>(1.0 / 2048.0) * softness;
   var sum = 0.0;
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv, depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
   
   return sum * 0.2;
 }
@@ -369,7 +371,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
   // Return opaque colored pixel
   // Alpha = 1.0 (fully opaque)
-  let shadow = sampleShadow(in.worldPos);
+  let particleShadow = sampleShadowMap(shadowTex, in.worldPos);
+  let occluderShadow = sampleShadowMap(occluderShadowTex, in.worldPos);
+  let shadow = min(particleShadow, occluderShadow);
   let lighting = uniforms.ambient + uniforms.sunBrightness * shadow;
   return vec4<f32>(in.color * lighting * uniforms.sceneExposure, 1.0);
 }

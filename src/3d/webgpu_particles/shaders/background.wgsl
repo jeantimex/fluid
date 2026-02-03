@@ -62,6 +62,17 @@ struct DensityShadowUniforms {
 
 @group(0) @binding(4) var<uniform> densityShadow: DensityShadowUniforms;
 
+struct ShadowUniforms {
+  lightViewProjection: mat4x4<f32>,
+  shadowSoftness: f32,
+  pad0: vec3<f32>,
+};
+
+@group(0) @binding(5) var shadowTex: texture_depth_2d;
+@group(0) @binding(6) var shadowSampler: sampler_comparison;
+@group(0) @binding(7) var<uniform> shadowUniforms: ShadowUniforms;
+@group(0) @binding(8) var occluderShadowTex: texture_depth_2d;
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   // Compute ray direction for this pixel
@@ -89,6 +100,35 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   let exposedColor = color * uniforms.sceneExposure;
   
   return vec4<f32>(exposedColor, 1.0);
+}
+
+fn sampleShadowMap(shadowMap: texture_depth_2d, worldPos: vec3<f32>, ndotl: f32) -> f32 {
+  let lightPos = shadowUniforms.lightViewProjection * vec4<f32>(worldPos, 1.0);
+  let ndc = lightPos.xyz / lightPos.w;
+  let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z < 0.0 || ndc.z > 1.0) {
+    return 1.0;
+  }
+
+  // Slope-scaled bias: smaller bias when surface faces light directly
+  let bias = max(0.0002 * (1.0 - ndotl), 0.00005);
+  let depth = ndc.z - bias;
+  let softness = shadowUniforms.shadowSoftness;
+
+  if (softness <= 0.001) {
+    return textureSampleCompareLevel(shadowMap, shadowSampler, uv, depth);
+  }
+
+  let texel = vec2<f32>(1.0 / 2048.0) * softness;
+  var sum = 0.0;
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv, depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
+  sum += textureSampleCompareLevel(shadowMap, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
+  
+  return sum * 0.2;
 }
 
 fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
@@ -152,6 +192,16 @@ fn getEnvironmentColorShadowed(origin: vec3<f32>, dir: vec3<f32>, params: Enviro
   if (hasFloorHit) {
     hitPos = origin + dir * floorT;
 
+    // Calculate N.L for bias
+    let n = vec3<f32>(0.0, 1.0, 0.0);
+    let l = normalize(params.dirToSun); // dirToSun is light direction
+    let ndotl = max(dot(n, l), 0.0);
+
+    // Sample hard shadows (particles + duck)
+    let particleShadow = sampleShadowMap(shadowTex, hitPos, ndotl);
+    let occluderShadow = sampleShadowMap(occluderShadowTex, hitPos, ndotl);
+    let hardShadow = min(particleShadow, occluderShadow);
+
     // Debug Modes (Shadow/Density first)
     if (params.debugFloorMode >= 3.5) {
       let dens = max(0.0, sampleDensityRaw(hitPos));
@@ -164,7 +214,7 @@ fn getEnvironmentColorShadowed(origin: vec3<f32>, dir: vec3<f32>, params: Enviro
     if (params.debugFloorMode >= 2.5) {
       let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
       let shadowMap = transmittance(shadowDepth * 2.0);
-      return shadowMap;
+      return shadowMap * hardShadow;
     }
 
     if (params.debugFloorMode >= 1.5) {
@@ -201,7 +251,9 @@ fn getEnvironmentColorShadowed(origin: vec3<f32>, dir: vec3<f32>, params: Enviro
       let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
       let shadowMap = transmittance(shadowDepth * 2.0);
       let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-      let lighting = shadowMap * (1.0 - ambient) + ambient;
+      
+      // Combine volume shadow and hard shadow map
+      let lighting = (shadowMap * hardShadow) * (1.0 - ambient) + ambient;
       bgCol = tileCol * lighting;
     }
   } else {
@@ -216,7 +268,17 @@ fn getEnvironmentColorShadowed(origin: vec3<f32>, dir: vec3<f32>, params: Enviro
   if (obsT >= 0.0 && (!hasFloorHit || obsT < floorT)) {
     let a = clamp(params.obstacleAlpha, 0.0, 1.0);
     let ambient = params.floorAmbient;
-    let sun = max(0.0, dot(obsNormal, params.dirToSun)) * params.sunBrightness;
+    
+    // Calculate shadow for the obstacle itself
+    let obsHitPos = origin + dir * obsT;
+    let l = normalize(params.dirToSun);
+    let ndotl = max(dot(obsNormal, l), 0.0);
+    
+    let particleShadow = sampleShadowMap(shadowTex, obsHitPos, ndotl);
+    let occluderShadow = sampleShadowMap(occluderShadowTex, obsHitPos, ndotl);
+    let shadow = min(particleShadow, occluderShadow);
+    
+    let sun = max(0.0, ndotl) * params.sunBrightness * shadow;
     let lit = params.obstacleColor * (ambient + sun);
     return mix(bgCol, lit, a);
   }

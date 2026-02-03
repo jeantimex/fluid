@@ -82,6 +82,8 @@ export interface UniformBuffers {
   viscosity: GPUBuffer;
   /** Frustum culling params — 80 bytes (CullParams struct: VP matrix + radius). */
   cull: GPUBuffer;
+  /** SDF Collision params - 160 bytes (bounds + matrices) */
+  sdfParams: GPUBuffer;
 }
 
 /**
@@ -250,6 +252,10 @@ export class ComputePipelinesLinear {
         size: 48,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
+      sdfParams: device.createBuffer({
+        size: 160,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
     };
 
     this.externalForces = this.createPipeline(externalForcesShader, 'main');
@@ -294,8 +300,9 @@ export class ComputePipelinesLinear {
    * handles change when the simulation is re-initialised.
    *
    * @param buffers - The simulation's GPU buffer manager
+   * @param sdfTextureView - (Optional) 3D texture view for SDF collision
    */
-  createBindGroups(buffers: SimulationBuffersLinear): void {
+  createBindGroups(buffers: SimulationBuffersLinear, sdfTextureView?: GPUTextureView): void {
     this.externalForcesBindGroup = this.device.createBindGroup({
       layout: this.externalForces.getBindGroupLayout(0),
       entries: [
@@ -312,6 +319,8 @@ export class ComputePipelinesLinear {
         { binding: 0, resource: { buffer: buffers.positions } },
         { binding: 1, resource: { buffer: buffers.velocities } },
         { binding: 2, resource: { buffer: this.uniformBuffers.integrate } },
+        { binding: 3, resource: sdfTextureView! },
+        { binding: 5, resource: { buffer: this.uniformBuffers.sdfParams } },
       ],
     });
 

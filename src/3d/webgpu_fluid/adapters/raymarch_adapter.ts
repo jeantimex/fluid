@@ -25,6 +25,9 @@ export class RaymarchAdapter implements FluidAppAdapter<RaymarchConfig> {
     extinctionCoefficients: { x: 18, y: 8, z: 2 },
     indexOfRefraction: 1.33,
     numRefractions: 4,
+    tileDarkOffset: 0.1,
+    obstacleColor: { r: 1, g: 0, b: 0 },
+    obstacleAlpha: 0.8,
   };
 
   private device!: GPUDevice;

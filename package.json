@@ -16,6 +16,8 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
+    "@gltf-transform/core": "^4.3.0",
+    "gltf-loader-ts": "^0.3.1",
     "lil-gui": "^0.21.0",
     "stats-gl": "^3.8.0"
   }

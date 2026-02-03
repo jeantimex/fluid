@@ -62,9 +62,12 @@ import particleShader from './shaders/particle3d.wgsl?raw';
 import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
 import shadowShader from './shaders/shadow.wgsl?raw';
 import backgroundShader from './shaders/background.wgsl?raw';
+import modelShader from './shaders/model.wgsl?raw';
+import modelShadowShader from './shaders/model_shadow.wgsl?raw';
 import environmentShader from '../common/shaders/environment.wgsl?raw';
 import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import type { ParticlesConfig } from './types.ts';
+import type { GpuModel } from './model_loader.ts';
 import {
   mat4Perspective,
   mat4Multiply,
@@ -105,6 +108,11 @@ export class Renderer {
   /** Pipeline for rendering the environment background. */
   private backgroundPipeline: GPURenderPipeline;
 
+  /** Pipeline for rendering a textured model. */
+  private modelPipeline: GPURenderPipeline;
+  /** Pipeline for rendering model into the shadow map. */
+  private modelShadowPipeline: GPURenderPipeline;
+
   /** Pipeline for particle shadow map rendering. */
   private shadowParticlePipeline: GPURenderPipeline;
 
@@ -127,6 +135,12 @@ export class Renderer {
   /** Uniform buffer for camera settings (for background shader). */
   private camUniformBuffer: GPUBuffer;
 
+  /** Uniform buffer for model rendering. */
+  private modelUniformBuffer: GPUBuffer;
+
+  /** Uniform buffer for model shadow rendering. */
+  private modelShadowUniformBuffer: GPUBuffer;
+
   /** Uniform buffer for shadow map settings. */
   private shadowUniformBuffer: GPUBuffer;
 
@@ -137,8 +151,18 @@ export class Renderer {
   private particleBindGroup!: GPUBindGroup;
   private faceBindGroup: GPUBindGroup;
   private backgroundBindGroup!: GPUBindGroup;
+  private modelBindGroup?: GPUBindGroup;
+  private modelShadowBindGroup?: GPUBindGroup;
   private shadowParticleBindGroup!: GPUBindGroup;
   private shadowObstacleBindGroup!: GPUBindGroup;
+
+  // ===========================================================================
+  // Model Resources
+  // ===========================================================================
+
+  private model: GpuModel | null = null;
+  private modelUniformData = new Float32Array(36);
+  private modelScale = 0.04;
 
   // ===========================================================================
   // Line Rendering Resources
@@ -161,6 +185,7 @@ export class Renderer {
   // ===========================================================================
 
   private shadowTexture!: GPUTexture;
+  private occluderShadowTexture!: GPUTexture;
   private shadowMapSize = 2048;
   private shadowSampler: GPUSampler;
 
@@ -204,6 +229,18 @@ export class Renderer {
     // Actually struct FragmentUniforms has 4 vec4s = 64 bytes
     this.camUniformBuffer = device.createBuffer({
       size: 80, // Updated to 80 bytes
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Model uniforms: viewProj (64) + model (64) + lightDir/pad (16) = 144 bytes
+    this.modelUniformBuffer = device.createBuffer({
+      size: 144,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Model shadow uniforms: lightViewProjection (64) + model (64) = 128 bytes
+    this.modelShadowUniformBuffer = device.createBuffer({
+      size: 128,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -350,15 +387,72 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
+    // Create Model Render Pipeline
+    // -------------------------------------------------------------------------
+
+    const modelModule = device.createShaderModule({ code: modelShader });
+    this.modelPipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: modelModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 32,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+              { shaderLocation: 2, offset: 24, format: 'float32x2' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: modelModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    // -------------------------------------------------------------------------
     // Create Shadow Render Pipelines
     // -------------------------------------------------------------------------
 
     const shadowModule = device.createShaderModule({ code: shadowShader });
+    const modelShadowModule = device.createShaderModule({ code: modelShadowShader });
 
     this.shadowParticlePipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: shadowModule, entryPoint: 'vs_particles' },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    this.modelShadowPipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: modelShadowModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 32,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            ],
+          },
+        ],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: {
         format: 'depth24plus',
         depthWriteEnabled: true,
@@ -402,6 +496,12 @@ export class Renderer {
     // -------------------------------------------------------------------------
 
     this.shadowTexture = this.device.createTexture({
+      size: [this.shadowMapSize, this.shadowMapSize],
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
+    this.occluderShadowTexture = this.device.createTexture({
       size: [this.shadowMapSize, this.shadowMapSize],
       format: 'depth24plus',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -488,6 +588,7 @@ export class Renderer {
         { binding: 5, resource: this.shadowTexture.createView() },
         { binding: 6, resource: this.shadowSampler },
         { binding: 7, resource: { buffer: this.shadowUniformBuffer } },
+        { binding: 8, resource: this.occluderShadowTexture.createView() },
       ],
     });
 
@@ -507,7 +608,38 @@ export class Renderer {
         { binding: 2, resource: densityTextureView },
         { binding: 3, resource: this.densitySampler },
         { binding: 4, resource: { buffer: this.densityUniformBuffer } },
+        { binding: 5, resource: this.shadowTexture.createView() },
+        { binding: 6, resource: this.shadowSampler },
+        { binding: 7, resource: { buffer: this.shadowUniformBuffer } },
+        { binding: 8, resource: this.occluderShadowTexture.createView() },
       ],
+    });
+  }
+
+  setModel(model: GpuModel | null): void {
+    this.model = model;
+    if (!model) {
+      this.modelBindGroup = undefined;
+      this.modelShadowBindGroup = undefined;
+      return;
+    }
+
+    this.modelBindGroup = this.device.createBindGroup({
+      layout: this.modelPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.modelUniformBuffer } },
+        { binding: 1, resource: model.textureView },
+        { binding: 2, resource: model.sampler },
+        { binding: 3, resource: this.shadowTexture.createView() },
+        { binding: 4, resource: this.shadowSampler },
+        { binding: 5, resource: { buffer: this.shadowUniformBuffer } },
+        { binding: 6, resource: this.occluderShadowTexture.createView() },
+      ],
+    });
+
+    this.modelShadowBindGroup = this.device.createBindGroup({
+      layout: this.modelShadowPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.modelShadowUniformBuffer } }],
     });
   }
 
@@ -679,6 +811,18 @@ export class Renderer {
 
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
+    const modelScale = this.modelScale;
+    const modelTx = 0;
+    const modelTy =
+      -config.boundsSize.y * 0.5 - (this.model?.boundsMinY ?? 0) * modelScale;
+    const modelTz = 0;
+    const modelMatrix = [
+      -modelScale, 0, 0, 0,
+      0, modelScale, 0, 0,
+      0, 0, -modelScale, 0,
+      modelTx, modelTy, modelTz, 1,
+    ];
+
     // Update Environment Uniforms
     const envData = new Float32Array(60);
     writeEnvironmentUniforms(envData, 0, config, config);
@@ -775,6 +919,18 @@ export class Renderer {
     shadowUniforms[17] = shadowParticleRadiusNdc;
     this.device.queue.writeBuffer(this.shadowUniformBuffer, 0, shadowUniforms);
 
+    if (this.model && this.modelShadowBindGroup) {
+      this.modelUniformData.set(lightViewProj, 0);
+      this.modelUniformData.set(modelMatrix, 16);
+      this.device.queue.writeBuffer(
+        this.modelShadowUniformBuffer,
+        0,
+        this.modelUniformData,
+        0,
+        32 // Write 32 floats (128 bytes)
+      );
+    }
+
     // -------------------------------------------------------------------------
     // Build & Upload Obstacle Geometry (faces)
     // -------------------------------------------------------------------------
@@ -794,7 +950,37 @@ export class Renderer {
     // Shadow Pass
     // -------------------------------------------------------------------------
 
-    const shadowPass = encoder.beginRenderPass({
+    const occluderShadowPass = encoder.beginRenderPass({
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: this.occluderShadowTexture.createView(),
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    });
+
+    if (this.model && this.modelShadowBindGroup) {
+      occluderShadowPass.setPipeline(this.modelShadowPipeline);
+      occluderShadowPass.setBindGroup(0, this.modelShadowBindGroup);
+      occluderShadowPass.setVertexBuffer(0, this.model.vertexBuffer);
+      occluderShadowPass.setIndexBuffer(
+        this.model.indexBuffer,
+        this.model.indexFormat
+      );
+      occluderShadowPass.drawIndexed(this.model.indexCount);
+    }
+
+    if (faceCount > 0) {
+      occluderShadowPass.setPipeline(this.shadowObstaclePipeline);
+      occluderShadowPass.setBindGroup(0, this.shadowObstacleBindGroup);
+      occluderShadowPass.setVertexBuffer(0, this.lineVertexBuffer, 0);
+      occluderShadowPass.draw(faceCount);
+    }
+
+    occluderShadowPass.end();
+
+    const particleShadowPass = encoder.beginRenderPass({
       colorAttachments: [],
       depthStencilAttachment: {
         view: this.shadowTexture.createView(),
@@ -804,18 +990,10 @@ export class Renderer {
       },
     });
 
-    shadowPass.setPipeline(this.shadowParticlePipeline);
-    shadowPass.setBindGroup(0, this.shadowParticleBindGroup);
-    shadowPass.draw(6, buffers.particleCount, 0, 0);
-
-    if (faceCount > 0) {
-      shadowPass.setPipeline(this.shadowObstaclePipeline);
-      shadowPass.setBindGroup(0, this.shadowObstacleBindGroup);
-      shadowPass.setVertexBuffer(0, this.lineVertexBuffer, 0);
-      shadowPass.draw(faceCount);
-    }
-
-    shadowPass.end();
+    particleShadowPass.setPipeline(this.shadowParticlePipeline);
+    particleShadowPass.setBindGroup(0, this.shadowParticleBindGroup);
+    particleShadowPass.draw(6, buffers.particleCount, 0, 0);
+    particleShadowPass.end();
 
     // -------------------------------------------------------------------------
     // Begin Render Pass
@@ -842,6 +1020,26 @@ export class Renderer {
     pass.setPipeline(this.backgroundPipeline);
     pass.setBindGroup(0, this.backgroundBindGroup);
     pass.draw(3, 1, 0, 0);
+
+    // 2. Draw Model
+    if (this.model && this.modelBindGroup) {
+      this.modelUniformData.set(viewProj, 0);
+      this.modelUniformData.set(modelMatrix, 16);
+      this.modelUniformData[32] = config.dirToSun.x;
+      this.modelUniformData[33] = config.dirToSun.y;
+      this.modelUniformData[34] = config.dirToSun.z;
+      this.modelUniformData[35] = 0;
+      this.device.queue.writeBuffer(
+        this.modelUniformBuffer,
+        0,
+        this.modelUniformData
+      );
+      pass.setPipeline(this.modelPipeline);
+      pass.setBindGroup(0, this.modelBindGroup);
+      pass.setVertexBuffer(0, this.model.vertexBuffer);
+      pass.setIndexBuffer(this.model.indexBuffer, this.model.indexFormat);
+      pass.drawIndexed(this.model.indexCount);
+    }
 
     // -------------------------------------------------------------------------
     // Draw Particles (Indirect Instanced)

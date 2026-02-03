@@ -59,6 +59,7 @@ import {
 } from './webgpu_utils.ts';
 import { setupInputHandlers } from './input_handler.ts';
 import { rgbToHex, hexToRgb } from '../common/color_utils.ts';
+import { loadGltfModel } from './model_loader.ts';
 
 /**
  * Creates and inserts a canvas element into the application container.
@@ -230,6 +231,13 @@ async function main() {
   // -------------------------------------------------------------------------
 
   simulation = new FluidSimulation(device, context, canvas, config, format);
+
+  try {
+    const model = await loadGltfModel(device, '/models/duck/Duck.gltf');
+    simulation.setModel(model);
+  } catch (error) {
+    console.warn('Failed to load model:', error);
+  }
 
   // Set up input handlers (camera control + particle interaction)
   const updateInertia = setupInputHandlers(
