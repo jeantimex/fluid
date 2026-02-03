@@ -947,6 +947,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
      // WGSL select(falseVal, trueVal, condition):
      let response = calculateReflectionAndRefraction(rayDir, normal, select(iorAir, iorFluid, travellingThroughFluid), select(iorFluid, iorAir, travellingThroughFluid));
 
+     // Sun shadowing from obstacle/particles (shadow map) applied to surface lighting only.
+     let ndotl = max(dot(normal, params.dirToSun), 0.0);
+     let shadow = sampleShadow(surfaceInfo.pos, ndotl);
+     let surfaceLighting = clamp(params.floorAmbient, 0.0, 1.0) + ndotl * shadow * (1.0 - clamp(params.floorAmbient, 0.0, 1.0));
+
      // --- Heuristic: which ray to trace? ---
      // Probe density along both directions to estimate which path
      // contributes more visible light (weighted by Fresnel coefficient).
@@ -960,7 +965,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
      if (traceRefractedRay) {
         // --- Follow refraction, add reflection contribution now ---
-        let reflectLight = sampleEnvironment(surfaceInfo.pos, response.reflectDir);
+        let reflectLight = sampleEnvironment(surfaceInfo.pos, response.reflectDir) * surfaceLighting;
         let reflectTrans = transmittance(densityReflect);
         totalLight = totalLight + reflectLight * totalTransmittance * reflectTrans * response.reflectWeight;
 
@@ -970,7 +975,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         totalTransmittance = totalTransmittance * response.refractWeight;
      } else {
         // --- Follow reflection, add refraction contribution now ---
-        let refractLight = sampleEnvironment(surfaceInfo.pos, response.refractDir);
+        let refractLight = sampleEnvironment(surfaceInfo.pos, response.refractDir) * surfaceLighting;
         let refractTrans = transmittance(densityRefract);
         totalLight = totalLight + refractLight * totalTransmittance * refractTrans * response.refractWeight;
 
