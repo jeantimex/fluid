@@ -1,21 +1,17 @@
 // =============================================================================
-// Blit Shader — Full-Screen Upscale with Linear-to-sRGB Conversion
+// Blit Shader — Full-Screen Upscale
 // =============================================================================
 //
 // Samples the half-resolution offscreen texture produced by the raymarch pass
-// and writes it to the full-resolution swap chain, applying accurate
-// linear → sRGB gamma conversion via the piecewise sRGB transfer function.
+// and writes it to the full-resolution swap chain.
 //
 // Vertex stage: generates a single oversized triangle that covers the entire
 // viewport using the standard "fullscreen triangle" trick (vertex indices 0–2
 // produce clip-space positions that fully cover the [-1, 1] NDC range).
 //
-// Fragment stage: samples the offscreen texture with bilinear filtering,
-// then applies the official sRGB OETF (IEC 61966-2-1):
-//   - Linear values ≤ 0.0031308 are scaled by 12.92
-//   - Higher values use the power curve: 1.055 × v^(1/2.4) − 0.055
-//
-// This matches Unity's Linear color space display behavior.
+// Fragment stage: samples the offscreen texture with bilinear filtering
+// and outputs directly to the swap chain. This keeps the color path
+// consistent with the particle renderer (no extra conversion here).
 // =============================================================================
 
 /// Half-resolution offscreen texture from the raymarch pass.
@@ -43,16 +39,8 @@ struct VSOut {
   return out;
 }
 
-/// Samples the offscreen texture and converts from linear to sRGB.
+/// Samples the offscreen texture and outputs it directly.
 @fragment fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let color = textureSample(blitTexture, blitSampler, in.uv);
-
-  // Piecewise linear-to-sRGB conversion (IEC 61966-2-1):
-  //   lo: for values ≤ 0.0031308, multiply by 12.92
-  //   hi: for values > 0.0031308, apply 1.055 × v^(1/2.4) − 0.055
-  let lo = color.rgb * 12.92;
-  let hi = 1.055 * pow(color.rgb, vec3<f32>(1.0 / 2.4)) - 0.055;
-  let srgb = select(hi, lo, color.rgb <= vec3<f32>(0.0031308));
-
-  return vec4<f32>(srgb, color.a);
+  return color;
 }

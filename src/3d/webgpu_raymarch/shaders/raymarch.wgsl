@@ -571,8 +571,9 @@ fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) 
 /// Higher extinction → more absorption → darker color for that channel.
 fn transmittance(opticalDepth: f32) -> vec3<f32> {
   let T = exp(-opticalDepth * params.extinctionCoefficients);
-  let colorFilter = pow(max(params.fluidColor, vec3<f32>(0.001)), vec3<f32>(max(opticalDepth * 5.0, 0.0)));
-  return T * colorFilter;
+  let tintStrength = clamp(opticalDepth * 0.15, 0.0, 1.0);
+  let tint = mix(vec3<f32>(1.0), params.fluidColor, tintStrength);
+  return T * tint;
 }
 
 /// Samples the particle shadow map at a world position.
@@ -867,6 +868,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   // Accumulated light and transmittance across all bounces
   var totalTransmittance = vec3<f32>(1.0); // Starts fully transparent
   var totalLight = vec3<f32>(0.0);         // Accumulated radiance
+  var hitFluid = false;
 
   let iorAir = 1.0;
   let iorFluid = params.indexOfRefraction;
@@ -929,6 +931,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
      if (!surfaceInfo.foundSurface) {
         break; // No more surfaces — exit loop and sample environment
      }
+     hitFluid = true;
 
      // Accumulate Beer–Lambert transmittance from density traversed
      totalTransmittance = totalTransmittance * transmittance(surfaceInfo.densityAlongRay);
@@ -999,6 +1002,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   let densityRemainder = calculateDensityForShadow(rayPos, rayDir, 1000.0);
   let finalBg = sampleEnvironment(rayPos, rayDir);
   totalLight = totalLight + finalBg * totalTransmittance * transmittance(densityRemainder);
+
+  if (hitFluid) {
+    let tint = mix(vec3<f32>(1.0), params.fluidColor, 0.5);
+    totalLight = totalLight * tint;
+  }
 
   // Apply exposure and output (linear space — blit pass handles sRGB conversion)
   let exposure = max(params.sceneExposure, 0.0);
