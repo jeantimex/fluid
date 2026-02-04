@@ -141,7 +141,7 @@ const config: RaymarchConfig = {
   densityTextureRes: 150,
   densityOffset: 200,
   densityMultiplier: 0.05,
-  stepSize: 0.08,
+  stepSize: 0.02,
   lightStepSize: 0.1,
   shadowSoftness: 1.0,
   maxSteps: 512,

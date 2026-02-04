@@ -378,7 +378,7 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
   let boundsDstInfo = rayBoxIntersection(origin, rayDir, boundsMin, boundsMax);
 
   // Random jitter to reduce banding (±20% of step size)
-  let r = (randomValue(rngState) - 0.5) * params.stepSize * 0.4;
+  let r = (randomValue(rngState) - 0.5) * params.stepSize * 0.2;
 
   var currentOrigin = origin;
   if (boundsDstInfo.x > 0.0) {
