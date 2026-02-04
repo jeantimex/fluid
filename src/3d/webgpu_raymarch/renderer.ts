@@ -567,7 +567,7 @@ export class RaymarchRenderer {
     this.uniformData[16] = -hx;
     this.uniformData[17] = minY;
     this.uniformData[18] = -hz;
-    this.uniformData[19] = 0; // pad
+    this.uniformData[19] = config.densityTextureRes / 20; // voxelsPerUnit
 
     // maxBounds
     this.uniformData[20] = hx;
@@ -585,138 +585,92 @@ export class RaymarchRenderer {
     this.uniformData[30] = config.maxSteps;
     this.uniformData[31] = config.tileScale;
     this.uniformData[32] = config.tileDarkOffset;
+    // 33, 34, 35: pad_align0, pad_align1, pad_align2
 
     // --- Tile colors (4 quadrant colors, linear space) ---
-    this.uniformData[33] = config.tileCol1.r;
-    this.uniformData[34] = config.tileCol1.g;
-    this.uniformData[35] = config.tileCol1.b;
-    this.uniformData[36] = 0; // pad
+    this.uniformData[36] = config.tileCol1.r;
+    this.uniformData[37] = config.tileCol1.g;
+    this.uniformData[38] = config.tileCol1.b;
+    this.uniformData[39] = 0; // pad6
 
-    this.uniformData[37] = config.tileCol2.r;
-    this.uniformData[38] = config.tileCol2.g;
-    this.uniformData[39] = config.tileCol2.b;
-    this.uniformData[40] = 0; // pad
+    this.uniformData[40] = config.tileCol2.r;
+    this.uniformData[41] = config.tileCol2.g;
+    this.uniformData[42] = config.tileCol2.b;
+    this.uniformData[43] = 0; // pad7
 
-    this.uniformData[41] = config.tileCol3.r;
-    this.uniformData[42] = config.tileCol3.g;
-    this.uniformData[43] = config.tileCol3.b;
-    this.uniformData[44] = 0; // pad
+    this.uniformData[44] = config.tileCol3.r;
+    this.uniformData[45] = config.tileCol3.g;
+    this.uniformData[46] = config.tileCol3.b;
+    this.uniformData[47] = 0; // pad8
 
-    this.uniformData[45] = config.tileCol4.r;
-    this.uniformData[46] = config.tileCol4.g;
-    this.uniformData[47] = config.tileCol4.b;
-    this.uniformData[48] = 0; // pad
+    this.uniformData[48] = config.tileCol4.r;
+    this.uniformData[49] = config.tileCol4.g;
+    this.uniformData[50] = config.tileCol4.b;
+    this.uniformData[51] = 0; // pad9
 
     // --- Color variation & debug ---
-    this.uniformData[49] = config.tileColVariation.x;
-    this.uniformData[50] = config.tileColVariation.y;
-    this.uniformData[51] = config.tileColVariation.z;
-    this.uniformData[52] = config.debugFloorMode;
+    this.uniformData[52] = config.tileColVariation.x;
+    this.uniformData[53] = config.tileColVariation.y;
+    this.uniformData[54] = config.tileColVariation.z;
+    this.uniformData[55] = config.debugFloorMode;
 
     // --- Sun direction (hardcoded normalized vector) ---
     const sunDir = { x: 0.83, y: 0.42, z: 0.36 };
-    this.uniformData[53] = sunDir.x; // dirToSun.x
-    this.uniformData[54] = sunDir.y; // dirToSun.y
-    this.uniformData[55] = sunDir.z; // dirToSun.z
-    this.uniformData[56] = 0; // pad
+    this.uniformData[56] = sunDir.x; // dirToSun.x
+    this.uniformData[57] = sunDir.y; // dirToSun.y
+    this.uniformData[58] = sunDir.z; // dirToSun.z
+    this.uniformData[59] = 0; // pad10
 
     // --- Extinction coefficients for Beer–Lambert transmittance ---
-    this.uniformData[57] = config.extinctionCoefficients.x;
-    this.uniformData[58] = config.extinctionCoefficients.y;
-    this.uniformData[59] = config.extinctionCoefficients.z;
-    this.uniformData[60] = 0; // pad
+    this.uniformData[60] = config.extinctionCoefficients.x;
+    this.uniformData[61] = config.extinctionCoefficients.y;
+    this.uniformData[62] = config.extinctionCoefficients.z;
+    this.uniformData[63] = 0; // pad11
 
     // --- Fluid absorption color ---
-    this.uniformData[61] = config.fluidColor.r;
-    this.uniformData[62] = config.fluidColor.g;
-    this.uniformData[63] = config.fluidColor.b;
-    this.uniformData[64] = 0; // pad
+    this.uniformData[64] = config.fluidColor.r;
+    this.uniformData[65] = config.fluidColor.g;
+    this.uniformData[66] = config.fluidColor.b;
+    this.uniformData[67] = 0; // pad12
 
     // --- Optical & lighting parameters ---
-    this.uniformData[65] = config.indexOfRefraction;
-    this.uniformData[66] = config.numRefractions;
-    this.uniformData[67] = config.tileDarkFactor;
-    this.uniformData[68] = config.floorAmbient;
+    this.uniformData[68] = config.indexOfRefraction;
+    this.uniformData[69] = config.numRefractions;
+    this.uniformData[70] = config.tileDarkFactor;
+    this.uniformData[71] = config.floorAmbient;
 
     // --- Floor geometry ---
-    this.uniformData[69] = config.floorSize.x;
-    this.uniformData[70] = config.floorSize.y;
-    this.uniformData[71] = config.floorSize.z;
-    this.uniformData[72] = config.sceneExposure;
+    this.uniformData[72] = config.floorSize.x;
+    this.uniformData[73] = config.floorSize.y;
+    this.uniformData[74] = config.floorSize.z;
+    this.uniformData[75] = config.sceneExposure;
 
     // Floor center: horizontally centered, positioned just below the fluid bounds
-    this.uniformData[73] = 0; // floorCenter.x
-    this.uniformData[74] = -5.0 - config.floorSize.y * 0.5; // floorCenter.y
-    this.uniformData[75] = 0; // floorCenter.z
-    this.uniformData[76] = 0; // pad
+    this.uniformData[76] = 0; // floorCenter.x
+    this.uniformData[77] = -5.0 - config.floorSize.y * 0.5; // floorCenter.y
+    this.uniformData[78] = 0; // floorCenter.z
+    this.uniformData[79] = 0; // pad14
 
     // --- Obstacle box ---
-    this.uniformData[77] = config.obstacleCentre.x;
-    this.uniformData[78] = config.obstacleCentre.y;
-    this.uniformData[79] = config.obstacleCentre.z;
-    this.uniformData[80] = 0; // pad
+    this.uniformData[80] = config.obstacleCentre.x;
+    this.uniformData[81] = config.obstacleCentre.y;
+    this.uniformData[82] = config.obstacleCentre.z;
+    this.uniformData[83] = 0; // pad15
 
-    this.uniformData[81] = config.obstacleSize.x * 0.5;
-    this.uniformData[82] = config.obstacleSize.y * 0.5;
-    this.uniformData[83] = config.obstacleSize.z * 0.5;
-    this.uniformData[84] = 0; // pad
+    this.uniformData[84] = config.obstacleSize.x * 0.5;
+    this.uniformData[85] = config.obstacleSize.y * 0.5;
+    this.uniformData[86] = config.obstacleSize.z * 0.5;
+    this.uniformData[87] = 0; // pad16
 
-    this.uniformData[85] = config.obstacleRotation.x;
-    this.uniformData[86] = config.obstacleRotation.y;
-    this.uniformData[87] = config.obstacleRotation.z;
-    this.uniformData[88] = 0; // pad
+    this.uniformData[88] = config.obstacleRotation.x;
+    this.uniformData[89] = config.obstacleRotation.y;
+    this.uniformData[90] = config.obstacleRotation.z;
+    this.uniformData[91] = 0; // pad17
 
-    this.uniformData[89] = config.obstacleColor.r;
-    this.uniformData[90] = config.obstacleColor.g;
-    this.uniformData[91] = config.obstacleColor.b;
-    this.uniformData[92] = config.obstacleAlpha; // Wait, indices 89-92 is 4 floats. Correct.
-    // Wait, indices 89, 90, 91, 92 is 4 floats.
-    // Struct: obstacleColor (3) + alpha (1) = 4. Correct.
-    // Total size should be 93? 0 to 92 is 93 floats.
-    // Let me re-calculate again.
-    
-    // struct RaymarchParams:
-    // viewPos: 3 + pad: 1 = 4 (0-3)
-    // cameraRight: 3 + pad: 1 = 4 (4-7)
-    // cameraUp: 3 + pad: 1 = 4 (8-11)
-    // cameraForward: 3 + pad: 1 = 4 (12-15)
-    // minBounds: 3 + pad: 1 = 4 (16-19)
-    // maxBounds: 3 + pad: 1 = 4 (20-23)
-    // densityOffset: 1 (24)
-    // densityMultiplier: 1 (25)
-    // stepSize: 1 (26)
-    // lightStepSize: 1 (27)
-    // aspect: 1 (28)
-    // fovY: 1 (29)
-    // maxSteps: 1 (30)
-    // tileScale: 1 (31)
-    // tileDarkOffset: 1 (32)
-    // tileCol1: 3 + pad: 1 = 4 (33-36)
-    // tileCol2: 3 + pad: 1 = 4 (37-40)
-    // tileCol3: 3 + pad: 1 = 4 (41-44)
-    // tileCol4: 3 + pad: 1 = 4 (45-48)
-    // tileColVariation: 3 (49-51)
-    // debugFloorMode: 1 (52)
-    // dirToSun: 3 + pad: 1 = 4 (53-56)
-    // extinctionCoefficients: 3 + pad: 1 = 4 (57-60)
-    // fluidColor: 3 + pad: 1 = 4 (61-64)
-    // indexOfRefraction: 1 (65)
-    // numRefractions: 1 (66)
-    // tileDarkFactor: 1 (67)
-    // floorAmbient: 1 (68)
-    // floorSize: 3 (69-71)
-    // sceneExposure: 1 (72)
-    // floorCenter: 3 + pad: 1 = 4 (73-76)
-    // obstacleCenter: 3 + pad: 1 = 4 (77-80)
-    // obstacleHalfSize: 3 + pad: 1 = 4 (81-84)
-    // obstacleRotation: 3 + pad: 1 = 4 (85-88)
-    // obstacleColor: 3 (89-91)
-    // obstacleAlpha: 1 (92)
-    // Total: 0 to 92 = 93 floats.
-    
-    // I should use 96 floats for alignment (multiple of 4).
-    // And update uniformBuffer size too.
-
+    this.uniformData[92] = config.obstacleColor.r;
+    this.uniformData[93] = config.obstacleColor.g;
+    this.uniformData[94] = config.obstacleColor.b;
+    this.uniformData[95] = config.obstacleAlpha;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

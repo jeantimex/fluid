@@ -40,59 +40,62 @@
 /// All parameters passed from the CPU each frame.
 /// Layout must match the uniform buffer written by RaymarchRenderer.render().
 struct RaymarchParams {
-  viewPos: vec3<f32>,                // Camera world position
-  pad0: f32,
-  cameraRight: vec3<f32>,            // Camera right basis vector
-  pad1: f32,
-  cameraUp: vec3<f32>,               // Camera up basis vector
-  pad2: f32,
-  cameraForward: vec3<f32>,          // Camera forward (look) direction
-  pad3: f32,
-  minBounds: vec3<f32>,              // Simulation domain min corner
-  voxelsPerUnit: f32,                // Fixed world-to-voxel scale
-  maxBounds: vec3<f32>,              // Simulation domain max corner
-  pad5: f32,
-  densityOffset: f32,                // Iso-surface threshold subtracted from raw density
-  densityMultiplier: f32,            // Opacity scaling per ray step
-  stepSize: f32,                     // World-space distance between primary ray samples
-  lightStepSize: f32,                // World-space distance between shadow ray samples
-  aspect: f32,                       // Canvas width / height
-  fovY: f32,                         // Vertical field of view in radians
-  maxSteps: f32,                     // Maximum ray steps before termination
-  tileScale: f32,                    // Floor tile grid density (tiles per unit)
-  tileDarkOffset: f32,               // Brightness offset for dark tiles (unused, see tileDarkFactor)
-  tileCol1: vec3<f32>,               // Floor color: −X, +Z quadrant
-  pad6: f32,
-  tileCol2: vec3<f32>,               // Floor color: +X, +Z quadrant
-  pad7: f32,
-  tileCol3: vec3<f32>,               // Floor color: −X, −Z quadrant
-  pad8: f32,
-  tileCol4: vec3<f32>,               // Floor color: +X, −Z quadrant
-  pad9: f32,
-  tileColVariation: vec3<f32>,       // HSV variation per tile for randomization
-  debugFloorMode: f32,               // 0 = normal, 1 = red hit test, 2 = flat colors
-  dirToSun: vec3<f32>,               // Normalized direction toward the sun
-  pad10: f32,
-  extinctionCoefficients: vec3<f32>, // Per-channel absorption for Beer–Lambert
-  pad11: f32,
-  fluidColor: vec3<f32>,             // Absorption tint (linear RGB)
-  pad12: f32,
-  indexOfRefraction: f32,            // Fluid IOR (water ≈ 1.33)
-  numRefractions: f32,               // Number of refraction bounces per pixel
-  tileDarkFactor: f32,               // Multiplier for dark checkerboard tiles (0–1)
-  floorAmbient: f32,                 // Minimum floor lighting (ambient term)
-  floorSize: vec3<f32>,              // Floor slab dimensions (width, height, depth)
-  sceneExposure: f32,                // Final exposure multiplier
-  floorCenter: vec3<f32>,            // Floor slab center position
-  pad14: f32,
-  obstacleCenter: vec3<f32>,         // Obstacle AABB center (world space)
-  pad15: f32,
-  obstacleHalfSize: vec3<f32>,       // Obstacle half extents (world space)
-  pad16: f32,
-  obstacleRotation: vec3<f32>,       // Obstacle rotation in degrees (XYZ)
-  pad17: f32,
-  obstacleColor: vec3<f32>,          // Obstacle solid color (linear RGB)
-  obstacleAlpha: f32,                // Obstacle opacity (0..1)
+  viewPos: vec3<f32>,                // 0-2
+  pad0: f32,                         // 3
+  cameraRight: vec3<f32>,            // 4-6
+  pad1: f32,                         // 7
+  cameraUp: vec3<f32>,               // 8-10
+  pad2: f32,                         // 11
+  cameraForward: vec3<f32>,          // 12-14
+  pad3: f32,                         // 15
+  minBounds: vec3<f32>,              // 16-18
+  voxelsPerUnit: f32,                // 19
+  maxBounds: vec3<f32>,              // 20-22
+  pad5: f32,                         // 23
+  densityOffset: f32,                // 24
+  densityMultiplier: f32,            // 25
+  stepSize: f32,                     // 26
+  lightStepSize: f32,                // 27
+  aspect: f32,                       // 28
+  fovY: f32,                         // 29
+  maxSteps: f32,                     // 30
+  tileScale: f32,                    // 31
+  tileDarkOffset: f32,               // 32
+  pad_align0: f32,                   // 33
+  pad_align1: f32,                   // 34
+  pad_align2: f32,                   // 35
+  tileCol1: vec3<f32>,               // 36-38
+  pad6: f32,                         // 39
+  tileCol2: vec3<f32>,               // 40-42
+  pad7: f32,                         // 43
+  tileCol3: vec3<f32>,               // 44-46
+  pad8: f32,                         // 47
+  tileCol4: vec3<f32>,               // 48-50
+  pad9: f32,                         // 51
+  tileColVariation: vec3<f32>,       // 52-54
+  debugFloorMode: f32,               // 55
+  dirToSun: vec3<f32>,               // 56-58
+  pad10: f32,                        // 59
+  extinctionCoefficients: vec3<f32>, // 60-62
+  pad11: f32,                        // 63
+  fluidColor: vec3<f32>,             // 64-66
+  pad12: f32,                        // 67
+  indexOfRefraction: f32,            // 68
+  numRefractions: f32,               // 69
+  tileDarkFactor: f32,               // 70
+  floorAmbient: f32,                 // 71
+  floorSize: vec3<f32>,              // 72-74
+  sceneExposure: f32,                // 75
+  floorCenter: vec3<f32>,            // 76-78
+  pad14: f32,                        // 79
+  obstacleCenter: vec3<f32>,         // 80-82
+  pad15: f32,                        // 83
+  obstacleHalfSize: vec3<f32>,       // 84-86
+  pad16: f32,                        // 87
+  obstacleRotation: vec3<f32>,       // 88-90
+  pad17: f32,                        // 91
+  obstacleColor: vec3<f32>,          // 92-94
+  obstacleAlpha: f32,                // 95
 };
 
 /// Shadow map uniforms (light-space projection + sampling params).
@@ -257,7 +260,7 @@ fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> ObstacleHit {
 /// Converts world coords to UVW [0,1]³ and subtracts the density offset.
 /// Negative results indicate the point is below the iso-surface (outside fluid).
 fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
-  let volumeSizeF = vec3<f32>(textureDimensions(densityTex));
+  let volumeSizeF = vec3<f32>(textureDimensions(densityTex, 0));
   let worldToVoxel = params.voxelsPerUnit;
   let uvw = (pos - params.minBounds) * worldToVoxel / (volumeSizeF - vec3<f32>(1.0));
   return textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r - params.densityOffset;
@@ -267,7 +270,7 @@ fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
 /// Returns -densityOffset for positions at or beyond the volume edges,
 /// preventing edge artifacts where the texture wraps or clamps.
 fn sampleDensity(pos: vec3<f32>) -> f32 {
-  let volumeSizeF = vec3<f32>(textureDimensions(densityTex));
+  let volumeSizeF = vec3<f32>(textureDimensions(densityTex, 0));
   let worldToVoxel = params.voxelsPerUnit;
   let uvw = (pos - params.minBounds) * worldToVoxel / (volumeSizeF - vec3<f32>(1.0));
   let epsilon = 0.0001;
