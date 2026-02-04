@@ -211,13 +211,14 @@ export class SplatPipeline {
    */
   private createDensityTexture(config: RaymarchConfig): void {
     const bounds = config.boundsSize;
-    const maxAxis = Math.max(bounds.x, bounds.y, bounds.z);
 
-    // Scale each axis relative to the longest so voxels are approximately cubic
-    const targetRes = Math.max(1, Math.round(config.densityTextureRes));
-    const width = Math.max(1, Math.round((bounds.x / maxAxis) * targetRes));
-    const height = Math.max(1, Math.round((bounds.y / maxAxis) * targetRes));
-    const depth = Math.max(1, Math.round((bounds.z / maxAxis) * targetRes));
+    // Use a fixed "voxels per unit" resolution.
+    // 150 / 20 = 7.5 voxels per unit (assuming 20 is the default reference size)
+    const voxelsPerUnit = config.densityTextureRes / 20;
+
+    const width = Math.max(1, Math.ceil(bounds.x * voxelsPerUnit) + 1);
+    const height = Math.max(1, Math.ceil(bounds.y * voxelsPerUnit) + 1);
+    const depth = Math.max(1, Math.ceil(bounds.z * voxelsPerUnit) + 1);
 
     this.densityTextureSize = { x: width, y: height, z: depth };
 
@@ -331,6 +332,8 @@ export class SplatPipeline {
     const hz = size.z * 0.5;
     const minY = -5.0; // Fixed bottom
 
+    const voxelsPerUnit = config.densityTextureRes / 20;
+
     // Splat particles params
     this.particlesParamsF32[0] = radius;
     this.particlesParamsF32[1] = spikyPow2Scale;
@@ -341,7 +344,7 @@ export class SplatPipeline {
     this.particlesParamsF32[4] = -hx;
     this.particlesParamsF32[5] = minY;
     this.particlesParamsF32[6] = -hz;
-    this.particlesParamsF32[7] = 0;
+    this.particlesParamsF32[7] = voxelsPerUnit;
 
     // maxBounds
     this.particlesParamsF32[8] = hx;

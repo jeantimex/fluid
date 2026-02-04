@@ -647,9 +647,23 @@ export class MarchingCubesRenderer {
     this.paramsU32[2] = this.densityTextureSize.z;
     this.paramsU32[3] = this.maxTriangles;
     this.paramsF32[4] = config.isoLevel;
-    this.paramsF32[8] = config.boundsSize.x;
-    this.paramsF32[9] = config.boundsSize.y;
-    this.paramsF32[10] = config.boundsSize.z;
+    this.paramsF32[5] = config.densityTextureRes / 20; // voxelsPerUnit
+
+    const size = config.boundsSize;
+    const hx = size.x * 0.5;
+    const hz = size.z * 0.5;
+    const minY = -5.0; // Fixed bottom
+
+    // minBounds
+    this.paramsF32[8] = -hx;
+    this.paramsF32[9] = minY;
+    this.paramsF32[10] = -hz;
+
+    // maxBounds
+    this.paramsF32[12] = hx;
+    this.paramsF32[13] = minY + size.y;
+    this.paramsF32[14] = hz;
+
     this.device.queue.writeBuffer(this.paramsBuffer, 0, this.paramsData);
 
     // Reset triangle counter

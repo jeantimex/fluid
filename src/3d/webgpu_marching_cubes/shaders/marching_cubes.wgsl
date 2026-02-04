@@ -1,11 +1,13 @@
 struct Params {
   densityAndMax: vec4<u32>, // xyz = densityMapSize, w = maxTriangles
   isoLevel: f32,
-  pad0: u32,
-  pad1: u32,
-  pad2: u32,
-  scale: vec3<f32>,
-  pad3: u32,
+  voxelsPerUnit: f32,
+  pad1: f32,
+  pad2: f32,
+  minBounds: vec3<f32>,
+  pad3: f32,
+  maxBounds: vec3<f32>,
+  pad4: f32,
 };
 
 struct Vertex {
@@ -25,18 +27,19 @@ struct Vertex {
 @group(0) @binding(9) var<storage, read> edgeB: array<u32>;
 
 fn coordToWorld(coord: vec3<i32>) -> vec3<f32> {
-  let denom = vec3<f32>(params.densityAndMax.xyz) - vec3<f32>(1.0);
-  return vec3<f32>(coord) / denom - vec3<f32>(0.5);
+  let worldToVoxel = params.voxelsPerUnit;
+  return params.minBounds + vec3<f32>(coord) / worldToVoxel;
 }
 
 fn sampleDensity(coord: vec3<i32>) -> f32 {
+  let volumeSizeF = vec3<f32>(params.densityAndMax.xyz);
   let maxCoord = vec3<i32>(params.densityAndMax.xyz) - vec3<i32>(1);
   let isEdge = coord.x <= 0 || coord.y <= 0 || coord.z <= 0 ||
     coord.x >= maxCoord.x || coord.y >= maxCoord.y || coord.z >= maxCoord.z;
   if (isEdge) {
     return params.isoLevel;
   }
-  let uvw = vec3<f32>(coord) / (vec3<f32>(params.densityAndMax.xyz) - vec3<f32>(1.0));
+  let uvw = vec3<f32>(coord) / (volumeSizeF - vec3<f32>(1.0));
   return textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r;
 }
 
@@ -61,7 +64,7 @@ fn createVertex(coordA: vec3<i32>, coordB: vec3<i32>) -> Vertex {
   let normal = normalize(normalA + t * (normalB - normalA));
 
   var vertex: Vertex;
-  vertex.position = position * params.scale;
+  vertex.position = position;
   vertex.normal = normal;
   return vertex;
 }

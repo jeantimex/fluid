@@ -49,7 +49,7 @@ struct RaymarchParams {
   cameraForward: vec3<f32>,          // Camera forward (look) direction
   pad3: f32,
   minBounds: vec3<f32>,              // Simulation domain min corner
-  pad4: f32,
+  voxelsPerUnit: f32,                // Fixed world-to-voxel scale
   maxBounds: vec3<f32>,              // Simulation domain max corner
   pad5: f32,
   densityOffset: f32,                // Iso-surface threshold subtracted from raw density
@@ -257,8 +257,9 @@ fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> ObstacleHit {
 /// Converts world coords to UVW [0,1]³ and subtracts the density offset.
 /// Negative results indicate the point is below the iso-surface (outside fluid).
 fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
-  let size = params.maxBounds - params.minBounds;
-  let uvw = (pos - params.minBounds) / size;
+  let volumeSizeF = vec3<f32>(textureDimensions(densityTex));
+  let worldToVoxel = params.voxelsPerUnit;
+  let uvw = (pos - params.minBounds) * worldToVoxel / (volumeSizeF - vec3<f32>(1.0));
   return textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r - params.densityOffset;
 }
 
@@ -266,8 +267,9 @@ fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
 /// Returns -densityOffset for positions at or beyond the volume edges,
 /// preventing edge artifacts where the texture wraps or clamps.
 fn sampleDensity(pos: vec3<f32>) -> f32 {
-  let size = params.maxBounds - params.minBounds;
-  let uvw = (pos - params.minBounds) / size;
+  let volumeSizeF = vec3<f32>(textureDimensions(densityTex));
+  let worldToVoxel = params.voxelsPerUnit;
+  let uvw = (pos - params.minBounds) * worldToVoxel / (volumeSizeF - vec3<f32>(1.0));
   let epsilon = 0.0001;
   if (any(uvw >= vec3<f32>(1.0 - epsilon)) || any(uvw <= vec3<f32>(epsilon))) {
     return -params.densityOffset;
@@ -548,9 +550,7 @@ fn modulo(x: f32, y: f32) -> f32 {
 /// Steps at `lightStepSize * 2` intervals for performance, with an early
 /// exit when optical depth exceeds 3.0 (fully opaque for practical purposes).
 fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) -> f32 {
-    let boundsMin = -0.5 * params.boundsSize;
-    let boundsMax = 0.5 * params.boundsSize;
-    let hit = rayBoxIntersection(rayPos, rayDir, boundsMin, boundsMax);
+    let hit = rayBoxIntersection(rayPos, rayDir, params.minBounds, params.maxBounds);
     if (hit.y <= max(hit.x, 0.0)) { return 0.0; }
 
     let tStart = max(hit.x, 0.0);
@@ -815,9 +815,7 @@ fn calculateReflectionAndRefraction(inDir: vec3<f32>, normal: vec3<f32>, iorA: f
 /// Used as a heuristic to choose between tracing the reflected or refracted ray.
 /// Takes only 2 short samples for speed.
 fn calculateDensityForRefraction(rayPos: vec3<f32>, rayDir: vec3<f32>, stepSize: f32) -> f32 {
-  let boundsMin = -0.5 * params.boundsSize;
-  let boundsMax = 0.5 * params.boundsSize;
-  let hit = rayBoxIntersection(rayPos, rayDir, boundsMin, boundsMax);
+  let hit = rayBoxIntersection(rayPos, rayDir, params.minBounds, params.maxBounds);
   if (hit.y <= max(hit.x, 0.0)) { return 0.0; }
 
   let tStart = max(hit.x, 0.0);
