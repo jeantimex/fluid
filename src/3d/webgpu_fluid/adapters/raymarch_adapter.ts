@@ -12,7 +12,7 @@ export class RaymarchAdapter implements FluidAppAdapter<RaymarchConfig> {
   readonly config: RaymarchConfig = {
     ...createConfig(),
     ...createDefaultEnvironmentConfig(),
-    viscosityStrength: 0,
+    viscosityStrength: 0.001,
     iterationsPerFrame: 2,
     fluidColor: { r: 0.4, g: 0.7, b: 1.0 },
     densityTextureRes: 150,

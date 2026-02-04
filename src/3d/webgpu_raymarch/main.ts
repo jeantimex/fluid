@@ -136,7 +136,7 @@ const canvas = createCanvas(app);
 // floor tile colors, extinction coefficients, and refraction settings.
 const config: RaymarchConfig = {
   ...createConfig(),
-  viscosityStrength: 0,
+  viscosityStrength: 0.001,
   iterationsPerFrame: 2,
   densityTextureRes: 150,
   densityOffset: 200,

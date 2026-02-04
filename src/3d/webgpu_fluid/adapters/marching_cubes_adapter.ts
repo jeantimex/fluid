@@ -19,7 +19,7 @@ export class MarchingCubesAdapter
       { position: { x: -8.0, y: -1.0, z: 3.5 }, size: { x: 6, y: 7, z: 6 } },
       { position: { x: -8.0, y: -1.0, z: -3.5 }, size: { x: 6, y: 7, z: 6 } },
     ],
-    viscosityStrength: 0,
+    viscosityStrength: 0.001,
     iterationsPerFrame: 3,
     densityTextureRes: 150,
     isoLevel: 75,
