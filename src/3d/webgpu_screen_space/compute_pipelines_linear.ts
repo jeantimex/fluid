@@ -40,17 +40,17 @@
 import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 
 // Import shader source code as raw strings
-import externalForcesShader from '../../webgpu_particles/shaders/external_forces.wgsl?raw';
-import hashShader from '../../webgpu_particles/shaders/hash_linear.wgsl?raw';
-import sortShader from '../../webgpu_particles/shaders/sort_linear.wgsl?raw';
-import scatterShader from '../../webgpu_particles/shaders/scatter_linear.wgsl?raw';
-import densityShader from '../../webgpu_particles/shaders/density_linear.wgsl?raw';
-import pressureShader from '../../webgpu_particles/shaders/pressure_linear.wgsl?raw';
-import viscosityShader from '../../webgpu_particles/shaders/viscosity_linear.wgsl?raw';
-import integrateShader from '../../webgpu_particles/shaders/integrate.wgsl?raw';
-import prefixSumShader from '../../webgpu_particles/shaders/prefix_sum.wgsl?raw';
-import reorderShader from '../../webgpu_particles/shaders/reorder.wgsl?raw';
-import cullShader from '../../webgpu_particles/shaders/cull.wgsl?raw';
+import externalForcesShader from '../webgpu_particles/shaders/external_forces.wgsl?raw';
+import hashShader from '../webgpu_particles/shaders/hash_linear.wgsl?raw';
+import sortShader from '../webgpu_particles/shaders/sort_linear.wgsl?raw';
+import scatterShader from '../webgpu_particles/shaders/scatter_linear.wgsl?raw';
+import densityShader from '../webgpu_particles/shaders/density_linear.wgsl?raw';
+import pressureShader from '../webgpu_particles/shaders/pressure_linear.wgsl?raw';
+import viscosityShader from '../webgpu_particles/shaders/viscosity_linear.wgsl?raw';
+import integrateShader from '../webgpu_particles/shaders/integrate.wgsl?raw';
+import prefixSumShader from '../webgpu_particles/shaders/prefix_sum.wgsl?raw';
+import reorderShader from '../webgpu_particles/shaders/reorder.wgsl?raw';
+import cullShader from '../webgpu_particles/shaders/cull.wgsl?raw';
 import foamSpawnShader from './shaders/foam_spawn.wgsl?raw';
 import foamUpdateShader from './shaders/foam_update.wgsl?raw';
 import foamClearCounterShader from './shaders/foam_clear_counter.wgsl?raw';
