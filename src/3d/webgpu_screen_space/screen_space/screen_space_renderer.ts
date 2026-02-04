@@ -57,8 +57,10 @@ export class ScreenSpaceRenderer {
   private modelPipeline: GPURenderPipeline;
   private modelUniformBuffer: GPUBuffer;
   private modelBindGroup?: GPUBindGroup;
+  private modelShadowSampler: GPUSampler;
+  private modelShadowTexture: GPUTexture | null = null;
   private model: GpuModel | null = null;
-  private modelUniformData = new Float32Array(36);
+  private modelUniformData = new Float32Array(52);
   private modelScale = 0.04;
 
   constructor(
@@ -109,10 +111,16 @@ export class ScreenSpaceRenderer {
       },
     });
 
-    // Model uniforms: viewProj (64) + model (64) + lightDir/pad (16) = 144 bytes
+    // Model uniforms: viewProj (64) + model (64) + lightDir/pad (16) + lightViewProj (64) = 208 bytes
     this.modelUniformBuffer = device.createBuffer({
-      size: 144,
+      size: 208,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    this.modelShadowSampler = device.createSampler({
+      compare: 'less',
+      magFilter: 'linear',
+      minFilter: 'linear',
     });
   }
 
@@ -210,8 +218,18 @@ export class ScreenSpaceRenderer {
 
   setModel(model: GpuModel | null): void {
     this.model = model;
-    if (!model) {
+    this.modelBindGroup = undefined;
+    this.modelShadowTexture = null;
+  }
+
+  private ensureModelBindGroup(): void {
+    if (!this.model || !this.shadowTexture) {
       this.modelBindGroup = undefined;
+      this.modelShadowTexture = null;
+      return;
+    }
+
+    if (this.modelBindGroup && this.modelShadowTexture === this.shadowTexture) {
       return;
     }
 
@@ -219,10 +237,13 @@ export class ScreenSpaceRenderer {
       layout: this.modelPipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.modelUniformBuffer } },
-        { binding: 1, resource: model.textureView },
-        { binding: 2, resource: model.sampler },
+        { binding: 1, resource: this.model.textureView },
+        { binding: 2, resource: this.model.sampler },
+        { binding: 3, resource: this.shadowTexture.createView() },
+        { binding: 4, resource: this.modelShadowSampler },
       ],
     });
+    this.modelShadowTexture = this.shadowTexture;
   }
 
   render(
@@ -369,6 +390,7 @@ export class ScreenSpaceRenderer {
       this.config.screenSpaceDebugMode
     );
 
+    this.ensureModelBindGroup();
     if (
       this.model &&
       this.modelBindGroup &&
@@ -393,6 +415,7 @@ export class ScreenSpaceRenderer {
       this.modelUniformData[33] = this.config.dirToSun.y;
       this.modelUniformData[34] = this.config.dirToSun.z;
       this.modelUniformData[35] = 0;
+      this.modelUniformData.set(lightViewProj, 36);
 
       this.device.queue.writeBuffer(
         this.modelUniformBuffer,
