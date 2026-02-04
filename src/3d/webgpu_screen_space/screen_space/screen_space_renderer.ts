@@ -44,7 +44,6 @@ export class ScreenSpaceRenderer {
   private smoothTextureB: GPUTexture | null = null;
   private shadowTexture: GPUTexture | null = null;
   private foamTexture: GPUTexture | null = null;
-  private modelDepthTexture: GPUTexture | null = null;
 
   private buffers: SimBuffers | null = null;
 
@@ -199,12 +198,6 @@ export class ScreenSpaceRenderer {
       format: 'r16float',
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-
-    this.modelDepthTexture = this.device.createTexture({
-      size: { width: this.width, height: this.height },
-      format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
     this.depthPass.resize(this.width, this.height);
@@ -379,7 +372,7 @@ export class ScreenSpaceRenderer {
     if (
       this.model &&
       this.modelBindGroup &&
-      this.modelDepthTexture
+      this.depthTexture
     ) {
       const modelScale = this.modelScale;
       const modelTx = 0;
@@ -416,10 +409,9 @@ export class ScreenSpaceRenderer {
           },
         ],
         depthStencilAttachment: {
-          view: this.modelDepthTexture.createView(),
-          depthLoadOp: 'clear',
+          view: this.depthTexture.createView(),
+          depthLoadOp: 'load',
           depthStoreOp: 'store',
-          depthClearValue: 1.0,
         },
       });
 
