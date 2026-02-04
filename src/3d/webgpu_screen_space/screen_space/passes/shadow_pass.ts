@@ -3,17 +3,21 @@
  */
 
 import shadowShader from '../shaders/shadow.wgsl?raw';
+import shadowModelShader from '../shaders/shadow_model.wgsl?raw';
 import type {
   ScreenSpaceFrame,
   ShadowPassResources,
 } from '../screen_space_types.ts';
+import type { GpuModel } from '../../../common/model_loader.ts';
 
 export class ShadowPass {
   private device: GPUDevice;
   private pipeline: GPURenderPipeline;
+  private modelPipeline: GPURenderPipeline;
   private uniformBuffer: GPUBuffer;
   private bindGroupLayout: GPUBindGroupLayout;
   private bindGroup: GPUBindGroup | null = null;
+  private modelBindGroup: GPUBindGroup | null = null;
 
   constructor(device: GPUDevice) {
     this.device = device;
@@ -52,6 +56,30 @@ export class ShadowPass {
         depthCompare: 'less',
       },
     });
+
+    const modelModule = device.createShaderModule({ code: shadowModelShader });
+    this.modelPipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: modelModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 32,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            ],
+          },
+        ],
+      },
+      fragment: undefined,
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
   }
 
   resize(_width: number, _height: number) {
@@ -71,7 +99,9 @@ export class ShadowPass {
   encode(
     encoder: GPUCommandEncoder,
     resources: ShadowPassResources,
-    frame: ScreenSpaceFrame
+    frame: ScreenSpaceFrame,
+    model?: GpuModel | null,
+    modelUniformBuffer?: GPUBuffer
   ) {
     if (!resources.shadowTexture || !this.bindGroup) {
       return;
@@ -99,6 +129,21 @@ export class ShadowPass {
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.draw(6, resources.buffers.particleCount);
+
+    if (model && modelUniformBuffer) {
+      if (!this.modelBindGroup) {
+        this.modelBindGroup = this.device.createBindGroup({
+          layout: this.modelPipeline.getBindGroupLayout(0),
+          entries: [{ binding: 0, resource: { buffer: modelUniformBuffer } }],
+        });
+      }
+      pass.setPipeline(this.modelPipeline);
+      pass.setBindGroup(0, this.modelBindGroup);
+      pass.setVertexBuffer(0, model.vertexBuffer);
+      pass.setIndexBuffer(model.indexBuffer, model.indexFormat);
+      pass.drawIndexed(model.indexCount);
+    }
+
     pass.end();
   }
 }

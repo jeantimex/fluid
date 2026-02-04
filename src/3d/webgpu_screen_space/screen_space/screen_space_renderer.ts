@@ -292,6 +292,36 @@ export class ScreenSpaceRenderer {
     const lightViewProj = mat4Multiply(lightProj, lightView);
     const lightScale = { x: 1 / orthoSize, y: 1 / orthoSize };
 
+    // Update model uniforms early so they are available for shadow pass
+    if (this.model) {
+      const modelScale = this.modelScale;
+      const modelTx = 0;
+      const modelTy =
+        -this.config.boundsSize.y * 0.5 -
+        (this.model.boundsMinY ?? 0) * modelScale;
+      const modelTz = 0;
+      const modelMatrix = [
+        -modelScale, 0, 0, 0,
+        0, modelScale, 0, 0,
+        0, 0, -modelScale, 0,
+        modelTx, modelTy, modelTz, 1,
+      ];
+
+      this.modelUniformData.set(viewProj, 0);
+      this.modelUniformData.set(modelMatrix, 16);
+      this.modelUniformData[32] = this.config.dirToSun.x;
+      this.modelUniformData[33] = this.config.dirToSun.y;
+      this.modelUniformData[34] = this.config.dirToSun.z;
+      this.modelUniformData[35] = 0;
+      this.modelUniformData.set(lightViewProj, 36);
+
+      this.device.queue.writeBuffer(
+        this.modelUniformBuffer,
+        0,
+        this.modelUniformData
+      );
+    }
+
     const frame: ScreenSpaceFrame = {
       ...this.config, // Spread first to provide base EnvironmentConfig
       viewProjection: viewProj,
@@ -328,7 +358,7 @@ export class ScreenSpaceRenderer {
 
     this.depthPass.encode(encoder, resources, frame);
     this.thicknessPass.encode(encoder, resources, frame);
-    this.shadowPass.encode(encoder, resources, frame);
+    this.shadowPass.encode(encoder, resources, frame, this.model, this.modelUniformBuffer);
     if (resources.foamTexture) {
       this.foamPass.encode(encoder, resources, frame, resources.foamTexture);
     }
@@ -396,33 +426,6 @@ export class ScreenSpaceRenderer {
       this.modelBindGroup &&
       this.depthTexture
     ) {
-      const modelScale = this.modelScale;
-      const modelTx = 0;
-      const modelTy =
-        -this.config.boundsSize.y * 0.5 -
-        (this.model.boundsMinY ?? 0) * modelScale;
-      const modelTz = 0;
-      const modelMatrix = [
-        -modelScale, 0, 0, 0,
-        0, modelScale, 0, 0,
-        0, 0, -modelScale, 0,
-        modelTx, modelTy, modelTz, 1,
-      ];
-
-      this.modelUniformData.set(viewProj, 0);
-      this.modelUniformData.set(modelMatrix, 16);
-      this.modelUniformData[32] = this.config.dirToSun.x;
-      this.modelUniformData[33] = this.config.dirToSun.y;
-      this.modelUniformData[34] = this.config.dirToSun.z;
-      this.modelUniformData[35] = 0;
-      this.modelUniformData.set(lightViewProj, 36);
-
-      this.device.queue.writeBuffer(
-        this.modelUniformBuffer,
-        0,
-        this.modelUniformData
-      );
-
       const pass = encoder.beginRenderPass({
         colorAttachments: [
           {
