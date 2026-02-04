@@ -18,6 +18,7 @@ import { createSpawnData } from '../common/spawn.ts';
 import { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import { ComputePipelinesLinear } from './compute_pipelines_linear.ts';
 import { ScreenSpaceRenderer } from './screen_space/screen_space_renderer.ts';
+import type { GpuModel } from '../common/model_loader.ts';
 
 /**
  * Orchestrates the full SPH fluid simulation pipeline on the GPU.
@@ -785,5 +786,10 @@ export class FluidSimulation {
       viewMatrix
     );
     this.device.queue.submit([encoder.finish()]);
+  }
+
+  setModel(model: GpuModel | null): void {
+    this.model = model;
+    this.renderer.setModel(model);
   }
 }

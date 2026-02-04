@@ -26,6 +26,8 @@ import { NormalPass } from './passes/normal_pass.ts';
 import { SmoothPass } from './passes/smooth_pass.ts';
 import { ShadowPass } from './passes/shadow_pass.ts';
 import { CompositePass } from './passes/composite_pass.ts';
+import modelShader from './shaders/model_basic.wgsl?raw';
+import type { GpuModel } from '../../common/model_loader.ts';
 
 export class ScreenSpaceRenderer {
   private device: GPUDevice;
@@ -42,6 +44,7 @@ export class ScreenSpaceRenderer {
   private smoothTextureB: GPUTexture | null = null;
   private shadowTexture: GPUTexture | null = null;
   private foamTexture: GPUTexture | null = null;
+  private modelDepthTexture: GPUTexture | null = null;
 
   private buffers: SimBuffers | null = null;
 
@@ -52,6 +55,12 @@ export class ScreenSpaceRenderer {
   private shadowPass: ShadowPass;
   private foamPass: FoamPass;
   private compositePass: CompositePass;
+  private modelPipeline: GPURenderPipeline;
+  private modelUniformBuffer: GPUBuffer;
+  private modelBindGroup?: GPUBindGroup;
+  private model: GpuModel | null = null;
+  private modelUniformData = new Float32Array(36);
+  private modelScale = 0.04;
 
   constructor(
     device: GPUDevice,
@@ -70,6 +79,42 @@ export class ScreenSpaceRenderer {
     this.shadowPass = new ShadowPass(device);
     this.foamPass = new FoamPass(device);
     this.compositePass = new CompositePass(device, format);
+
+    const modelModule = device.createShaderModule({ code: modelShader });
+    this.modelPipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: modelModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 32,
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x3' },
+              { shaderLocation: 2, offset: 24, format: 'float32x2' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: modelModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    // Model uniforms: viewProj (64) + model (64) + lightDir/pad (16) = 144 bytes
+    this.modelUniformBuffer = device.createBuffer({
+      size: 144,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
   }
 
   createBindGroups(buffers: SimBuffers) {
@@ -156,12 +201,35 @@ export class ScreenSpaceRenderer {
         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
+    this.modelDepthTexture = this.device.createTexture({
+      size: { width: this.width, height: this.height },
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
     this.depthPass.resize(this.width, this.height);
     this.thicknessPass.resize(this.width, this.height);
     this.normalPass.resize(this.width, this.height);
     this.smoothPass.resize(this.width, this.height);
     this.shadowPass.resize(this.width, this.height);
     this.compositePass.resize(this.width, this.height);
+  }
+
+  setModel(model: GpuModel | null): void {
+    this.model = model;
+    if (!model) {
+      this.modelBindGroup = undefined;
+      return;
+    }
+
+    this.modelBindGroup = this.device.createBindGroup({
+      layout: this.modelPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.modelUniformBuffer } },
+        { binding: 1, resource: model.textureView },
+        { binding: 2, resource: model.sampler },
+      ],
+    });
   }
 
   render(
@@ -307,5 +375,60 @@ export class ScreenSpaceRenderer {
       swapchainView,
       this.config.screenSpaceDebugMode
     );
+
+    if (
+      this.model &&
+      this.modelBindGroup &&
+      this.modelDepthTexture
+    ) {
+      const modelScale = this.modelScale;
+      const modelTx = 0;
+      const modelTy =
+        -this.config.boundsSize.y * 0.5 -
+        (this.model.boundsMinY ?? 0) * modelScale;
+      const modelTz = 0;
+      const modelMatrix = [
+        -modelScale, 0, 0, 0,
+        0, modelScale, 0, 0,
+        0, 0, -modelScale, 0,
+        modelTx, modelTy, modelTz, 1,
+      ];
+
+      this.modelUniformData.set(viewProj, 0);
+      this.modelUniformData.set(modelMatrix, 16);
+      this.modelUniformData[32] = this.config.dirToSun.x;
+      this.modelUniformData[33] = this.config.dirToSun.y;
+      this.modelUniformData[34] = this.config.dirToSun.z;
+      this.modelUniformData[35] = 0;
+
+      this.device.queue.writeBuffer(
+        this.modelUniformBuffer,
+        0,
+        this.modelUniformData
+      );
+
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: swapchainView,
+            loadOp: 'load',
+            storeOp: 'store',
+          },
+        ],
+        depthStencilAttachment: {
+          view: this.modelDepthTexture.createView(),
+          depthLoadOp: 'clear',
+          depthStoreOp: 'store',
+          depthClearValue: 1.0,
+        },
+      });
+
+      pass.setPipeline(this.modelPipeline);
+      pass.setBindGroup(0, this.modelBindGroup);
+      pass.setVertexBuffer(0, this.model.vertexBuffer);
+      pass.setIndexBuffer(this.model.indexBuffer, this.model.indexFormat);
+      pass.drawIndexed(this.model.indexCount);
+      pass.end();
+    }
   }
 }
