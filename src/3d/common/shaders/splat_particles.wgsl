@@ -32,10 +32,12 @@ struct SplatParams {
   spikyPow2Scale: f32,    // Spiky² kernel normalization: 15 / (2π h⁵)
   particleCount: u32,     // Number of active particles
   fixedPointScale: f32,   // Float-to-integer conversion factor (e.g. 1000)
-  boundsSize: vec3<f32>,  // Simulation domain size (width, height, depth)
+  minBounds: vec3<f32>,   // Simulation domain min corner
   pad0: f32,
+  maxBounds: vec3<f32>,   // Simulation domain max corner
+  pad1: f32,
   volumeSize: vec3<u32>,  // Density texture resolution (voxels per axis)
-  pad1: u32,
+  pad2: u32,
 };
 
 /// Predicted particle positions (vec4 per particle; xyz = position, w unused).
@@ -68,15 +70,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let particlePos = predicted[particleIdx].xyz;
   let radius = params.radius;
   let volumeSizeF = vec3<f32>(params.volumeSize);
+  let boundsSize = params.maxBounds - params.minBounds;
 
   // Convert world position to normalized [0, 1]³ UVW within the simulation bounds,
   // then scale to continuous voxel-space coordinates [0, volumeSize − 1].
-  let uvw = (particlePos + 0.5 * params.boundsSize) / params.boundsSize;
+  let uvw = (particlePos - params.minBounds) / boundsSize;
   let voxelPos = uvw * (volumeSizeF - vec3<f32>(1.0));
 
   // Determine the axis-aligned bounding box of voxels within kernel radius.
   // Convert the world-space radius to voxel units for each axis.
-  let radiusInVoxels = radius / params.boundsSize * (volumeSizeF - vec3<f32>(1.0));
+  let radiusInVoxels = radius / boundsSize * (volumeSizeF - vec3<f32>(1.0));
   let minVoxel = vec3<i32>(floor(voxelPos - radiusInVoxels));
   let maxVoxel = vec3<i32>(ceil(voxelPos + radiusInVoxels));
 
@@ -90,7 +93,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
       for (var x = clampedMin.x; x <= clampedMax.x; x++) {
         // Convert voxel index back to world position for distance check
         let voxelUvw = vec3<f32>(f32(x), f32(y), f32(z)) / max(volumeSizeF - vec3<f32>(1.0), vec3<f32>(1.0));
-        let worldPos = (voxelUvw - vec3<f32>(0.5)) * params.boundsSize;
+        let worldPos = params.minBounds + voxelUvw * boundsSize;
 
         // Check if this voxel is within the kernel radius
         let offset = worldPos - particlePos;

@@ -1,7 +1,7 @@
 import type { ParticlesConfig } from './types.ts';
-import splatClearShader from '../webgpu_raymarch/shaders/splat_clear.wgsl?raw';
-import splatParticlesShader from '../webgpu_raymarch/shaders/splat_particles.wgsl?raw';
-import splatResolveShader from '../webgpu_raymarch/shaders/splat_resolve.wgsl?raw';
+import splatClearShader from '../common/shaders/splat_clear.wgsl?raw';
+import splatParticlesShader from '../common/shaders/splat_particles.wgsl?raw';
+import splatResolveShader from '../common/shaders/splat_resolve.wgsl?raw';
 
 export class DensitySplatPipeline {
   private device: GPUDevice;
@@ -54,11 +54,11 @@ export class DensitySplatPipeline {
       layout: 'auto',
       compute: { module: splatModule, entryPoint: 'main' },
     });
-    this.particlesParamsData = new ArrayBuffer(48);
+    this.particlesParamsData = new ArrayBuffer(64);
     this.particlesParamsF32 = new Float32Array(this.particlesParamsData);
     this.particlesParamsU32 = new Uint32Array(this.particlesParamsData);
     this.particlesParamsBuffer = device.createBuffer({
-      size: 48,
+      size: 64,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -216,22 +216,40 @@ export class DensitySplatPipeline {
       this.densityTextureSize.y *
       this.densityTextureSize.z;
 
+    const size = config.boundsSize;
+    const hx = size.x * 0.5;
+    const hz = size.z * 0.5;
+    const minY = -5.0; // Fixed bottom
+
+    // Clear params: totalVoxels (u32) + 3x padding
     const clearData = new Uint32Array(4);
     clearData[0] = totalVoxels;
     this.device.queue.writeBuffer(this.clearParamsBuffer, 0, clearData);
 
+    // Splat particles params
     this.particlesParamsF32[0] = radius;
     this.particlesParamsF32[1] = spikyPow2Scale;
     this.particlesParamsU32[2] = particleCount;
     this.particlesParamsF32[3] = fixedPointScale;
-    this.particlesParamsF32[4] = bounds.x;
-    this.particlesParamsF32[5] = bounds.y;
-    this.particlesParamsF32[6] = bounds.z;
+    
+    // minBounds
+    this.particlesParamsF32[4] = -hx;
+    this.particlesParamsF32[5] = minY;
+    this.particlesParamsF32[6] = -hz;
     this.particlesParamsF32[7] = 0;
-    this.particlesParamsU32[8] = this.densityTextureSize.x;
-    this.particlesParamsU32[9] = this.densityTextureSize.y;
-    this.particlesParamsU32[10] = this.densityTextureSize.z;
-    this.particlesParamsU32[11] = 0;
+
+    // maxBounds
+    this.particlesParamsF32[8] = hx;
+    this.particlesParamsF32[9] = minY + size.y;
+    this.particlesParamsF32[10] = hz;
+    this.particlesParamsF32[11] = 0;
+
+    // volumeSize
+    this.particlesParamsU32[12] = this.densityTextureSize.x;
+    this.particlesParamsU32[13] = this.densityTextureSize.y;
+    this.particlesParamsU32[14] = this.densityTextureSize.z;
+    this.particlesParamsU32[15] = 0;
+
     this.device.queue.writeBuffer(
       this.particlesParamsBuffer,
       0,

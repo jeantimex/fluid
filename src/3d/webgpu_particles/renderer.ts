@@ -718,18 +718,31 @@ export class Renderer {
     // -------------------------------------------------------------------------
 
     const densityUniforms = new Float32Array(16);
-    densityUniforms[0] = config.boundsSize.x;
-    densityUniforms[1] = config.boundsSize.y;
-    densityUniforms[2] = config.boundsSize.z;
-    densityUniforms[3] = config.densityOffset;
-    densityUniforms[4] = config.densityMultiplier;
-    densityUniforms[5] = config.lightStepSize;
-    densityUniforms[6] = config.shadowSoftness;
-    densityUniforms[7] = 0.0;
-    densityUniforms[8] = config.extinctionCoefficients.x;
-    densityUniforms[9] = config.extinctionCoefficients.y;
-    densityUniforms[10] = config.extinctionCoefficients.z;
-    densityUniforms[11] = 0.0;
+    const size = config.boundsSize;
+    const hx = size.x * 0.5;
+    const hz = size.z * 0.5;
+    const minY = -5.0; // Fixed bottom
+
+    // minBounds
+    densityUniforms[0] = -hx;
+    densityUniforms[1] = minY;
+    densityUniforms[2] = -hz;
+    densityUniforms[3] = 0.0; // pad
+
+    // maxBounds
+    densityUniforms[4] = hx;
+    densityUniforms[5] = minY + size.y;
+    densityUniforms[6] = hz;
+    densityUniforms[7] = 0.0; // pad
+
+    densityUniforms[8] = config.densityOffset;
+    densityUniforms[9] = config.densityMultiplier;
+    densityUniforms[10] = config.lightStepSize;
+    densityUniforms[11] = config.shadowSoftness;
+    densityUniforms[12] = config.extinctionCoefficients.x;
+    densityUniforms[13] = config.extinctionCoefficients.y;
+    densityUniforms[14] = config.extinctionCoefficients.z;
+    densityUniforms[15] = 0.0;
     this.device.queue.writeBuffer(this.densityUniformBuffer, 0, densityUniforms);
 
     // -------------------------------------------------------------------------

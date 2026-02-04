@@ -48,7 +48,10 @@ struct RaymarchParams {
   pad2: f32,
   cameraForward: vec3<f32>,          // Camera forward (look) direction
   pad3: f32,
-  boundsSize: vec3<f32>,             // Simulation domain dimensions
+  minBounds: vec3<f32>,              // Simulation domain min corner
+  pad4: f32,
+  maxBounds: vec3<f32>,              // Simulation domain max corner
+  pad5: f32,
   densityOffset: f32,                // Iso-surface threshold subtracted from raw density
   densityMultiplier: f32,            // Opacity scaling per ray step
   stepSize: f32,                     // World-space distance between primary ray samples
@@ -59,13 +62,13 @@ struct RaymarchParams {
   tileScale: f32,                    // Floor tile grid density (tiles per unit)
   tileDarkOffset: f32,               // Brightness offset for dark tiles (unused, see tileDarkFactor)
   tileCol1: vec3<f32>,               // Floor color: −X, +Z quadrant
-  pad5: f32,
-  tileCol2: vec3<f32>,               // Floor color: +X, +Z quadrant
   pad6: f32,
-  tileCol3: vec3<f32>,               // Floor color: −X, −Z quadrant
+  tileCol2: vec3<f32>,               // Floor color: +X, +Z quadrant
   pad7: f32,
-  tileCol4: vec3<f32>,               // Floor color: +X, −Z quadrant
+  tileCol3: vec3<f32>,               // Floor color: −X, −Z quadrant
   pad8: f32,
+  tileCol4: vec3<f32>,               // Floor color: +X, −Z quadrant
+  pad9: f32,
   tileColVariation: vec3<f32>,       // HSV variation per tile for randomization
   debugFloorMode: f32,               // 0 = normal, 1 = red hit test, 2 = flat colors
   dirToSun: vec3<f32>,               // Normalized direction toward the sun
@@ -254,7 +257,8 @@ fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> ObstacleHit {
 /// Converts world coords to UVW [0,1]³ and subtracts the density offset.
 /// Negative results indicate the point is below the iso-surface (outside fluid).
 fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
-  let uvw = (pos + 0.5 * params.boundsSize) / params.boundsSize;
+  let size = params.maxBounds - params.minBounds;
+  let uvw = (pos - params.minBounds) / size;
   return textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r - params.densityOffset;
 }
 
@@ -262,7 +266,8 @@ fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
 /// Returns -densityOffset for positions at or beyond the volume edges,
 /// preventing edge artifacts where the texture wraps or clamps.
 fn sampleDensity(pos: vec3<f32>) -> f32 {
-  let uvw = (pos + 0.5 * params.boundsSize) / params.boundsSize;
+  let size = params.maxBounds - params.minBounds;
+  let uvw = (pos - params.minBounds) / size;
   let epsilon = 0.0001;
   if (any(uvw >= vec3<f32>(1.0 - epsilon)) || any(uvw <= vec3<f32>(epsilon))) {
     return -params.densityOffset;
@@ -273,9 +278,7 @@ fn sampleDensity(pos: vec3<f32>) -> f32 {
 /// Returns true if the position is inside the simulation bounds AND
 /// the density at that point is positive (above the iso-surface).
 fn isInsideFluid(pos: vec3<f32>) -> bool {
-  let boundsMin = -0.5 * params.boundsSize;
-  let boundsMax = 0.5 * params.boundsSize;
-  let hit = rayBoxIntersection(pos, vec3<f32>(0.0, 0.0, 1.0), boundsMin, boundsMax);
+  let hit = rayBoxIntersection(pos, vec3<f32>(0.0, 0.0, 1.0), params.minBounds, params.maxBounds);
   return (hit.x <= 0.0 && hit.y > 0.0) && sampleDensity(pos) > 0.0;
 }
 
@@ -285,16 +288,20 @@ fn isInsideFluid(pos: vec3<f32>) -> bool {
 
 /// Returns the outward-facing normal of the closest AABB face to point `p`.
 /// Used to blend volume normals with box-face normals at edges.
-fn calculateClosestFaceNormal(boxSize: vec3<f32>, p: vec3<f32>) -> vec3<f32> {
-  let halfSize = boxSize * 0.5;
-  let o = halfSize - abs(p); // Distance to each face
-  if (o.x < o.y && o.x < o.z) {
-    return vec3<f32>(sign(p.x), 0.0, 0.0);
-  } else if (o.y < o.z) {
-    return vec3<f32>(0.0, sign(p.y), 0.0);
-  } else {
-    return vec3<f32>(0.0, 0.0, sign(p.z));
-  }
+fn calculateClosestFaceNormal(p: vec3<f32>) -> vec3<f32> {
+  let minDiff = p - params.minBounds;
+  let maxDiff = params.maxBounds - p;
+  
+  var minD = minDiff.x;
+  var normal = vec3<f32>(-1.0, 0.0, 0.0);
+  
+  if (minDiff.y < minD) { minD = minDiff.y; normal = vec3<f32>(0.0, -1.0, 0.0); }
+  if (minDiff.z < minD) { minD = minDiff.z; normal = vec3<f32>(0.0, 0.0, -1.0); }
+  if (maxDiff.x < minD) { minD = maxDiff.x; normal = vec3<f32>(1.0, 0.0, 0.0); }
+  if (maxDiff.y < minD) { minD = maxDiff.y; normal = vec3<f32>(0.0, 1.0, 0.0); }
+  if (maxDiff.z < minD) { minD = maxDiff.z; normal = vec3<f32>(0.0, 0.0, 1.0); }
+  
+  return normal;
 }
 
 /// Estimates the fluid surface normal at `pos` using central differences
@@ -318,9 +325,10 @@ fn calculateNormal(pos: vec3<f32>) -> vec3<f32> {
   let volumeNormal = normalize(vec3<f32>(dx, dy, dz));
 
   // Smoothly blend toward face normal near the simulation boundary
-  let o = params.boundsSize * 0.5 - abs(pos); // Distance to each face
-  var faceWeight = min(o.x, min(o.y, o.z));    // Distance to nearest face
-  let faceNormal = calculateClosestFaceNormal(params.boundsSize, pos);
+  let minDiff = pos - params.minBounds;
+  let maxDiff = params.maxBounds - pos;
+  var faceWeight = min(min(min(minDiff.x, minDiff.y), minDiff.z), min(min(maxDiff.x, maxDiff.y), maxDiff.z));
+  let faceNormal = calculateClosestFaceNormal(pos);
 
   let smoothDst = 0.3;  // Distance over which blending occurs
   let smoothPow = 5.0;  // Power curve for vertical normal weighting
@@ -373,9 +381,7 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
   // Degenerate ray check
   if (dot(rayDir, rayDir) < 0.5) { return info; }
 
-  let boundsMin = -0.5 * params.boundsSize;
-  let boundsMax = 0.5 * params.boundsSize;
-  let boundsDstInfo = rayBoxIntersection(origin, rayDir, boundsMin, boundsMax);
+  let boundsDstInfo = rayBoxIntersection(origin, rayDir, params.minBounds, params.maxBounds);
 
   // Random jitter to reduce banding (±20% of step size)
   let r = (randomValue(rngState) - 0.5) * params.stepSize * 0.2;
@@ -937,7 +943,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
      totalTransmittance = totalTransmittance * transmittance(surfaceInfo.densityAlongRay);
 
      // If we hit the bottom of the container, stop refracting
-     if (surfaceInfo.pos.y < -params.boundsSize.y * 0.5 + 0.05) {
+     if (surfaceInfo.pos.y < params.minBounds.y + 0.05) {
         break;
      }
 

@@ -88,8 +88,8 @@ export class FluidSimulation {
   /** External forces params: [dt, gravity, interactionRadius, strength, inputX, inputY, inputZ, pad]. */
   private computeData = new Float32Array(8);
 
-  /** Integration params: [dt, damping, hasObstacle, pad, halfBounds(3), pad, obstacleCenter(3), pad, obstacleHalf(3), pad]. */
-  private integrateData = new Float32Array(20);
+  /** Integration params: [dt, damping, hasObstacle, pad, minBounds(3), pad, maxBounds(3), pad, obstacleCenter(3), pad, obstacleHalf(3), pad, obstacleRotation(3), pad]. */
+  private integrateData = new Float32Array(24);
 
   /** Hash params: [radius, particleCount, minBoundsX/Y/Z, gridResX/Y/Z]. */
   private hashParamsData = new Float32Array(8);
@@ -368,7 +368,7 @@ export class FluidSimulation {
     this.hashParamsData[0] = this.config.smoothingRadius;
     this.hashParamsData[1] = buffers.particleCount;
     this.hashParamsData[2] = -this.config.boundsSize.x * 0.5;
-    this.hashParamsData[3] = -this.config.boundsSize.y * 0.5;
+    this.hashParamsData[3] = -5.0; // Fixed bottom
     this.hashParamsData[4] = -this.config.boundsSize.z * 0.5;
     this.hashParamsData[5] = this.gridRes.x;
     this.hashParamsData[6] = this.gridRes.y;
@@ -539,7 +539,7 @@ export class FluidSimulation {
     this.foamSpawnData[11] = config.foamLifetimeMax;
 
     this.foamSpawnData[12] = -config.boundsSize.x * 0.5;
-    this.foamSpawnData[13] = -config.boundsSize.y * 0.5;
+    this.foamSpawnData[13] = -5.0; // Fixed bottom
     this.foamSpawnData[14] = -config.boundsSize.z * 0.5;
     // Padding at 15 (alignment for vec3)
     this.foamSpawnData[16] = this.gridRes.x;
@@ -561,14 +561,20 @@ export class FluidSimulation {
     this.foamUpdateData[2] = 0.04; // dragCoeff (internal constant in Unity shader)
     this.foamUpdateData[3] = config.bubbleBuoyancy;
 
-    this.foamUpdateData[4] = config.boundsSize.x * 0.5;
-    this.foamUpdateData[5] = config.boundsSize.y * 0.5;
-    this.foamUpdateData[6] = config.boundsSize.z * 0.5;
+    const hx = config.boundsSize.x * 0.5;
+    const hz = config.boundsSize.z * 0.5;
+    const minY = -5.0; // Fixed bottom
+
+    // maxBounds
+    this.foamUpdateData[4] = hx;
+    this.foamUpdateData[5] = minY + config.boundsSize.y;
+    this.foamUpdateData[6] = hz;
     this.foamUpdateData[7] = config.smoothingRadius;
 
-    this.foamUpdateData[8] = -config.boundsSize.x * 0.5;
-    this.foamUpdateData[9] = -config.boundsSize.y * 0.5;
-    this.foamUpdateData[10] = -config.boundsSize.z * 0.5;
+    // minBounds
+    this.foamUpdateData[8] = -hx;
+    this.foamUpdateData[9] = minY;
+    this.foamUpdateData[10] = -hz;
     this.foamUpdateData[11] = 0; // pad
 
     this.foamUpdateData[12] = this.gridRes.x;
@@ -634,7 +640,7 @@ export class FluidSimulation {
     this.densityParamsData[2] = spikyPow3Scale;
     this.densityParamsData[3] = this.buffers.particleCount;
     this.densityParamsData[4] = -this.config.boundsSize.x * 0.5;
-    this.densityParamsData[5] = -this.config.boundsSize.y * 0.5;
+    this.densityParamsData[5] = -5.0; // Fixed bottom
     this.densityParamsData[6] = -this.config.boundsSize.z * 0.5;
     this.densityParamsData[7] = 0; // pad
     this.densityParamsData[8] = this.gridRes.x;
@@ -675,7 +681,7 @@ export class FluidSimulation {
     this.pressureParamsData[6] = spikyPow3DerivScale;
     this.pressureParamsData[7] = this.buffers.particleCount;
     this.pressureParamsData[8] = -this.config.boundsSize.x * 0.5;
-    this.pressureParamsData[9] = -this.config.boundsSize.y * 0.5;
+    this.pressureParamsData[9] = -5.0; // Fixed bottom
     this.pressureParamsData[10] = -this.config.boundsSize.z * 0.5;
     this.pressureParamsData[11] = 0; // pad
     this.pressureParamsData[12] = this.gridRes.x;
@@ -711,7 +717,7 @@ export class FluidSimulation {
     this.viscosityParamsData[3] = poly6Scale;
     this.viscosityParamsData[4] = this.buffers.particleCount;
     this.viscosityParamsData[5] = -this.config.boundsSize.x * 0.5;
-    this.viscosityParamsData[6] = -this.config.boundsSize.y * 0.5;
+    this.viscosityParamsData[6] = -5.0; // Fixed bottom
     this.viscosityParamsData[7] = -this.config.boundsSize.z * 0.5;
     this.viscosityParamsData[8] = this.gridRes.x;
     this.viscosityParamsData[9] = this.gridRes.y;
@@ -745,21 +751,31 @@ export class FluidSimulation {
       this.config.obstacleSize.y > 0 &&
       this.config.obstacleSize.z > 0;
     this.integrateData[2] = hasObstacle ? 1 : 0;
-    const hx = this.config.boundsSize.x * 0.5;
-    const hy = this.config.boundsSize.y * 0.5;
-    const hz = this.config.boundsSize.z * 0.5;
-    this.integrateData[4] = hx;
-    this.integrateData[5] = hy;
-    this.integrateData[6] = hz;
-    this.integrateData[8] = this.config.obstacleCentre.x;
-    this.integrateData[9] = this.config.obstacleCentre.y;
-    this.integrateData[10] = this.config.obstacleCentre.z;
-    this.integrateData[12] = this.config.obstacleSize.x * 0.5;
-    this.integrateData[13] = this.config.obstacleSize.y * 0.5;
-    this.integrateData[14] = this.config.obstacleSize.z * 0.5;
-    this.integrateData[16] = this.config.obstacleRotation.x;
-    this.integrateData[17] = this.config.obstacleRotation.y;
-    this.integrateData[18] = this.config.obstacleRotation.z;
+
+    const size = this.config.boundsSize;
+    const hx = size.x * 0.5;
+    const hz = size.z * 0.5;
+    const minY = -5.0; // Fixed bottom
+
+    // minBounds
+    this.integrateData[4] = -hx;
+    this.integrateData[5] = minY;
+    this.integrateData[6] = -hz;
+
+    // maxBounds
+    this.integrateData[8] = hx;
+    this.integrateData[9] = minY + size.y;
+    this.integrateData[10] = hz;
+
+    this.integrateData[12] = this.config.obstacleCentre.x;
+    this.integrateData[13] = this.config.obstacleCentre.y;
+    this.integrateData[14] = this.config.obstacleCentre.z;
+    this.integrateData[16] = this.config.obstacleSize.x * 0.5;
+    this.integrateData[17] = this.config.obstacleSize.y * 0.5;
+    this.integrateData[18] = this.config.obstacleSize.z * 0.5;
+    this.integrateData[20] = this.config.obstacleRotation.x;
+    this.integrateData[21] = this.config.obstacleRotation.y;
+    this.integrateData[22] = this.config.obstacleRotation.z;
 
     this.device.queue.writeBuffer(
       this.pipelines.uniformBuffers.integrate,

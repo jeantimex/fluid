@@ -50,14 +50,16 @@ struct FragmentUniforms {
 @group(0) @binding(1) var<uniform> camera: FragmentUniforms;
 
 struct DensityShadowUniforms {
-  boundsSize: vec3<f32>,
+  minBounds: vec3<f32>,
+  pad0: f32,
+  maxBounds: vec3<f32>,
+  pad1: f32,
   densityOffset: f32,
   densityMultiplier: f32,
   lightStepSize: f32,
   shadowSoftness: f32,
-  pad0: f32,
   extinctionCoefficients: vec3<f32>,
-  pad1: f32,
+  pad2: f32,
 };
 
 @group(0) @binding(4) var<uniform> densityShadow: DensityShadowUniforms;
@@ -92,7 +94,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 
 fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
-  let uvw = (pos + 0.5 * densityShadow.boundsSize) / densityShadow.boundsSize;
+  let size = densityShadow.maxBounds - densityShadow.minBounds;
+  let uvw = (pos - densityShadow.minBounds) / size;
   let epsilon = 0.0001;
   if (any(uvw >= vec3<f32>(1.0 - epsilon)) || any(uvw <= vec3<f32>(epsilon))) {
     return -densityShadow.densityOffset;
@@ -101,7 +104,8 @@ fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
 }
 
 fn sampleDensity(pos: vec3<f32>) -> f32 {
-  let uvw = (pos + 0.5 * densityShadow.boundsSize) / densityShadow.boundsSize;
+  let size = densityShadow.maxBounds - densityShadow.minBounds;
+  let uvw = (pos - densityShadow.minBounds) / size;
   let epsilon = 0.0001;
   if (any(uvw >= vec3<f32>(1.0 - epsilon)) || any(uvw <= vec3<f32>(epsilon))) {
     return -densityShadow.densityOffset;
@@ -110,9 +114,7 @@ fn sampleDensity(pos: vec3<f32>) -> f32 {
 }
 
 fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) -> f32 {
-  let boundsMin = -0.5 * densityShadow.boundsSize;
-  let boundsMax = 0.5 * densityShadow.boundsSize;
-  let hit = envRayBoxIntersection(rayPos, rayDir, boundsMin, boundsMax);
+  let hit = envRayBoxIntersection(rayPos, rayDir, densityShadow.minBounds, densityShadow.maxBounds);
   if (hit.y <= max(hit.x, 0.0)) { return 0.0; }
 
   let tStart = max(hit.x, 0.0);

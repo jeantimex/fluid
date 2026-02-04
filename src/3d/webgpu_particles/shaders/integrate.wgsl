@@ -26,21 +26,20 @@
  *
  * Boundary Collision:
  * -------------------
- * The simulation domain is an axis-aligned box centered at origin.
+ * The simulation domain is an axis-aligned box defined by [minBounds, maxBounds].
  *
- *     ┌─────────────────────┐
+ *     ┌─────────────────────┐  maxBounds
  *     │                     │
- *     │    halfBounds.y     │
- *     │         ↑           │
- *     │         │           │
- *     │  ←──────┼──────→    │  halfBounds.x
- *     │         │           │
- *     │         ↓           │
+ *     │          ↑          │
+ *     │          │          │
+ *     │   ←──────┼──────→   │
+ *     │          │          │
+ *     │          ↓          │
  *     │                     │
- *     └─────────────────────┘
+ *     └─────────────────────┘  minBounds
  *
  * Collision response:
- *   1. Check if particle is outside bounds: |pos| > halfBounds
+ *   1. Check if particle is outside [minBounds, maxBounds]
  *   2. If outside, clamp position to boundary
  *   3. Reflect velocity component: vel = -vel × damping
  *
@@ -57,8 +56,6 @@
  *   +X = Right
  *   +Z = Forward (out of screen)
  *
- *   Box spans: [-halfBounds, +halfBounds] on each axis
- *
  * ============================================================================
  */
 
@@ -72,16 +69,18 @@
  *   4      4    collisionDamping - Velocity multiplier on collision [0, 1]
  *   8      4    hasObstacle      - Flag for dynamic obstacle (unused currently)
  *  12      4    pad0             - Padding
- *  16     12    halfBounds       - Half-extents of simulation box (x, y, z)
+ *  16     12    minBounds        - Minimum corner of simulation box (x, y, z)
  *  28      4    pad1             - Padding
- *  32     12    obstacleCenter   - Center of dynamic obstacle (reserved)
+ *  32     12    maxBounds        - Maximum corner of simulation box (x, y, z)
  *  44      4    pad2             - Padding
- *  48     12    obstacleHalf     - Half-extents of obstacle
+ *  48     12    obstacleCenter   - Center of dynamic obstacle
  *  60      4    pad3             - Padding
- *  64     12    obstacleRotation - Rotation in degrees (XYZ)
+ *  64     12    obstacleHalf     - Half-extents of obstacle
  *  76      4    pad4             - Padding
+ *  80     12    obstacleRotation - Rotation in degrees (XYZ)
+ *  92      4    pad5             - Padding
  * ------
- * Total: 80 bytes
+ * Total: 96 bytes
  *
  * Note: obstacleRotation is in degrees to match GUI controls.
  */
@@ -90,14 +89,16 @@ struct IntegrateParams {
   collisionDamping: f32,
   hasObstacle: f32,
   pad0: f32,
-  halfBounds: vec3<f32>,
+  minBounds: vec3<f32>,
   pad1: f32,
-  obstacleCenter: vec3<f32>,
+  maxBounds: vec3<f32>,
   pad2: f32,
-  obstacleHalf: vec3<f32>,
+  obstacleCenter: vec3<f32>,
   pad3: f32,
-  obstacleRotation: vec3<f32>,
+  obstacleHalf: vec3<f32>,
   pad4: f32,
+  obstacleRotation: vec3<f32>,
+  pad5: f32,
 };
 
 // ============================================================================
@@ -198,9 +199,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   // The integration commits all these changes to position.
   pos = pos + vel * params.dt;
 
-  // Cache half-bounds for repeated access
-  let halfBounds = params.halfBounds;
-
   // ========================================================================
   // OBSTACLE COLLISION HANDLING (AABB)
   // ========================================================================
@@ -264,40 +262,37 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   // BOUNDARY COLLISION HANDLING
   // ========================================================================
   // For each axis, check if particle has crossed the boundary.
-  // The box is centered at origin with extent [-halfBounds, +halfBounds].
   //
-  // Collision detection: edgeDst = halfBounds - |pos|
-  //   If edgeDst <= 0, particle is outside bounds
+  // Collision detection: check if pos is outside [minBounds, maxBounds]
   //
   // Collision response:
-  //   1. Clamp position to boundary: pos = halfBounds × sign(pos)
+  //   1. Clamp position to boundary
   //   2. Reflect velocity: vel = -vel × damping
-  //
-  // Why clamp instead of push back?
-  //   - Simpler and more robust
-  //   - Prevents particles from tunneling through walls
-  //   - Works even for very high velocities
 
   // ---- X-AXIS COLLISION ----
-  let edgeDstX = halfBounds.x - abs(pos.x);
-  if (edgeDstX <= 0.0) {
-    // Clamp to boundary (sign preserves direction: +halfBounds or -halfBounds)
-    pos.x = halfBounds.x * sign(pos.x);
-    // Reflect and damp velocity
+  if (pos.x < params.minBounds.x) {
+    pos.x = params.minBounds.x;
+    vel.x = -vel.x * params.collisionDamping;
+  } else if (pos.x > params.maxBounds.x) {
+    pos.x = params.maxBounds.x;
     vel.x = -vel.x * params.collisionDamping;
   }
 
   // ---- Y-AXIS COLLISION ----
-  let edgeDstY = halfBounds.y - abs(pos.y);
-  if (edgeDstY <= 0.0) {
-    pos.y = halfBounds.y * sign(pos.y);
+  if (pos.y < params.minBounds.y) {
+    pos.y = params.minBounds.y;
+    vel.y = -vel.y * params.collisionDamping;
+  } else if (pos.y > params.maxBounds.y) {
+    pos.y = params.maxBounds.y;
     vel.y = -vel.y * params.collisionDamping;
   }
 
   // ---- Z-AXIS COLLISION ----
-  let edgeDstZ = halfBounds.z - abs(pos.z);
-  if (edgeDstZ <= 0.0) {
-    pos.z = halfBounds.z * sign(pos.z);
+  if (pos.z < params.minBounds.z) {
+    pos.z = params.minBounds.z;
+    vel.z = -vel.z * params.collisionDamping;
+  } else if (pos.z > params.maxBounds.z) {
+    pos.z = params.maxBounds.z;
     vel.z = -vel.z * params.collisionDamping;
   }
 

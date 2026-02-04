@@ -211,7 +211,7 @@ export class ComputePipelinesLinear {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
       integrate: device.createBuffer({
-        size: 80,
+        size: 96,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
       hash: device.createBuffer({

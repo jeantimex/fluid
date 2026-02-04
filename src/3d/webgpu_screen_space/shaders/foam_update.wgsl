@@ -23,7 +23,7 @@ struct FoamUpdateParams {
   gravity: f32,
   dragCoeff: f32,
   buoyancy: f32,
-  boundsHalf: vec3<f32>,
+  maxBounds: vec3<f32>,
   radius: f32,
   minBounds: vec3<f32>,
   pad0: f32,
@@ -162,10 +162,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   // Boundary
   let damping = 0.5;
-  let hb = params.boundsHalf;
-  if (pos.x < -hb.x || pos.x > hb.x) { pos.x = clamp(pos.x, -hb.x, hb.x); vel.x *= -damping; }
-  if (pos.y < -hb.y || pos.y > hb.y) { pos.y = clamp(pos.y, -hb.y, hb.y); vel.y *= -damping; }
-  if (pos.z < -hb.z || pos.z > hb.z) { pos.z = clamp(pos.z, -hb.z, hb.z); vel.z *= -damping; }
+  let minB = params.minBounds;
+  let maxB = params.maxBounds;
+  if (pos.x < minB.x) { pos.x = minB.x; vel.x *= -damping; }
+  if (pos.x > maxB.x) { pos.x = maxB.x; vel.x *= -damping; }
+  if (pos.y < minB.y) { pos.y = minB.y; vel.y *= -damping; }
+  if (pos.y > maxB.y) { pos.y = maxB.y; vel.y *= -damping; }
+  if (pos.z < minB.z) { pos.z = minB.z; vel.z *= -damping; }
+  if (pos.z > maxB.z) { pos.z = maxB.z; vel.z *= -damping; }
 
   foamPositions[index] = vec4<f32>(pos, lifetime);
   foamVelocities[index] = vec4<f32>(vel, newScale);
