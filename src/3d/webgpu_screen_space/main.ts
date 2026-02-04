@@ -322,7 +322,7 @@ async function main() {
 
   try {
     const model = await loadGltfModel(device, '/models/duck/Duck.gltf');
-    simulation.setModel(model);
+    await simulation.setModel(model);
   } catch (error) {
     console.warn('Failed to load model:', error);
   }

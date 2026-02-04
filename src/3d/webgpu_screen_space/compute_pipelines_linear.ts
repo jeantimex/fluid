@@ -89,6 +89,8 @@ export interface UniformBuffers {
   foamSpawn: GPUBuffer;
   /** Foam update params — 32 bytes (FoamUpdateParams struct). */
   foamUpdate: GPUBuffer;
+  /** SDF collision params — 160 bytes (bounds + matrices). */
+  sdfParams: GPUBuffer;
 }
 
 /**
@@ -287,6 +289,10 @@ export class ComputePipelinesLinear {
         size: 112, // Expanded for neighbor search params
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
+      sdfParams: device.createBuffer({
+        size: 160,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
     };
 
     this.externalForces = this.createPipeline(externalForcesShader, 'main');
@@ -335,7 +341,10 @@ export class ComputePipelinesLinear {
    *
    * @param buffers - The simulation's GPU buffer manager
    */
-  createBindGroups(buffers: SimulationBuffersLinear): void {
+  createBindGroups(
+    buffers: SimulationBuffersLinear,
+    sdfTextureView?: GPUTextureView
+  ): void {
     this.externalForcesBindGroup = this.device.createBindGroup({
       layout: this.externalForces.getBindGroupLayout(0),
       entries: [
@@ -352,6 +361,8 @@ export class ComputePipelinesLinear {
         { binding: 0, resource: { buffer: buffers.positions } },
         { binding: 1, resource: { buffer: buffers.velocities } },
         { binding: 2, resource: { buffer: this.uniformBuffers.integrate } },
+        { binding: 3, resource: sdfTextureView! },
+        { binding: 5, resource: { buffer: this.uniformBuffers.sdfParams } },
       ],
     });
 

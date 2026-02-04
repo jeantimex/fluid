@@ -19,6 +19,8 @@ import { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import { ComputePipelinesLinear } from './compute_pipelines_linear.ts';
 import { ScreenSpaceRenderer } from './screen_space/screen_space_renderer.ts';
 import type { GpuModel } from '../common/model_loader.ts';
+import { SDFGenerator } from '../common/sdf_generator.ts';
+import { mat4Invert } from '../webgpu_particles/math_utils.ts';
 
 /**
  * Orchestrates the full SPH fluid simulation pipeline on the GPU.
@@ -62,9 +64,13 @@ export class FluidSimulation {
 
   /** Render pipeline manager — owns the screen-space render passes. */
   private renderer: ScreenSpaceRenderer;
+  /** SDF generator for mesh collision. */
+  private sdfGenerator: SDFGenerator;
 
   /** CPU-side snapshot of simulation state (positions, velocities, input). */
   private state!: SimState;
+  /** Optional collision mesh for SDF sampling. */
+  private model: GpuModel | null = null;
 
   // ===========================================================================
   // Grid Configuration
@@ -154,6 +160,7 @@ export class FluidSimulation {
 
     this.pipelines = new ComputePipelinesLinear(device);
     this.renderer = new ScreenSpaceRenderer(device, canvas, format, config);
+    this.sdfGenerator = new SDFGenerator(device);
 
     this.reset();
   }
@@ -200,7 +207,10 @@ export class FluidSimulation {
       this.gridTotalCells
     );
 
-    this.pipelines.createBindGroups(this.buffers);
+    this.pipelines.createBindGroups(
+      this.buffers,
+      this.sdfGenerator.textureView
+    );
     this.renderer.createBindGroups(this.buffers);
   }
 
@@ -322,6 +332,7 @@ export class FluidSimulation {
 
       // 6. Integration
       this.updateIntegrateUniforms(timeStep);
+      this.updateSDFUniforms();
       const integratePass = encoder.beginComputePass();
       integratePass.setPipeline(pipelines.integrate);
       integratePass.setBindGroup(0, pipelines.integrateBindGroup);
@@ -769,6 +780,38 @@ export class FluidSimulation {
     );
   }
 
+  private updateSDFUniforms(): void {
+    const { config, model } = this;
+    const { min, max } = this.sdfGenerator.bounds;
+
+    const modelScale = 0.04;
+    const modelTx = 0;
+    const modelTy =
+      -config.boundsSize.y * 0.5 - (model?.boundsMinY ?? 0) * modelScale;
+    const modelTz = 0;
+
+    const modelMatrix = new Float32Array([
+      -modelScale, 0, 0, 0,
+      0, modelScale, 0, 0,
+      0, 0, -modelScale, 0,
+      modelTx, modelTy, modelTz, 1,
+    ]);
+
+    const modelInv = mat4Invert(modelMatrix);
+    const data = new Float32Array(40);
+
+    data[0] = min[0]; data[1] = min[1]; data[2] = min[2]; data[3] = 0;
+    data[4] = max[0]; data[5] = max[1]; data[6] = max[2]; data[7] = 0;
+    data.set(modelInv, 8);
+    data.set(modelMatrix, 24);
+
+    this.device.queue.writeBuffer(
+      this.pipelines.uniformBuffers.sdfParams,
+      0,
+      data
+    );
+  }
+
   /**
    * Renders the current simulation state.
    *
@@ -788,8 +831,15 @@ export class FluidSimulation {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  setModel(model: GpuModel | null): void {
+  async setModel(model: GpuModel | null): Promise<void> {
     this.model = model;
     this.renderer.setModel(model);
+    if (model) {
+      await this.sdfGenerator.generate(model);
+      this.pipelines.createBindGroups(
+        this.buffers,
+        this.sdfGenerator.textureView
+      );
+    }
   }
 }
