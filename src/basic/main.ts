@@ -16,10 +16,10 @@ import { SceneRenderer, SceneConfig } from './renderer';
 const config: SceneConfig = {
   // Tile colors from Unity environmentSettings
   // Quadrant mapping: determined by hitPos.x and hitPos.z signs
-  tileCol1: { r: 0.07164471, g: 0.19658183, b: 0.4339623 },   // -X, +Z: Blue
-  tileCol2: { r: 0.424268, g: 0.27100393, b: 0.6603774 },     // +X, +Z: Pink/Purple
-  tileCol3: { r: 0.14057493, g: 0.3679245, b: 0.16709903 },   // -X, -Z: Green
-  tileCol4: { r: 0.5647059, g: 0.4683025, b: 0.25490198 },    // +X, -Z: Yellow/Tan
+  tileCol1: { r: 0.5647059, g: 0.4683025, b: 0.25490198 },    // Yellow (swapped)
+  tileCol2: { r: 0.424268, g: 0.27100393, b: 0.6603774 },     // Pink/Purple
+  tileCol3: { r: 0.14057493, g: 0.3679245, b: 0.16709903 },   // Green
+  tileCol4: { r: 0.07164471, g: 0.19658183, b: 0.4339623 },   // Blue (swapped)
 
   // Floor parameters
   floorY: -5.0, // Bottom of simulation box (scale Y = 10, centered at origin)

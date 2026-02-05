@@ -154,23 +154,26 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // Check if within floor bounds
         let halfSize = uniforms.floorSize * 0.5;
         if (abs(hitPos.x) < halfSize && abs(hitPos.z) < halfSize) {
+            // Rotate tile coordinates by 270 degrees
+            let rotatedPos = vec2<f32>(-hitPos.z, hitPos.x);
+
             // Select base color based on quadrant (matching Unity's logic)
             var tileCol: vec3<f32>;
-            if (hitPos.x < 0.0) {
-                tileCol = uniforms.tileCol1; // -X, +Z: Blue
+            if (rotatedPos.x < 0.0) {
+                tileCol = uniforms.tileCol1;
             } else {
-                tileCol = uniforms.tileCol2; // +X, +Z: Pink
+                tileCol = uniforms.tileCol2;
             }
-            if (hitPos.z < 0.0) {
-                if (hitPos.x < 0.0) {
-                    tileCol = uniforms.tileCol3; // -X, -Z: Green
+            if (rotatedPos.y < 0.0) {
+                if (rotatedPos.x < 0.0) {
+                    tileCol = uniforms.tileCol3;
                 } else {
-                    tileCol = uniforms.tileCol4; // +X, -Z: Yellow
+                    tileCol = uniforms.tileCol4;
                 }
             }
 
             // Calculate tile coordinates
-            let tileCoord = floor(hitPos.xz * uniforms.tileScale);
+            let tileCoord = floor(rotatedPos * uniforms.tileScale);
 
             // Apply HSV variation per tile FIRST (multiply by 0.1 like Unity)
             if (any(uniforms.tileColVariation != vec3<f32>(0.0))) {
@@ -191,7 +194,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             var finalColor = tileCol;
 
             // 1. Brightness boost
-            finalColor = finalColor * 1.6;
+            finalColor = finalColor * 1.0;
 
             // 2. Saturation adjustment (< 1 = desaturate, > 1 = boost saturation)
             let saturation = 1.0; // Original saturation
