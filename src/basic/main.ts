@@ -17,10 +17,11 @@ import { SceneRenderer, SceneConfig } from './renderer';
 const config: SceneConfig = {
   // Tile colors from Unity environmentSettings
   // Quadrant mapping: determined by hitPos.x and hitPos.z signs
-  tileCol1: { r: 0.82, g: 0.77, b: 0.48 },  // Yellow #d1c57b
-  tileCol2: { r: 0.66, g: 0.56, b: 0.82 },  // Pink #a990d0
-  tileCol3: { r: 0.50, g: 0.76, b: 0.53 },  // Green #80c287
-  tileCol4: { r: 0.36, g: 0.58, b: 0.82 },  // Blue #5b94d2
+  // Original Unity colors (linear space) - will be gamma corrected in shader
+  tileCol1: { r: 0.5647059, g: 0.4683025, b: 0.25490198 },   // Yellow
+  tileCol2: { r: 0.424268, g: 0.27100393, b: 0.6603774 },    // Pink
+  tileCol3: { r: 0.14057493, g: 0.3679245, b: 0.16709903 },  // Green
+  tileCol4: { r: 0.07164471, g: 0.19658183, b: 0.4339623 },  // Blue
 
   // Floor parameters
   floorY: -5.0, // Bottom of simulation box (scale Y = 10, centered at origin)
@@ -105,18 +106,22 @@ async function main() {
     return '#' + toHex(c.r) + toHex(c.g) + toHex(c.b);
   };
 
-  // Color controls for each tile (initialized from config)
+  // Color controls for each tile (gamma corrected for display)
+  const linearToSrgb = (c: number) => Math.pow(c, 1/2.2);
+  const toHex = (v: number) => Math.round(Math.min(1, Math.max(0, linearToSrgb(v))) * 255).toString(16).padStart(2, '0');
   const colorSettings = {
-    tile1: '#d1c57b',
-    tile2: '#a990d0',
-    tile3: '#80c287',
-    tile4: '#5b94d2',
+    tile1: '#' + toHex(config.tileCol1.r) + toHex(config.tileCol1.g) + toHex(config.tileCol1.b),
+    tile2: '#' + toHex(config.tileCol2.r) + toHex(config.tileCol2.g) + toHex(config.tileCol2.b),
+    tile3: '#' + toHex(config.tileCol3.r) + toHex(config.tileCol3.g) + toHex(config.tileCol3.b),
+    tile4: '#' + toHex(config.tileCol4.r) + toHex(config.tileCol4.g) + toHex(config.tileCol4.b),
   };
 
+  // Convert hex (sRGB) back to linear for config
+  const srgbToLinear = (c: number) => Math.pow(c, 2.2);
   const hexToRgb = (hex: string) => {
-    const r = parseInt(hex.slice(1, 3), 16) / 255;
-    const g = parseInt(hex.slice(3, 5), 16) / 255;
-    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    const r = srgbToLinear(parseInt(hex.slice(1, 3), 16) / 255);
+    const g = srgbToLinear(parseInt(hex.slice(3, 5), 16) / 255);
+    const b = srgbToLinear(parseInt(hex.slice(5, 7), 16) / 255);
     return { r, g, b };
   };
 

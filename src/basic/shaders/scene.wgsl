@@ -109,6 +109,11 @@ fn modulo(x: f32, y: f32) -> f32 {
     return x - y * floor(x / y);
 }
 
+// Linear to sRGB gamma correction
+fn linearToSrgb(color: vec3<f32>) -> vec3<f32> {
+    return pow(color, vec3<f32>(1.0 / 2.2));
+}
+
 // Ray-plane intersection
 fn rayPlaneIntersect(rayOrigin: vec3<f32>, rayDir: vec3<f32>, planeY: f32) -> f32 {
     if (abs(rayDir.y) < 0.0001) {
@@ -176,6 +181,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                     tileCol = uniforms.tileCol4;
                 }
             }
+
+            // Apply gamma correction (linear to sRGB)
+            tileCol = linearToSrgb(tileCol);
 
             // Calculate tile coordinates
             let tileCoord = floor(rotatedPos * uniforms.tileScale);
