@@ -41,6 +41,11 @@ export interface ScreenSpaceFrame extends EnvironmentConfig {
   obstacleRotation: Vec3;
   obstacleColor: RGB;
   obstacleAlpha: number;
+
+  // Wireframe fields
+  showBoundsWireframe: boolean;
+  boundsWireframeColor: RGB;
+  boundsSize: Vec3;
 }
 
 export interface DepthPassResources extends ScreenSpaceTextures {

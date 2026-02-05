@@ -125,6 +125,10 @@ const config: ScreenSpaceConfig = {
   refractionStrength: 9.15,
   shadowSoftness: 1.0,
   shadowRadiusScale: 1.0,
+
+  // Wireframe
+  showBoundsWireframe: false,
+  boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
 };
 
 // Simulation instance (initialized asynchronously in main())

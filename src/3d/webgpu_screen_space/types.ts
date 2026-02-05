@@ -29,4 +29,8 @@ export interface ScreenSpaceConfig extends SimConfig, EnvironmentConfig {
   refractionStrength: number;
   shadowSoftness: number;
   shadowRadiusScale: number;
+
+  // Wireframe
+  showBoundsWireframe: boolean;
+  boundsWireframeColor: RGB;
 }

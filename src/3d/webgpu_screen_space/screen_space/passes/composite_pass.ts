@@ -5,6 +5,7 @@
 import debugShader from '../shaders/debug_composite.wgsl?raw';
 import debugColorShader from '../shaders/debug_composite_color.wgsl?raw';
 import compositeShader from '../shaders/composite_final.wgsl?raw';
+import wireframeShader from '../shaders/wireframe.wgsl?raw';
 import environmentShader from '../../../common/shaders/environment.wgsl?raw';
 import type {
   CompositePassResources,
@@ -18,14 +19,19 @@ export class CompositePass {
   private pipeline: GPURenderPipeline;
   private colorPipeline: GPURenderPipeline;
   private compositePipeline: GPURenderPipeline;
+  private wireframePipeline: GPURenderPipeline;
   private bindGroupLayout: GPUBindGroupLayout;
   private bindGroup: GPUBindGroup | null = null;
   private compositeBindGroupLayout: GPUBindGroupLayout;
   private compositeBindGroup: GPUBindGroup | null = null;
+  private wireframeBindGroup: GPUBindGroup;
   private sampler: GPUSampler;
   private shadowSampler: GPUSampler;
   private uniformBuffer: GPUBuffer;
   private envUniformBuffer: GPUBuffer;
+  private wireframeUniformBuffer: GPUBuffer;
+  private wireframeVertexBuffer: GPUBuffer;
+  private wireframeVertexData: Float32Array;
   private lastMode: number | null = null;
 
   constructor(device: GPUDevice, format: GPUTextureFormat) {
@@ -153,12 +159,118 @@ export class CompositePass {
       },
       primitive: { topology: 'triangle-list' },
     });
+
+    // Wireframe pipeline with depth testing
+    const wireframeModule = device.createShaderModule({ code: wireframeShader });
+    this.wireframePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: wireframeModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 28, // 3 floats pos + 4 floats color = 7 floats = 28 bytes
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: wireframeModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'line-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    // Wireframe uniform buffer (viewProjection matrix = 64 bytes)
+    this.wireframeUniformBuffer = device.createBuffer({
+      size: 64,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Wireframe vertex buffer: 12 edges × 2 vertices × 7 floats = 168 floats
+    this.wireframeVertexData = new Float32Array(168);
+    this.wireframeVertexBuffer = device.createBuffer({
+      size: this.wireframeVertexData.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+
+    this.wireframeBindGroup = device.createBindGroup({
+      layout: this.wireframePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.wireframeUniformBuffer } },
+      ],
+    });
   }
 
   resize(_width: number, _height: number) {
     this.compositeBindGroup = null;
     this.bindGroup = null;
     this.lastMode = null;
+  }
+
+  /**
+   * Builds wireframe geometry for the simulation bounds.
+   * Creates 12 edges (lines) representing the bounding box.
+   */
+  private buildBoundsWireframe(frame: ScreenSpaceFrame): number {
+    const hx = frame.boundsSize.x * 0.5;
+    const hy = frame.boundsSize.y * 0.5;
+    const hz = frame.boundsSize.z * 0.5;
+
+    // Bounds center is at origin, bottom at -hy (adjusted for floor)
+    const cy = hy - 5.0; // Offset to match the density bounds minY = -5.0
+
+    const color = frame.boundsWireframeColor ?? { r: 1, g: 1, b: 1 };
+
+    // 8 corners of the bounding box
+    const corners = [
+      [-hx, cy - hy, -hz], // 0: back-bottom-left
+      [+hx, cy - hy, -hz], // 1: back-bottom-right
+      [+hx, cy + hy, -hz], // 2: back-top-right
+      [-hx, cy + hy, -hz], // 3: back-top-left
+      [-hx, cy - hy, +hz], // 4: front-bottom-left
+      [+hx, cy - hy, +hz], // 5: front-bottom-right
+      [+hx, cy + hy, +hz], // 6: front-top-right
+      [-hx, cy + hy, +hz], // 7: front-top-left
+    ];
+
+    // 12 edges of the box (pairs of corner indices)
+    const edges = [
+      // Bottom face edges
+      [0, 1], [1, 5], [5, 4], [4, 0],
+      // Top face edges
+      [3, 2], [2, 6], [6, 7], [7, 3],
+      // Vertical edges
+      [0, 3], [1, 2], [5, 6], [4, 7],
+    ];
+
+    let offset = 0;
+    const addVertex = (cornerIdx: number) => {
+      const c = corners[cornerIdx];
+      this.wireframeVertexData[offset++] = c[0];
+      this.wireframeVertexData[offset++] = c[1];
+      this.wireframeVertexData[offset++] = c[2];
+      this.wireframeVertexData[offset++] = color.r;
+      this.wireframeVertexData[offset++] = color.g;
+      this.wireframeVertexData[offset++] = color.b;
+      this.wireframeVertexData[offset++] = 1.0; // alpha
+    };
+
+    for (const [a, b] of edges) {
+      addVertex(a);
+      addVertex(b);
+    }
+
+    return edges.length * 2; // 24 vertices
   }
 
   createBindGroup(resources: CompositePassResources, mode: number) {
@@ -291,5 +403,45 @@ export class CompositePass {
     }
     pass.draw(6, 1);
     pass.end();
+
+    // Draw bounds wireframe in a separate pass with depth testing
+    if (frame.showBoundsWireframe && resources.depthTexture) {
+      const wireframeVertexCount = this.buildBoundsWireframe(frame);
+      this.device.queue.writeBuffer(
+        this.wireframeVertexBuffer,
+        0,
+        this.wireframeVertexData.buffer,
+        this.wireframeVertexData.byteOffset,
+        wireframeVertexCount * 7 * 4
+      );
+      this.device.queue.writeBuffer(
+        this.wireframeUniformBuffer,
+        0,
+        frame.viewProjection.buffer,
+        frame.viewProjection.byteOffset,
+        frame.viewProjection.byteLength
+      );
+
+      const wireframePass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: targetView,
+            loadOp: 'load', // Keep the composite result
+            storeOp: 'store',
+          },
+        ],
+        depthStencilAttachment: {
+          view: resources.depthTexture.createView(),
+          depthLoadOp: 'load', // Keep existing depth
+          depthStoreOp: 'store',
+        },
+      });
+
+      wireframePass.setPipeline(this.wireframePipeline);
+      wireframePass.setBindGroup(0, this.wireframeBindGroup);
+      wireframePass.setVertexBuffer(0, this.wireframeVertexBuffer, 0);
+      wireframePass.draw(wireframeVertexCount);
+      wireframePass.end();
+    }
   }
 }

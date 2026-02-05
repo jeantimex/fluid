@@ -231,6 +231,9 @@ export class ScreenSpaceRenderer {
       },
       obstacleColor: this.config.obstacleColor ?? { r: 1, g: 0, b: 0 },
       obstacleAlpha: this.config.obstacleAlpha ?? 0.8,
+      showBoundsWireframe: this.config.showBoundsWireframe,
+      boundsWireframeColor: this.config.boundsWireframeColor,
+      boundsSize: this.config.boundsSize,
     };
 
     const resources: ScreenSpaceTextures & { buffers: SimBuffers } = {
