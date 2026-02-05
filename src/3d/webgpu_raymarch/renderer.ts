@@ -64,6 +64,7 @@
 import raymarchShader from './shaders/raymarch.wgsl?raw';
 import blitShader from './shaders/blit.wgsl?raw';
 import shadowShader from '../webgpu_particles/shaders/shadow.wgsl?raw';
+import wireframeShader from './shaders/wireframe.wgsl?raw';
 import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import type { RaymarchConfig } from './types.ts';
 import { mat4LookAt, mat4Multiply, mat4Ortho } from '../webgpu_particles/math_utils.ts';
@@ -152,11 +153,33 @@ export class RaymarchRenderer {
   /** View into the offscreen texture, used as both render target and sample source. */
   private offscreenTextureView!: GPUTextureView;
 
+  /** Half-resolution depth texture for raymarch depth output. */
+  private offscreenDepthTexture!: GPUTexture;
+
   /** Current width of the offscreen texture (canvas.width / 2). */
   private offscreenWidth = 0;
 
   /** Current height of the offscreen texture (canvas.height / 2). */
   private offscreenHeight = 0;
+
+  // ---------------------------------------------------------------------------
+  // Wireframe Rendering
+  // ---------------------------------------------------------------------------
+
+  /** Pipeline for rendering bounds wireframe. */
+  private wireframePipeline: GPURenderPipeline;
+
+  /** Bind group for wireframe rendering. */
+  private wireframeBindGroup: GPUBindGroup;
+
+  /** Uniform buffer for wireframe (viewProjection matrix). */
+  private wireframeUniformBuffer: GPUBuffer;
+
+  /** Vertex buffer for wireframe geometry. */
+  private wireframeVertexBuffer: GPUBuffer;
+
+  /** CPU-side wireframe vertex data. */
+  private wireframeVertexData: Float32Array;
 
   /**
    * Creates the raymarch and blit pipelines, samplers, and uniform buffer.
@@ -194,6 +217,11 @@ export class RaymarchRenderer {
       primitive: {
         topology: 'triangle-list',
         cullMode: 'none',
+      },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'always', // Always write depth (raymarch calculates it manually)
       },
     });
 
@@ -309,6 +337,61 @@ export class RaymarchRenderer {
       magFilter: 'linear',
       minFilter: 'linear',
     });
+
+    // -------------------------------------------------------------------------
+    // Wireframe Pipeline
+    // -------------------------------------------------------------------------
+
+    const wireframeModule = device.createShaderModule({ code: wireframeShader });
+
+    this.wireframePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: wireframeModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 28, // 3 floats pos + 4 floats color = 7 floats = 28 bytes
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },
+              { shaderLocation: 1, offset: 12, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: wireframeModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'line-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    // Wireframe uniform buffer (viewProjection matrix + shadow params = 96 bytes)
+    // Used by both wireframe shader (first 64 bytes) and camera depth pass (80 bytes)
+    this.wireframeUniformBuffer = device.createBuffer({
+      size: 96,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Wireframe vertex buffer: 12 edges × 2 vertices × 7 floats = 168 floats
+    this.wireframeVertexData = new Float32Array(168);
+    this.wireframeVertexBuffer = device.createBuffer({
+      size: this.wireframeVertexData.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+
+    this.wireframeBindGroup = device.createBindGroup({
+      layout: this.wireframePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.wireframeUniformBuffer } },
+      ],
+    });
   }
 
   /**
@@ -369,6 +452,9 @@ export class RaymarchRenderer {
     if (this.offscreenTexture) {
       this.offscreenTexture.destroy();
     }
+    if (this.offscreenDepthTexture) {
+      this.offscreenDepthTexture.destroy();
+    }
 
     this.offscreenWidth = halfW;
     this.offscreenHeight = halfH;
@@ -381,6 +467,13 @@ export class RaymarchRenderer {
     });
 
     this.offscreenTextureView = this.offscreenTexture.createView();
+
+    // Create depth texture for raymarch depth output
+    this.offscreenDepthTexture = this.device.createTexture({
+      size: { width: halfW, height: halfH },
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
 
     // Rebind the blit pass to sample from the new offscreen texture
     this.blitBindGroup = this.device.createBindGroup({
@@ -507,6 +600,66 @@ export class RaymarchRenderer {
     const faceCount = 36;
 
     return { faceCount };
+  }
+
+  // ===========================================================================
+  // Bounds Wireframe Geometry Builder
+  // ===========================================================================
+
+  /**
+   * Builds wireframe geometry for the simulation bounds.
+   * Creates 12 edges (lines) representing the bounding box.
+   */
+  private buildBoundsWireframe(config: RaymarchConfig): number {
+    const hx = config.boundsSize.x * 0.5;
+    const hy = config.boundsSize.y * 0.5;
+    const hz = config.boundsSize.z * 0.5;
+
+    // Bounds center is at origin, bottom at -hy (adjusted for floor)
+    const cy = hy - 5.0; // Offset to match the density bounds minY = -5.0
+
+    const color = config.boundsWireframeColor ?? { r: 1, g: 1, b: 1 };
+
+    // 8 corners of the bounding box
+    const corners = [
+      [-hx, cy - hy, -hz], // 0: back-bottom-left
+      [+hx, cy - hy, -hz], // 1: back-bottom-right
+      [+hx, cy + hy, -hz], // 2: back-top-right
+      [-hx, cy + hy, -hz], // 3: back-top-left
+      [-hx, cy - hy, +hz], // 4: front-bottom-left
+      [+hx, cy - hy, +hz], // 5: front-bottom-right
+      [+hx, cy + hy, +hz], // 6: front-top-right
+      [-hx, cy + hy, +hz], // 7: front-top-left
+    ];
+
+    // 12 edges of the box (pairs of corner indices)
+    const edges = [
+      // Bottom face edges
+      [0, 1], [1, 5], [5, 4], [4, 0],
+      // Top face edges
+      [3, 2], [2, 6], [6, 7], [7, 3],
+      // Vertical edges
+      [0, 3], [1, 2], [5, 6], [4, 7],
+    ];
+
+    let offset = 0;
+    const addVertex = (cornerIdx: number) => {
+      const c = corners[cornerIdx];
+      this.wireframeVertexData[offset++] = c[0];
+      this.wireframeVertexData[offset++] = c[1];
+      this.wireframeVertexData[offset++] = c[2];
+      this.wireframeVertexData[offset++] = color.r;
+      this.wireframeVertexData[offset++] = color.g;
+      this.wireframeVertexData[offset++] = color.b;
+      this.wireframeVertexData[offset++] = 1.0; // alpha
+    };
+
+    for (const [a, b] of edges) {
+      addVertex(a);
+      addVertex(b);
+    }
+
+    return edges.length * 2; // 24 vertices
   }
 
   /**
@@ -752,7 +905,7 @@ export class RaymarchRenderer {
     shadowPass.end();
 
     // -------------------------------------------------------------------------
-    // Pass 1: Raymarch into half-res offscreen texture
+    // Pass 1: Raymarch into half-res offscreen texture (with depth)
     // -------------------------------------------------------------------------
 
     const raymarchPass = encoder.beginRenderPass({
@@ -764,6 +917,12 @@ export class RaymarchRenderer {
           clearValue: { r: 0.03, g: 0.05, b: 0.08, a: 1 }, // Dark blue-gray background
         },
       ],
+      depthStencilAttachment: {
+        view: this.offscreenDepthTexture.createView(),
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
     });
 
     raymarchPass.setViewport(
@@ -778,6 +937,78 @@ export class RaymarchRenderer {
     raymarchPass.setBindGroup(0, this.bindGroup);
     raymarchPass.draw(3, 1, 0, 0); // Full-screen triangle (3 vertices)
     raymarchPass.end();
+
+    // -------------------------------------------------------------------------
+    // Pass 1.5: Wireframe at half-res (if enabled) - uses raymarch depth
+    // -------------------------------------------------------------------------
+
+    if (config.showBoundsWireframe) {
+      const wireframeVertexCount = this.buildBoundsWireframe(config);
+      this.device.queue.writeBuffer(
+        this.wireframeVertexBuffer,
+        0,
+        this.wireframeVertexData.buffer,
+        this.wireframeVertexData.byteOffset,
+        wireframeVertexCount * 7 * 4
+      );
+
+      // Build view-projection matrix for wireframe
+      // Use WebGPU's [0, 1] depth range (not OpenGL's [-1, 1])
+      const viewMatrix = camera.viewMatrix;
+      const projection = new Float32Array(16);
+      const tanHalfFov = Math.tan(fovY * 0.5);
+      const near = 0.1;
+      const far = 200.0;
+      projection[0] = 1 / (aspect * tanHalfFov);
+      projection[5] = 1 / tanHalfFov;
+      projection[10] = -far / (far - near);  // WebGPU [0,1] depth
+      projection[11] = -1;
+      projection[14] = -(far * near) / (far - near);  // WebGPU [0,1] depth
+
+      const viewProj = new Float32Array(16);
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+          let sum = 0;
+          for (let k = 0; k < 4; k++) {
+            sum += projection[i + k * 4] * viewMatrix[k + j * 4];
+          }
+          viewProj[i + j * 4] = sum;
+        }
+      }
+
+      // Write viewProj to wireframe uniform buffer
+      this.device.queue.writeBuffer(this.wireframeUniformBuffer, 0, viewProj);
+
+      // Render wireframe at half-res using raymarch depth texture
+      const wireframePass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: this.offscreenTextureView,
+            loadOp: 'load', // Keep the raymarch result
+            storeOp: 'store',
+          },
+        ],
+        depthStencilAttachment: {
+          view: this.offscreenDepthTexture.createView(),
+          depthLoadOp: 'load', // Keep raymarch depth
+          depthStoreOp: 'store',
+        },
+      });
+
+      wireframePass.setViewport(
+        0,
+        0,
+        this.offscreenWidth,
+        this.offscreenHeight,
+        0,
+        1
+      );
+      wireframePass.setPipeline(this.wireframePipeline);
+      wireframePass.setBindGroup(0, this.wireframeBindGroup);
+      wireframePass.setVertexBuffer(0, this.wireframeVertexBuffer, 0);
+      wireframePass.draw(wireframeVertexCount);
+      wireframePass.end();
+    }
 
     // -------------------------------------------------------------------------
     // Pass 2: Blit/upscale offscreen texture to full-res canvas

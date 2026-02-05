@@ -838,6 +838,12 @@ fn calculateDensityForRefraction(rayPos: vec3<f32>, rayDir: vec3<f32>, stepSize:
 // Main Fragment Shader
 // =============================================================================
 
+/// Output structure for the fragment shader with color and depth.
+struct FSOutput {
+  @location(0) color: vec4<f32>,
+  @builtin(frag_depth) depth: f32,
+}
+
 /// Per-pixel raymarching with iterative refraction.
 ///
 /// ## Algorithm Overview
@@ -857,7 +863,8 @@ fn calculateDensityForRefraction(rayPos: vec3<f32>, rayDir: vec3<f32>, stepSize:
 /// 4. After all bounces, add the final environment sample
 /// 5. Apply exposure and return the linear-space color
 @fragment
-fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
+fn fs_main(in: VSOut) -> FSOutput {
+  var output: FSOutput;
   // Convert UV [0,1]² to NDC [-1,1]²
   let ndc = in.uv * 2.0 - vec2<f32>(1.0);
 
@@ -876,6 +883,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   var totalTransmittance = vec3<f32>(1.0); // Starts fully transparent
   var totalLight = vec3<f32>(0.0);         // Accumulated radiance
   var hitFluid = false;
+  var firstHitDist = -1.0; // Distance to first fluid surface hit (for depth output)
 
   let iorAir = 1.0;
   let iorFluid = params.indexOfRefraction;
@@ -937,6 +945,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
      if (!surfaceInfo.foundSurface) {
         break; // No more surfaces — exit loop and sample environment
+     }
+
+     // Record first hit distance for depth output
+     if (!hitFluid) {
+       firstHitDist = length(surfaceInfo.pos - params.viewPos);
      }
      hitFluid = true;
 
@@ -1017,5 +1030,23 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
   // Apply exposure and output (linear space — blit pass handles sRGB conversion)
   let exposure = max(params.sceneExposure, 0.0);
-  return vec4<f32>(totalLight * exposure, 1.0);
+  output.color = vec4<f32>(totalLight * exposure, 1.0);
+
+  // Convert world-space hit distance to NDC depth [0, 1]
+  // WebGPU uses reversed-Z by convention, but we use standard depth:
+  // depth = far * (distance - near) / (distance * (far - near))
+  // This gives 0 at near plane, 1 at far plane
+  let near = 0.1;
+  let far = 200.0;
+  if (firstHitDist > 0.0) {
+    // Clamp distance to valid range
+    let d = clamp(firstHitDist, near, far);
+    // Standard perspective depth formula for [0, 1] range
+    output.depth = far * (d - near) / (d * (far - near));
+  } else {
+    // No hit - output far plane depth
+    output.depth = 1.0;
+  }
+
+  return output;
 }

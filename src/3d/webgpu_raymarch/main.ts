@@ -163,6 +163,8 @@ const config: RaymarchConfig = {
   floorSize: { x: 80, y: 0.05, z: 80 },
   obstacleColor: { r: 1.0, g: 0.0, b: 0.0 },
   obstacleAlpha: 0.8,
+  showBoundsWireframe: false,
+  boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
 };
 
 // Simulation instance (initialized asynchronously in main())

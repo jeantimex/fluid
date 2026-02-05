@@ -144,4 +144,14 @@ export interface RaymarchConfig extends SimConfig {
 
   /** Opacity for the obstacle box (0 = transparent, 1 = opaque). */
   obstacleAlpha: number;
+
+  // ---------------------------------------------------------------------------
+  // Wireframe
+  // ---------------------------------------------------------------------------
+
+  /** Whether to show the bounds wireframe. */
+  showBoundsWireframe: boolean;
+
+  /** Color of the bounds wireframe (linear RGB). */
+  boundsWireframeColor: { r: number; g: number; b: number };
 }
