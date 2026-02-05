@@ -32,4 +32,10 @@ export interface MarchingCubesConfig extends SimConfig, EnvironmentConfig {
 
   /** Scales shadow ray step size for softer shadows. */
   shadowSoftness: number;
+
+  /** Whether to show the bounds wireframe. */
+  showBoundsWireframe: boolean;
+
+  /** Color of the bounds wireframe (linear RGB). */
+  boundsWireframeColor: { r: number; g: number; b: number };
 }
