@@ -8,6 +8,7 @@
  */
 
 import './style.css';
+import GUI from 'lil-gui';
 import { OrbitCamera } from './orbit_camera';
 import { SceneRenderer, SceneConfig } from './renderer';
 
@@ -16,10 +17,10 @@ import { SceneRenderer, SceneConfig } from './renderer';
 const config: SceneConfig = {
   // Tile colors from Unity environmentSettings
   // Quadrant mapping: determined by hitPos.x and hitPos.z signs
-  tileCol1: { r: 0.5647059, g: 0.4683025, b: 0.25490198 },    // Yellow (swapped)
-  tileCol2: { r: 0.424268, g: 0.27100393, b: 0.6603774 },     // Pink/Purple
-  tileCol3: { r: 0.14057493, g: 0.3679245, b: 0.16709903 },   // Green
-  tileCol4: { r: 0.07164471, g: 0.19658183, b: 0.4339623 },   // Blue (swapped)
+  tileCol1: { r: 0.82, g: 0.77, b: 0.48 },  // Yellow #d1c57b
+  tileCol2: { r: 0.66, g: 0.56, b: 0.82 },  // Pink #a990d0
+  tileCol3: { r: 0.50, g: 0.76, b: 0.53 },  // Green #80c287
+  tileCol4: { r: 0.36, g: 0.58, b: 0.82 },  // Blue #5b94d2
 
   // Floor parameters
   floorY: -5.0, // Bottom of simulation box (scale Y = 10, centered at origin)
@@ -88,6 +89,60 @@ async function main() {
 
   // Create renderer
   const renderer = new SceneRenderer(device, context, canvas, format, config);
+
+  // GUI controls for adjusting colors
+  const gui = new GUI({ title: 'Scene Settings' });
+
+  // Global adjustments
+  const globalFolder = gui.addFolder('Global');
+  const globalSettings = { brightness: 1.0, saturation: 1.0 };
+  globalFolder.add(globalSettings, 'brightness', 0.1, 4.0, 0.1).name('Brightness');
+  globalFolder.add(globalSettings, 'saturation', 0.0, 2.0, 0.1).name('Saturation');
+
+  // Helper to convert RGB object to hex and back
+  const rgbToHex = (c: {r: number, g: number, b: number}) => {
+    const toHex = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
+    return '#' + toHex(c.r) + toHex(c.g) + toHex(c.b);
+  };
+
+  // Color controls for each tile (initialized from config)
+  const colorSettings = {
+    tile1: '#d1c57b',
+    tile2: '#a990d0',
+    tile3: '#80c287',
+    tile4: '#5b94d2',
+  };
+
+  const hexToRgb = (hex: string) => {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    return { r, g, b };
+  };
+
+  const colorsFolder = gui.addFolder('Tile Colors');
+  colorsFolder.addColor(colorSettings, 'tile1').name('Tile 1 (Yellow)').onChange((v: string) => {
+    config.tileCol1 = hexToRgb(v);
+  });
+  colorsFolder.addColor(colorSettings, 'tile2').name('Tile 2 (Pink)').onChange((v: string) => {
+    config.tileCol2 = hexToRgb(v);
+  });
+  colorsFolder.addColor(colorSettings, 'tile3').name('Tile 3 (Green)').onChange((v: string) => {
+    config.tileCol3 = hexToRgb(v);
+  });
+  colorsFolder.addColor(colorSettings, 'tile4').name('Tile 4 (Blue)').onChange((v: string) => {
+    config.tileCol4 = hexToRgb(v);
+  });
+
+  // Store global settings reference for renderer
+  (config as any).globalBrightness = globalSettings.brightness;
+  (config as any).globalSaturation = globalSettings.saturation;
+
+  // Update global settings on change
+  globalFolder.onChange(() => {
+    (config as any).globalBrightness = globalSettings.brightness;
+    (config as any).globalSaturation = globalSettings.saturation;
+  });
 
   // Initialize camera to match Unity camera
   // Unity camera position: {x: -17.063494, y: 7.0107126, z: 19.292461}

@@ -9,10 +9,14 @@ import { mat4Multiply, mat4Perspective, mat4Invert } from './math_utils';
 
 export interface SceneConfig {
   // Tile colors (from Unity scene)
-  tileCol1: { r: number; g: number; b: number }; // -X, +Z: Blue
-  tileCol2: { r: number; g: number; b: number }; // +X, +Z: Pink
-  tileCol3: { r: number; g: number; b: number }; // -X, -Z: Green
-  tileCol4: { r: number; g: number; b: number }; // +X, -Z: Yellow
+  tileCol1: { r: number; g: number; b: number };
+  tileCol2: { r: number; g: number; b: number };
+  tileCol3: { r: number; g: number; b: number };
+  tileCol4: { r: number; g: number; b: number };
+
+  // Global adjustments (set by GUI)
+  globalBrightness?: number;
+  globalSaturation?: number;
 
   // Floor parameters
   floorY: number;
@@ -196,6 +200,12 @@ export class SceneRenderer {
     uniformData[offset++] = this.config.tileColVariation.x;
     uniformData[offset++] = this.config.tileColVariation.y;
     uniformData[offset++] = this.config.tileColVariation.z;
+    uniformData[offset++] = 0;
+
+    // globalBrightness, globalSaturation + pad - 4 floats
+    uniformData[offset++] = this.config.globalBrightness ?? 1.0;
+    uniformData[offset++] = this.config.globalSaturation ?? 1.0;
+    uniformData[offset++] = 0;
     uniformData[offset++] = 0;
 
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);

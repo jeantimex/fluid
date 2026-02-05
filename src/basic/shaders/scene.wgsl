@@ -33,6 +33,11 @@ struct Uniforms {
     // Tile color variation (HSV)
     tileColVariation: vec3<f32>,
     _pad7: f32,
+    // Global adjustments
+    globalBrightness: f32,
+    globalSaturation: f32,
+    _pad8: f32,
+    _pad9: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -190,19 +195,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                 tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, uniforms.tileDarkFactor));
             }
 
-            // Apply color adjustments to match Unity's appearance
+            // Apply color adjustments (controlled by GUI)
             var finalColor = tileCol;
 
             // 1. Brightness boost
-            finalColor = finalColor * 1.0;
+            finalColor = finalColor * uniforms.globalBrightness;
 
             // 2. Saturation adjustment (< 1 = desaturate, > 1 = boost saturation)
-            let saturation = 1.0; // Original saturation
             let gray = dot(finalColor, vec3<f32>(0.299, 0.587, 0.114));
-            finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * saturation;
-
-            // 3. Add slight cyan tint (Unity has cooler undertones)
-            finalColor = finalColor * vec3<f32>(0.95, 1.02, 1.05);
+            finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * uniforms.globalSaturation;
 
             return vec4<f32>(finalColor, 1.0);
         }
