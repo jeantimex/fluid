@@ -137,7 +137,10 @@ const canvas = createCanvas(app);
 const config: RaymarchConfig = {
   ...createConfig(),
   viscosityStrength: 0.001,
-  iterationsPerFrame: 2,
+  iterationsPerFrame: 3,
+  nearPressureMultiplier: 2.25,
+  boundsSize: { x: 15, y: 10, z: 8 },
+  spawnRegions: [{ position: { x: -4, y: -1.42, z: 0 }, size: { x: 7, y: 7, z: 7 } }],
   densityTextureRes: 150,
   densityOffset: 200,
   densityMultiplier: 0.05,
@@ -146,18 +149,18 @@ const config: RaymarchConfig = {
   shadowSoftness: 1.0,
   maxSteps: 512,
   fluidColor: { r: 0.4, g: 0.7, b: 1.0 },
-  tileCol1: { r: 126 / 255, g: 183 / 255, b: 231 / 255 }, // Blue
-  tileCol2: { r: 210 / 255, g: 165 / 255, b: 240 / 255 }, // Purple
-  tileCol3: { r: 153 / 255, g: 229 / 255, b: 199 / 255 }, // Green
-  tileCol4: { r: 237 / 255, g: 225 / 255, b: 167 / 255 }, // Yellow
-  tileColVariation: { x: 0, y: 0, z: 0 },
+  tileCol1: { r: 0.20392157, g: 0.5176471, b: 0.7764706 },
+  tileCol2: { r: 0.6081319, g: 0.36850303, b: 0.8584906 },
+  tileCol3: { r: 0.3019758, g: 0.735849, b: 0.45801795 },
+  tileCol4: { r: 0.8018868, g: 0.6434483, b: 0.36690104 },
+  tileColVariation: { x: 0.33, y: 0, z: 0.47 },
   tileScale: 1,
   tileDarkOffset: -0.35,
   tileDarkFactor: 0.5,
   floorAmbient: 0.58,
   sceneExposure: 1.1,
   debugFloorMode: 0,
-  extinctionCoefficients: { x: 2.12, y: 0.43, z: 0.3 },
+  extinctionCoefficients: { x: 12, y: 4, z: 4 },
   indexOfRefraction: 1.33,
   numRefractions: 4,
   floorSize: { x: 80, y: 0.05, z: 80 },
