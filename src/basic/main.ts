@@ -36,10 +36,10 @@ const config: SceneConfig = {
   // From environment.wgsl defaults
   dirToSun: { x: -0.83, y: 0.42, z: -0.36 },
 
-  // Sky colors - neutral gray background matching Unity
-  skyColorHorizon: { r: 0.92, g: 0.92, b: 0.92 }, // Neutral white horizon
-  skyColorZenith: { r: 0.60, g: 0.70, b: 0.85 },  // Light blue zenith
-  skyColorGround: { r: 0.52, g: 0.50, b: 0.52 },  // Neutral gray ground
+  // Sky colors from Unity FluidRender.shader
+  skyColorHorizon: { r: 1.0, g: 1.0, b: 1.0 },           // Pure white
+  skyColorZenith: { r: 0.08, g: 0.37, b: 0.73 },         // Blue
+  skyColorGround: { r: 0.55, g: 0.50, b: 0.55 },           // Warm gray with slight purple tint
 
   // Lighting parameters
   sunPower: 500.0, // Exponent for sun highlight
@@ -137,6 +137,31 @@ async function main() {
   });
   colorsFolder.addColor(colorSettings, 'tile4').name('Tile 4 (Blue)').onChange((v: string) => {
     config.tileCol4 = hexToRgb(v);
+  });
+
+  // Sky color controls
+  const skySettings = {
+    horizon: rgbToHex(config.skyColorHorizon),
+    zenith: rgbToHex(config.skyColorZenith),
+    ground: rgbToHex(config.skyColorGround),
+  };
+
+  const hexToRgbDirect = (hex: string) => {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    return { r, g, b };
+  };
+
+  const skyFolder = gui.addFolder('Sky');
+  skyFolder.addColor(skySettings, 'horizon').name('Horizon').onChange((v: string) => {
+    config.skyColorHorizon = hexToRgbDirect(v);
+  });
+  skyFolder.addColor(skySettings, 'zenith').name('Zenith').onChange((v: string) => {
+    config.skyColorZenith = hexToRgbDirect(v);
+  });
+  skyFolder.addColor(skySettings, 'ground').name('Ground').onChange((v: string) => {
+    config.skyColorGround = hexToRgbDirect(v);
   });
 
   // Store global settings reference for renderer
