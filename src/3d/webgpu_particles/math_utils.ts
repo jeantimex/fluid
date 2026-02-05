@@ -495,3 +495,55 @@ export function rayBoxIntersection(
   // Ray intersects the box
   return true;
 }
+
+export interface RayBoxHit {
+  hit: boolean;
+  tmin: number;
+  tmax: number;
+}
+
+/**
+ * Computes the parametric entry/exit distances for a ray vs AABB.
+ *
+ * @returns { hit, tmin, tmax } where tmin/tmax are along the ray direction.
+ */
+export function rayBoxIntersectionT(
+  rayOrigin: Vec3,
+  rayDir: Vec3,
+  boxMin: Vec3,
+  boxMax: Vec3
+): RayBoxHit {
+  // X slab
+  let tmin = (boxMin.x - rayOrigin.x) / rayDir.x;
+  let tmax = (boxMax.x - rayOrigin.x) / rayDir.x;
+
+  if (tmin > tmax) [tmin, tmax] = [tmax, tmin];
+
+  // Y slab
+  let tymin = (boxMin.y - rayOrigin.y) / rayDir.y;
+  let tymax = (boxMax.y - rayOrigin.y) / rayDir.y;
+
+  if (tymin > tymax) [tymin, tymax] = [tymax, tymin];
+
+  if (tmin > tymax || tymin > tmax) {
+    return { hit: false, tmin: 0, tmax: 0 };
+  }
+
+  if (tymin > tmin) tmin = tymin;
+  if (tymax < tmax) tmax = tymax;
+
+  // Z slab
+  let tzmin = (boxMin.z - rayOrigin.z) / rayDir.z;
+  let tzmax = (boxMax.z - rayOrigin.z) / rayDir.z;
+
+  if (tzmin > tzmax) [tzmin, tzmax] = [tzmax, tzmin];
+
+  if (tmin > tzmax || tzmin > tmax) {
+    return { hit: false, tmin: 0, tmax: 0 };
+  }
+
+  if (tzmin > tmin) tmin = tzmin;
+  if (tzmax < tmax) tmax = tzmax;
+
+  return { hit: true, tmin, tmax };
+}

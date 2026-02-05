@@ -19,6 +19,7 @@
 
 import {
   rayBoxIntersection,
+  rayBoxIntersectionT,
   vec3Add,
   vec3Scale,
 } from './math_utils.ts';
@@ -185,6 +186,28 @@ export function setupInputHandlers(
     return vec3Add(O, vec3Scale(ray.dir, t));
   };
 
+  const getBoxIntersection = (ray: { origin: any; dir: any }) => {
+    const boxMin = {
+      x: -config.boundsSize.x / 2,
+      y: -config.boundsSize.y / 2,
+      z: -config.boundsSize.z / 2,
+    };
+    const boxMax = {
+      x: config.boundsSize.x / 2,
+      y: config.boundsSize.y / 2,
+      z: config.boundsSize.z / 2,
+    };
+
+    const hit = rayBoxIntersectionT(ray.origin, ray.dir, boxMin, boxMax);
+    if (!hit.hit) return null;
+
+    // Use the point along the ray closest to the box center, clamped to the hit segment.
+    const tCenter = -(ray.origin.x * ray.dir.x + ray.origin.y * ray.dir.y + ray.origin.z * ray.dir.z);
+    const t = Math.max(hit.tmin, Math.min(hit.tmax, tCenter));
+    if (t < 0) return null;
+    return vec3Add(ray.origin, vec3Scale(ray.dir, t));
+  };
+
   /**
    * Updates the interaction point in world coordinates based on current mouse position.
    * Called during particle interaction drag.
@@ -196,7 +219,7 @@ export function setupInputHandlers(
     if (!input) return;
 
     const ray = getRay(event.clientX, event.clientY);
-    const point = getPlaneIntersection(ray);
+    const point = getBoxIntersection(ray) ?? getPlaneIntersection(ray);
 
     if (point) {
       input.worldX = point.x;
@@ -220,21 +243,20 @@ export function setupInputHandlers(
     if (!input) return;
 
     const ray = getRay(e.clientX, e.clientY);
-
-    // Define the AABB (Axis-Aligned Bounding Box) for ray intersection test
-    const boxMin = {
-      x: -config.boundsSize.x / 2,
-      y: -config.boundsSize.y / 2,
-      z: -config.boundsSize.z / 2,
-    };
-    const boxMax = {
-      x: config.boundsSize.x / 2,
-      y: config.boundsSize.y / 2,
-      z: config.boundsSize.z / 2,
-    };
-
-    // Test if the ray intersects the simulation bounds
-    const hit = rayBoxIntersection(ray.origin, ray.dir, boxMin, boxMax);
+    const hit = rayBoxIntersection(
+      ray.origin,
+      ray.dir,
+      {
+        x: -config.boundsSize.x / 2,
+        y: -config.boundsSize.y / 2,
+        z: -config.boundsSize.z / 2,
+      },
+      {
+        x: config.boundsSize.x / 2,
+        y: config.boundsSize.y / 2,
+        z: config.boundsSize.z / 2,
+      }
+    );
 
     if (hit && e.shiftKey && e.button !== 1) {
       // Shift + Left/Right click inside the box → particle interaction
