@@ -261,6 +261,22 @@ export function setupGui(
 
   containerFolder.add(config.boundsSize, 'z', 1, 50, 0.1).name('Size Z');
 
+  // Wireframe toggle (only for ParticlesConfig which has this property)
+  if ('showBoundsWireframe' in config) {
+    const wireframeConfig = config as any;
+    containerFolder.add(wireframeConfig, 'showBoundsWireframe').name('Show Wireframe');
+
+    if (wireframeConfig.boundsWireframeColor) {
+      const wireframeColorState = { color: rgbToHex(wireframeConfig.boundsWireframeColor) };
+      containerFolder.addColor(wireframeColorState, 'color').name('Wireframe Color').onChange((value: string) => {
+        const rgb = hexToRgb(value);
+        wireframeConfig.boundsWireframeColor.r = rgb.r / 255;
+        wireframeConfig.boundsWireframeColor.g = rgb.g / 255;
+        wireframeConfig.boundsWireframeColor.b = rgb.b / 255;
+      });
+    }
+  }
+
   const obstacleFolder = gui.addFolder('Obstacle');
   obstacleFolder.close();
 

@@ -22,6 +22,8 @@ export class ParticlesAdapter implements FluidAppAdapter<ParticlesConfig> {
     lightStepSize: 0.1,
     shadowSoftness: 1.0,
     extinctionCoefficients: { x: 2.12, y: 0.43, z: 0.3 },
+    showBoundsWireframe: false,
+    boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
     colorKeys: [
       { t: 4064 / 65535, r: 0.13363299, g: 0.34235913, b: 0.7264151 },
       { t: 33191 / 65535, r: 0.2980392, g: 1, b: 0.56327766 },

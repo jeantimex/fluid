@@ -62,6 +62,7 @@ import particleShader from './shaders/particle3d.wgsl?raw';
 import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
 import shadowShader from './shaders/shadow.wgsl?raw';
 import backgroundShader from './shaders/background.wgsl?raw';
+import wireframeShader from './shaders/wireframe.wgsl?raw';
 import environmentShader from '../common/shaders/environment.wgsl?raw';
 import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import type { ParticlesConfig } from './types.ts';
@@ -111,6 +112,9 @@ export class Renderer {
   /** Pipeline for obstacle shadow map rendering. */
   private shadowObstaclePipeline: GPURenderPipeline;
 
+  /** Pipeline for rendering bounds wireframe. */
+  private wireframePipeline: GPURenderPipeline;
+
   // ===========================================================================
   // GPU Buffers
   // ===========================================================================
@@ -139,6 +143,7 @@ export class Renderer {
   private backgroundBindGroup!: GPUBindGroup;
   private shadowParticleBindGroup!: GPUBindGroup;
   private shadowObstacleBindGroup!: GPUBindGroup;
+  private wireframeBindGroup: GPUBindGroup;
 
   // ===========================================================================
   // Line Rendering Resources
@@ -146,6 +151,14 @@ export class Renderer {
 
   private lineVertexBuffer: GPUBuffer;
   private lineVertexData: Float32Array;
+
+  // ===========================================================================
+  // Wireframe Rendering Resources
+  // ===========================================================================
+
+  private wireframeVertexBuffer: GPUBuffer;
+  private wireframeVertexData: Float32Array;
+  private wireframeUniformBuffer: GPUBuffer;
 
   // ===========================================================================
   // Depth Buffer
@@ -387,6 +400,53 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
+    // Create Wireframe Render Pipeline
+    // -------------------------------------------------------------------------
+
+    const wireframeModule = device.createShaderModule({ code: wireframeShader });
+
+    this.wireframePipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: wireframeModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: 28, // 3 floats pos + 4 floats color = 7 floats = 28 bytes
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x3' }, // position
+              { shaderLocation: 1, offset: 12, format: 'float32x4' }, // color
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: wireframeModule,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'line-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
+    });
+
+    // Wireframe uniform buffer (just viewProjection matrix = 64 bytes)
+    this.wireframeUniformBuffer = device.createBuffer({
+      size: 64,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Wireframe vertex buffer: 12 edges × 2 vertices × 7 floats = 168 floats
+    this.wireframeVertexData = new Float32Array(168);
+    this.wireframeVertexBuffer = device.createBuffer({
+      size: this.wireframeVertexData.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+
+    // -------------------------------------------------------------------------
     // Create Vertex Buffer (faces)
     // -------------------------------------------------------------------------
 
@@ -430,6 +490,13 @@ export class Renderer {
     this.shadowObstacleBindGroup = device.createBindGroup({
       layout: this.shadowObstaclePipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.shadowUniformBuffer } }],
+    });
+
+    this.wireframeBindGroup = device.createBindGroup({
+      layout: this.wireframePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.wireframeUniformBuffer } },
+      ],
     });
 
     this.densitySampler = this.device.createSampler({
@@ -629,6 +696,66 @@ export class Renderer {
   }
 
   // ===========================================================================
+  // Bounds Wireframe Geometry Builder
+  // ===========================================================================
+
+  /**
+   * Builds wireframe geometry for the simulation bounds.
+   * Creates 12 edges (lines) representing the bounding box.
+   */
+  private buildBoundsWireframe(config: ParticlesConfig): number {
+    const hx = config.boundsSize.x * 0.5;
+    const hy = config.boundsSize.y * 0.5;
+    const hz = config.boundsSize.z * 0.5;
+
+    // Bounds center is at origin, bottom at -hy (adjusted for floor)
+    const cy = hy - 5.0; // Offset to match the density bounds minY = -5.0
+
+    const color = config.boundsWireframeColor ?? { r: 1, g: 1, b: 1 };
+
+    // 8 corners of the bounding box
+    const corners = [
+      [-hx, cy - hy, -hz], // 0: back-bottom-left
+      [+hx, cy - hy, -hz], // 1: back-bottom-right
+      [+hx, cy + hy, -hz], // 2: back-top-right
+      [-hx, cy + hy, -hz], // 3: back-top-left
+      [-hx, cy - hy, +hz], // 4: front-bottom-left
+      [+hx, cy - hy, +hz], // 5: front-bottom-right
+      [+hx, cy + hy, +hz], // 6: front-top-right
+      [-hx, cy + hy, +hz], // 7: front-top-left
+    ];
+
+    // 12 edges of the box (pairs of corner indices)
+    const edges = [
+      // Bottom face edges
+      [0, 1], [1, 5], [5, 4], [4, 0],
+      // Top face edges
+      [3, 2], [2, 6], [6, 7], [7, 3],
+      // Vertical edges
+      [0, 3], [1, 2], [5, 6], [4, 7],
+    ];
+
+    let offset = 0;
+    const addVertex = (cornerIdx: number) => {
+      const c = corners[cornerIdx];
+      this.wireframeVertexData[offset++] = c[0];
+      this.wireframeVertexData[offset++] = c[1];
+      this.wireframeVertexData[offset++] = c[2];
+      this.wireframeVertexData[offset++] = color.r;
+      this.wireframeVertexData[offset++] = color.g;
+      this.wireframeVertexData[offset++] = color.b;
+      this.wireframeVertexData[offset++] = 1.0; // alpha
+    };
+
+    for (const [a, b] of edges) {
+      addVertex(a);
+      addVertex(b);
+    }
+
+    return edges.length * 2; // 24 vertices
+  }
+
+  // ===========================================================================
   // Main Render Function
   // ===========================================================================
 
@@ -804,6 +931,30 @@ export class Renderer {
     }
 
     // -------------------------------------------------------------------------
+    // Build & Upload Bounds Wireframe Geometry
+    // -------------------------------------------------------------------------
+
+    let wireframeVertexCount = 0;
+    if (config.showBoundsWireframe) {
+      wireframeVertexCount = this.buildBoundsWireframe(config);
+      this.device.queue.writeBuffer(
+        this.wireframeVertexBuffer,
+        0,
+        this.wireframeVertexData.buffer,
+        this.wireframeVertexData.byteOffset,
+        wireframeVertexCount * 7 * 4
+      );
+      // Update wireframe uniform buffer with viewProjection
+      this.device.queue.writeBuffer(
+        this.wireframeUniformBuffer,
+        0,
+        viewProj.buffer,
+        viewProj.byteOffset,
+        viewProj.byteLength
+      );
+    }
+
+    // -------------------------------------------------------------------------
     // Shadow Pass
     // -------------------------------------------------------------------------
 
@@ -878,7 +1029,16 @@ export class Renderer {
       pass.draw(faceCount);
     }
 
+    // -------------------------------------------------------------------------
+    // Draw Bounds Wireframe
+    // -------------------------------------------------------------------------
 
+    if (config.showBoundsWireframe && wireframeVertexCount > 0) {
+      pass.setPipeline(this.wireframePipeline);
+      pass.setBindGroup(0, this.wireframeBindGroup);
+      pass.setVertexBuffer(0, this.wireframeVertexBuffer, 0);
+      pass.draw(wireframeVertexCount);
+    }
 
     pass.end();
   }
