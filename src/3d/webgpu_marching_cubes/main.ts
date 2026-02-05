@@ -99,13 +99,12 @@ const canvas = createCanvas(app);
 const config: MarchingCubesConfig = {
   ...createConfig(),
   ...createDefaultEnvironmentConfig(),
-  // Override spawn regions to ensure safe margin from bounds
-  spawnRegions: [
-    { position: { x: -8.0, y: -1.0, z: 3.5 }, size: { x: 6, y: 7, z: 6 } },
-    { position: { x: -8.0, y: -1.0, z: -3.5 }, size: { x: 6, y: 7, z: 6 } },
-  ],
+  timeScale: 1.0,
+  boundsSize: { x: 16, y: 12, z: 8 },
+  spawnRegions: [{ position: { x: 3.92, y: -1.94, z: 0 }, size: { x: 7, y: 7, z: 7 } }],
   viscosityStrength: 0.001,
   iterationsPerFrame: 3,
+  nearPressureMultiplier: 2.25,
   densityTextureRes: 150,
   isoLevel: 75,
   surfaceColor: { r: 15 / 255, g: 91 / 255, b: 234 / 255 },
@@ -136,6 +135,18 @@ const { stats, gui } = setupGui(
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
+
+// Add Unity-style time scale toggle (normal/slow)
+const performanceFolder = gui.folders.find((folder) => (folder as any)._title === 'Performance');
+if (performanceFolder) {
+  const timeMode = { mode: 'Normal' };
+  performanceFolder
+    .add(timeMode, 'mode', { Normal: 'Normal', Slow: 'Slow' })
+    .name('Time Mode')
+    .onChange((value: string) => {
+      config.timeScale = value === 'Slow' ? 0.2 : 1.0;
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Marching Cubes GUI Controls
