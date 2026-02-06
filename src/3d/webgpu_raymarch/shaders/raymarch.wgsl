@@ -100,6 +100,11 @@ struct RaymarchParams {
   obstacleAlpha: f32,                // 103
   obstacleColor: vec3<f32>,          // 104-106
   shadowType: f32,                   // 107
+  showShadows: f32,                  // 108
+  pad18: f32,                        // 109
+  pad19: f32,                        // 110
+  pad20: f32,                        // 111
+  pad21: vec4<f32>,                  // 112-115 -> Total 116 floats = 464 bytes
 };
 
 
@@ -700,11 +705,20 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
       // Volumetric shadow modulation
       let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-      let shadowMap = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 1.0);
+      let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 1.0);
+
+      // Obstacle shadow
+      var shadowScene = 1.0;
+      if (params.showShadows > 0.5) {
+        let obsShadowHit = obstacleHitInfo(hitPos + params.dirToSun * 0.01, params.dirToSun);
+        if (obsShadowHit.hit) {
+          shadowScene = 0.2;
+        }
+      }
 
       // lighting = Combine shadows with ambient to ensure tiles are never pitch black
       let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-      let lighting = select(1.0, shadowMap.x * (1.0 - ambient) + ambient, params.shadowType > 0.5);
+      let lighting = select(1.0, shadowVol.x * shadowScene * (1.0 - ambient) + ambient, params.shadowType > 0.5);
 
       // Color adjustments
       var finalColor = tileCol * lighting * params.globalBrightness;
@@ -995,8 +1009,15 @@ fn fs_main(in: VSOut) -> FSOutput {
 
      if (traceRefractedRay) {
         // --- Follow refraction, add reflection contribution now ---
-        let reflectLight = sampleEnvironment(surfaceInfo.pos, response.reflectDir);
+        var reflectLight = sampleEnvironment(surfaceInfo.pos, response.reflectDir);
         let reflectTrans = transmittance(densityReflect);
+        
+        // Add obstacle shadow to reflected light if follow air ray
+        if (!travellingThroughFluid && params.showShadows > 0.5) {
+           let obsShadow = obstacleHitInfo(surfaceInfo.pos + params.dirToSun * 0.01, params.dirToSun);
+           if (obsShadow.hit) { reflectLight = reflectLight * 0.2; }
+        }
+
         totalLight = totalLight + reflectLight * totalTransmittance * reflectTrans * response.reflectWeight;
 
         // Continue ray along refracted direction
@@ -1005,8 +1026,15 @@ fn fs_main(in: VSOut) -> FSOutput {
         totalTransmittance = totalTransmittance * response.refractWeight;
      } else {
         // --- Follow reflection, add refraction contribution now ---
-        let refractLight = sampleEnvironment(surfaceInfo.pos, response.refractDir);
+        var refractLight = sampleEnvironment(surfaceInfo.pos, response.refractDir);
         let refractTrans = transmittance(densityRefract);
+
+        // Add obstacle shadow to refracted light if follow air ray
+        if (!travellingThroughFluid && params.showShadows > 0.5) {
+           let obsShadow = obstacleHitInfo(surfaceInfo.pos + params.dirToSun * 0.01, params.dirToSun);
+           if (obsShadow.hit) { refractLight = refractLight * 0.2; }
+        }
+
         totalLight = totalLight + refractLight * totalTransmittance * refractTrans * response.refractWeight;
 
         // Continue ray along reflected direction
@@ -1023,7 +1051,14 @@ fn fs_main(in: VSOut) -> FSOutput {
   // After all refraction bounces, sample the environment for the remaining ray
   // and apply the remaining transmittance through any fluid still in the path.
   let densityRemainder = calculateDensityForShadow(rayPos, rayDir, 1000.0);
-  let finalBg = sampleEnvironment(rayPos, rayDir);
+  var finalBg = sampleEnvironment(rayPos, rayDir);
+  
+  // Final shadow check for air-path rays
+  if (!travellingThroughFluid && params.showShadows > 0.5) {
+     let finalShadow = obstacleHitInfo(rayPos + params.dirToSun * 0.01, params.dirToSun);
+     if (finalShadow.hit) { finalBg = finalBg * 0.2; }
+  }
+
   totalLight = totalLight + finalBg * totalTransmittance * transmittance(densityRemainder);
 
   // Apply exposure and output (linear space — blit pass handles sRGB conversion)

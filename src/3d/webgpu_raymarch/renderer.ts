@@ -238,7 +238,7 @@ export class RaymarchRenderer {
     // Uniform Buffer
     // -------------------------------------------------------------------------
 
-    this.uniformData = new Float32Array(108); // Increased size
+    this.uniformData = new Float32Array(116); // 116 * 4 = 464 bytes
 
     this.uniformBuffer = this.device.createBuffer({
       size: this.uniformData.byteLength,
@@ -633,6 +633,8 @@ export class RaymarchRenderer {
     // 0: None, 1: Volumetric
     const shadowTypeIndex = config.shadowType === 'Volumetric' ? 1 : 0;
     this.uniformData[107] = shadowTypeIndex;
+
+    this.uniformData[108] = config.showShadows ? 1.0 : 0.0;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);
