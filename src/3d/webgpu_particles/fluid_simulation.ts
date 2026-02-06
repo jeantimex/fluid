@@ -632,8 +632,9 @@ export class FluidSimulation {
     this.integrateData[9] = minY + size.y;
     this.integrateData[10] = hz;
 
+    // obstacleCentre.y is the bottom, compute actual center
     this.integrateData[12] = this.config.obstacleCentre.x;
-    this.integrateData[13] = this.config.obstacleCentre.y;
+    this.integrateData[13] = this.config.obstacleCentre.y + this.config.obstacleSize.y * 0.5;
     this.integrateData[14] = this.config.obstacleCentre.z;
     this.integrateData[16] = this.config.obstacleSize.x * 0.5;
     this.integrateData[17] = this.config.obstacleSize.y * 0.5;

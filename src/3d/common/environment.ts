@@ -140,8 +140,9 @@ export function writeEnvironmentUniforms(
   buffer[i++] = 0;
 
   // 44-47: obstacleCenter, pad
+  // obstacleCentre.y is the bottom of the obstacle, compute actual center
   buffer[i++] = sim.obstacleCentre.x;
-  buffer[i++] = sim.obstacleCentre.y;
+  buffer[i++] = sim.obstacleCentre.y + sim.obstacleSize.y * 0.5;
   buffer[i++] = sim.obstacleCentre.z;
   buffer[i++] = 0;
 

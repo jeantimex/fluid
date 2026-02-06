@@ -596,8 +596,9 @@ export class Renderer {
       return { faceCount: 0 };
     }
 
+    // obstacleCentre.y is the bottom, compute actual center
     const cx = config.obstacleCentre.x;
-    const cy = config.obstacleCentre.y;
+    const cy = config.obstacleCentre.y + config.obstacleSize.y * 0.5;
     const cz = config.obstacleCentre.z;
 
     const color = config.obstacleColor ?? { r: 1, g: 0, b: 0 };

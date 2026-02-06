@@ -610,9 +610,9 @@ export class RaymarchRenderer {
     this.uniformData[90] = config.floorCenter.z;
     this.uniformData[91] = 0; // pad15
 
-    // --- Obstacle box ---
+    // --- Obstacle box (obstacleCentre.y is the bottom, compute actual center) ---
     this.uniformData[92] = config.obstacleCentre.x;
-    this.uniformData[93] = config.obstacleCentre.y;
+    this.uniformData[93] = config.obstacleCentre.y + config.obstacleSize.y * 0.5;
     this.uniformData[94] = config.obstacleCentre.z;
     this.uniformData[95] = 0; // pad16
 
