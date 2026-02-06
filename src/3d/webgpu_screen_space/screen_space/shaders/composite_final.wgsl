@@ -7,15 +7,12 @@ struct FullscreenOut {
 
 struct RenderUniforms {
   inverseViewProjection: mat4x4<f32>,
-  lightViewProjection: mat4x4<f32>,
   foamColor: vec3<f32>,
   foamOpacity: f32,
   extinctionCoeff: vec3<f32>,
   extinctionMultiplier: f32,
   refractionStrength: f32,
-  shadowSoftness: f32,
-  shadowTexelSize: vec2<f32>,
-  pad0: f32,
+  pad0: vec3<f32>,
 };
 
 @vertex
@@ -39,27 +36,10 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> FullscreenOut {
 @group(0) @binding(0) var thicknessTex: texture_2d<f32>;
 @group(0) @binding(1) var normalTex: texture_2d<f32>;
 @group(0) @binding(2) var depthTex: texture_2d<f32>;
-@group(0) @binding(3) var shadowTex: texture_depth_2d;
-@group(0) @binding(4) var foamTex: texture_2d<f32>;
-@group(0) @binding(5) var samp: sampler;
-@group(0) @binding(6) var shadowSampler: sampler_comparison;
-@group(0) @binding(7) var<uniform> renderUniforms: RenderUniforms;
-@group(0) @binding(8) var<uniform> envUniforms: EnvironmentUniforms;
-
-fn sampleShadow(uv: vec2<f32>, depth: f32) -> f32 {
-  let softness = renderUniforms.shadowSoftness;
-  if (softness <= 0.001) {
-    return textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
-  }
-  let texel = renderUniforms.shadowTexelSize * softness;
-  var sum = 0.0;
-  sum = sum + textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
-  sum = sum + textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
-  sum = sum + textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
-  sum = sum + textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
-  sum = sum + textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
-  return sum / 5.0;
-}
+@group(0) @binding(3) var foamTex: texture_2d<f32>;
+@group(0) @binding(4) var samp: sampler;
+@group(0) @binding(5) var<uniform> renderUniforms: RenderUniforms;
+@group(0) @binding(6) var<uniform> envUniforms: EnvironmentUniforms;
 
 @fragment
 fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
@@ -86,52 +66,23 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   // For infinite sky/floor, origin matters. worldNear is correct.
   var bg = getEnvironmentColor(worldNear.xyz, rayDir, envUniforms);
 
-  // Floor shadow from floor hit position.
+  // Floor hit from environment to support debug visualization.
   let floorMin = envUniforms.floorCenter - 0.5 * envUniforms.floorSize;
   let floorMax = envUniforms.floorCenter + 0.5 * envUniforms.floorSize;
   let boxHit = envRayBoxIntersection(worldNear.xyz, rayDir, floorMin, floorMax);
   let floorHit = boxHit.y >= max(boxHit.x, 0.0);
-  let t = select(boxHit.x, 0.0, boxHit.x < 0.0);
-  let hitPos = worldNear.xyz + rayDir * t;
-
-  let floorLightPos = renderUniforms.lightViewProjection * vec4<f32>(hitPos, 1.0);
-  let floorLightNdc = floorLightPos.xyz / floorLightPos.w;
-  let floorShadowUV = vec2<f32>(floorLightNdc.x * 0.5 + 0.5, 0.5 - floorLightNdc.y * 0.5);
-  let floorInBounds = step(0.0, floorShadowUV.x) * step(0.0, floorShadowUV.y) * step(floorShadowUV.x, 1.0) * step(floorShadowUV.y, 1.0);
-  let floorShadowRaw = sampleShadow(floorShadowUV, floorLightNdc.z - 0.0005);
-  let floorShadow = mix(1.0, floorShadowRaw, floorInBounds);
-  
-  let floorAmbient = envUniforms.floorAmbient;
-  let floorSunTerm = max(0.0, envUniforms.dirToSun.y) * envUniforms.sunBrightness;
-  
-  // Re-modulate background if it was floor
-  if (floorHit) {
-    // Recover tileCol and apply additive shadowed sun
-    let totalLightBase = floorAmbient + floorSunTerm;
-    let tileCol = bg / max(totalLightBase, 0.001);
-    bg = tileCol * (floorAmbient + floorSunTerm * floorShadow);
-  }
   let finalBg = bg;
 
-  // Fluid shadow from depth-reconstructed world position.
-  let lightPos = renderUniforms.lightViewProjection * world;
-  let lightNdc = lightPos.xyz / lightPos.w;
-  let shadowUV = vec2<f32>(lightNdc.x * 0.5 + 0.5, 0.5 - lightNdc.y * 0.5);
-  let shadowDepth = lightNdc.z;
-  let inBounds = step(0.0, shadowUV.x) * step(0.0, shadowUV.y) * step(shadowUV.x, 1.0) * step(shadowUV.y, 1.0);
-  let shadowRaw = sampleShadow(shadowUV, shadowDepth - 0.0005);
-  let shadow = mix(1.0, shadowRaw, inBounds);
-
   let lightDir = normalize(envUniforms.dirToSun);
-  let ndotl = max(dot(normal, lightDir), 0.0) * shadow * envUniforms.sunBrightness;
+  let ndotl = max(dot(normal, lightDir), 0.0) * envUniforms.sunBrightness;
 
   let viewDir = normalize(worldNear.xyz - world.xyz); // From surface to camera
   let halfDir = normalize(lightDir + viewDir);
-  let spec = pow(max(dot(normal, halfDir), 0.0), 64.0) * shadow * envUniforms.sunBrightness;
+  let spec = pow(max(dot(normal, halfDir), 0.0), 64.0) * envUniforms.sunBrightness;
   let fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
 
   let base = vec3<f32>(0.02, 0.15, 0.45);
-  let diffuse = base * (0.35 * floorAmbient + 0.65 * ndotl);
+  let diffuse = base * (0.35 * envUniforms.floorAmbient + 0.65 * ndotl);
   let specular = vec3<f32>(0.9, 0.95, 1.0) * spec * (0.2 + 0.8 * fresnel);
 
   let alpha = clamp(thickness * 4.0, 0.0, 1.0);
@@ -160,18 +111,9 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
     // Obstacle lighting
     let ambient = envUniforms.floorAmbient;
     let sun = max(0.0, dot(obsHit.yzw, envUniforms.dirToSun)) * envUniforms.sunBrightness;
-    
-    // Apply shadow to obstacle
-    let obsPos = worldNear.xyz + rayDir * obsT;
-    let obsLightPos = renderUniforms.lightViewProjection * vec4<f32>(obsPos, 1.0);
-    let obsLightNdc = obsLightPos.xyz / obsLightPos.w;
-    let obsShadowUV = vec2<f32>(obsLightNdc.x * 0.5 + 0.5, 0.5 - obsLightNdc.y * 0.5);
-    let obsInBounds = step(0.0, obsShadowUV.x) * step(0.0, obsShadowUV.y) * step(obsShadowUV.x, 1.0) * step(obsShadowUV.y, 1.0);
-    let obsShadowRaw = sampleShadow(obsShadowUV, obsLightNdc.z - 0.0005);
-    let obsShadow = mix(1.0, obsShadowRaw, obsInBounds);
-    
-    let litShadowed = envUniforms.obstacleColor * (ambient + sun * obsShadow);
-    
+
+    let litShadowed = envUniforms.obstacleColor * (ambient + sun);
+
     color = mix(color, litShadowed, a);
   }
 
@@ -179,7 +121,7 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let debugMask = step(2.5, envUniforms.debugFloorMode) *
     select(0.0, 1.0, floorHit) *
     select(1.0, 0.0, hasFluid);
-  let debugColor = vec4<f32>(vec3<f32>(floorShadow), 1.0);
+  let debugColor = vec4<f32>(vec3<f32>(1.0), 1.0);
   let shadedColor = vec4<f32>(color * exposure, 1.0);
   return mix(shadedColor, debugColor, debugMask);
 }

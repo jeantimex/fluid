@@ -2,7 +2,7 @@
  * Screen-space fluid renderer.
  *
  * Multi-pass rendering pipeline: depth, thickness, normal, smoothing,
- * shadow, foam, and composite.
+ * foam, and composite.
  */
 
 import type { ScreenSpaceConfig } from '../types.ts';
@@ -14,9 +14,7 @@ import type {
 import { SimulationBuffersLinear } from '../simulation_buffers_linear.ts';
 import {
   mat4Invert,
-  mat4LookAt,
   mat4Multiply,
-  mat4Ortho,
   mat4Perspective,
 } from '../../webgpu_particles/math_utils.ts';
 import { DepthPass } from './passes/depth_pass.ts';
@@ -24,7 +22,6 @@ import { FoamPass } from './passes/foam_pass.ts';
 import { ThicknessPass } from './passes/thickness_pass.ts';
 import { NormalPass } from './passes/normal_pass.ts';
 import { SmoothPass } from './passes/smooth_pass.ts';
-import { ShadowPass } from './passes/shadow_pass.ts';
 import { CompositePass } from './passes/composite_pass.ts';
 
 export class ScreenSpaceRenderer {
@@ -40,7 +37,6 @@ export class ScreenSpaceRenderer {
   private normalTexture: GPUTexture | null = null;
   private smoothTextureA: GPUTexture | null = null;
   private smoothTextureB: GPUTexture | null = null;
-  private shadowTexture: GPUTexture | null = null;
   private foamTexture: GPUTexture | null = null;
 
   private buffers: SimBuffers | null = null;
@@ -49,7 +45,6 @@ export class ScreenSpaceRenderer {
   private thicknessPass: ThicknessPass;
   private normalPass: NormalPass;
   private smoothPass: SmoothPass;
-  private shadowPass: ShadowPass;
   private foamPass: FoamPass;
   private compositePass: CompositePass;
 
@@ -67,7 +62,6 @@ export class ScreenSpaceRenderer {
     this.thicknessPass = new ThicknessPass(device);
     this.normalPass = new NormalPass(device);
     this.smoothPass = new SmoothPass(device);
-    this.shadowPass = new ShadowPass(device);
     this.foamPass = new FoamPass(device);
     this.compositePass = new CompositePass(device, format);
   }
@@ -82,14 +76,12 @@ export class ScreenSpaceRenderer {
       normalTexture: this.normalTexture,
       smoothTextureA: this.smoothTextureA,
       smoothTextureB: this.smoothTextureB,
-      shadowTexture: this.shadowTexture,
       foamTexture: this.foamTexture,
     };
 
     this.depthPass.createBindGroup(resources);
     this.thicknessPass.createBindGroup(resources);
     this.normalPass.createBindGroup(resources);
-    this.shadowPass.createBindGroup(resources);
 
     if (buffers instanceof SimulationBuffersLinear) {
       this.foamPass.createBindGroup(
@@ -142,13 +134,6 @@ export class ScreenSpaceRenderer {
       usage: colorUsage,
     });
 
-    this.shadowTexture = this.device.createTexture({
-      size: { width: this.width, height: this.height },
-      format: 'depth24plus',
-      usage:
-        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-
     this.foamTexture = this.device.createTexture({
       size: { width: this.width, height: this.height },
       format: 'r16float',
@@ -160,7 +145,6 @@ export class ScreenSpaceRenderer {
     this.thicknessPass.resize(this.width, this.height);
     this.normalPass.resize(this.width, this.height);
     this.smoothPass.resize(this.width, this.height);
-    this.shadowPass.resize(this.width, this.height);
     this.compositePass.resize(this.width, this.height);
   }
 
@@ -181,45 +165,13 @@ export class ScreenSpaceRenderer {
     const invViewProj = mat4Invert(viewProj);
     const dpr = window.devicePixelRatio || 1;
 
-    const bounds = this.config.boundsSize;
-    const floor = this.config.floorSize;
-    const sunDir = this.config.dirToSun;
-    const lightDistance = Math.max(bounds.x + bounds.z, floor.x + floor.z);
-    
-    // Use a safe square frustum that covers the rotation of the floor/bounds
-    const orthoSize = lightDistance * 0.6;
-
-    const lightPos = {
-      x: sunDir.x * lightDistance,
-      y: sunDir.y * lightDistance,
-      z: sunDir.z * lightDistance,
-    };
-    const lightView = mat4LookAt(
-      lightPos,
-      { x: 0, y: 0, z: 0 },
-      { x: 0, y: 1, z: 0 }
-    );
-    const lightProj = mat4Ortho(
-      -orthoSize,
-      orthoSize,
-      -orthoSize,
-      orthoSize,
-      0.1,
-      -lightDistance * 3.0
-    );
-    const lightViewProj = mat4Multiply(lightProj, lightView);
-    const lightScale = { x: 1 / orthoSize, y: 1 / orthoSize };
-
     const frame: ScreenSpaceFrame = {
       ...this.config, // Spread first to provide base EnvironmentConfig
       viewProjection: viewProj,
       inverseViewProjection: invViewProj,
-      lightViewProjection: lightViewProj,
-      lightScale,
       canvasWidth: this.canvas.width,
       canvasHeight: this.canvas.height,
       particleRadius: this.config.particleRadius * dpr, // Override with DPR-scaled value
-      shadowRadius: this.config.smoothingRadius * this.config.shadowRadiusScale,
       foamParticleRadius: this.config.foamParticleRadius * dpr,
       near,
       far,
@@ -243,13 +195,11 @@ export class ScreenSpaceRenderer {
       normalTexture: this.normalTexture,
       smoothTextureA: this.smoothTextureA,
       smoothTextureB: this.smoothTextureB,
-      shadowTexture: this.shadowTexture,
       foamTexture: this.foamTexture,
     };
 
     this.depthPass.encode(encoder, resources, frame);
     this.thicknessPass.encode(encoder, resources, frame);
-    this.shadowPass.encode(encoder, resources, frame);
     if (resources.foamTexture) {
       this.foamPass.encode(encoder, resources, frame, resources.foamTexture);
     }

@@ -26,7 +26,6 @@ export class CompositePass {
   private compositeBindGroup: GPUBindGroup | null = null;
   private wireframeBindGroup: GPUBindGroup;
   private sampler: GPUSampler;
-  private shadowSampler: GPUSampler;
   private uniformBuffer: GPUBuffer;
   private envUniformBuffer: GPUBuffer;
   private wireframeUniformBuffer: GPUBuffer;
@@ -41,12 +40,9 @@ export class CompositePass {
       magFilter: 'linear',
       minFilter: 'linear',
     });
-    this.shadowSampler = device.createSampler({
-      compare: 'less',
-    });
-    // Render uniforms: matrices (32) + foam/extinction (12) + padding = 48 floats = 192 bytes
+    // Render uniforms: inverse view-projection (16) + foam/extinction (8) + refraction (1) + padding = 28 floats = 112 bytes (rounded to 128 bytes)
     this.uniformBuffer = device.createBuffer({
-      size: 192,
+      size: 128,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -87,26 +83,16 @@ export class CompositePass {
         {
           binding: 3,
           visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'depth' },
-        },
-        {
-          binding: 4,
-          visibility: GPUShaderStage.FRAGMENT,
           texture: { sampleType: 'float' },
         },
-        { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
         {
-          binding: 6,
-          visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: 'comparison' },
-        },
-        {
-          binding: 7,
+          binding: 5,
           visibility: GPUShaderStage.FRAGMENT,
           buffer: { type: 'uniform' },
         },
         {
-          binding: 8,
+          binding: 6,
           visibility: GPUShaderStage.FRAGMENT,
           buffer: { type: 'uniform' },
         },
@@ -305,7 +291,6 @@ export class CompositePass {
       !resources.smoothTextureB ||
       !resources.normalTexture ||
       !resources.smoothTextureA ||
-      !resources.shadowTexture ||
       !resources.foamTexture
     ) {
       this.compositeBindGroup = null;
@@ -318,12 +303,10 @@ export class CompositePass {
         { binding: 0, resource: resources.smoothTextureB.createView() },
         { binding: 1, resource: resources.normalTexture.createView() },
         { binding: 2, resource: resources.smoothTextureA.createView() },
-        { binding: 3, resource: resources.shadowTexture.createView() },
-        { binding: 4, resource: resources.foamTexture.createView() },
-        { binding: 5, resource: this.sampler },
-        { binding: 6, resource: this.shadowSampler },
-        { binding: 7, resource: { buffer: this.uniformBuffer } },
-        { binding: 8, resource: { buffer: this.envUniformBuffer } },
+        { binding: 3, resource: resources.foamTexture.createView() },
+        { binding: 4, resource: this.sampler },
+        { binding: 5, resource: { buffer: this.uniformBuffer } },
+        { binding: 6, resource: { buffer: this.envUniformBuffer } },
       ],
     });
   }
@@ -342,22 +325,18 @@ export class CompositePass {
       if (!this.compositeBindGroup) {
         return;
       }
-      // Render uniforms (matrices + foam/extinction)
-      const uniforms = new Float32Array(48);
+      // Render uniforms (inverse view-projection + foam/extinction)
+      const uniforms = new Float32Array(28);
       uniforms.set(frame.inverseViewProjection, 0);
-      uniforms.set(frame.lightViewProjection, 16);
-      uniforms[32] = frame.foamColor.r;
-      uniforms[33] = frame.foamColor.g;
-      uniforms[34] = frame.foamColor.b;
-      uniforms[35] = frame.foamOpacity;
-      uniforms[36] = frame.extinctionCoeff.x;
-      uniforms[37] = frame.extinctionCoeff.y;
-      uniforms[38] = frame.extinctionCoeff.z;
-      uniforms[39] = frame.extinctionMultiplier;
-      uniforms[40] = frame.refractionStrength;
-      uniforms[41] = frame.shadowSoftness;
-      uniforms[42] = 1 / frame.canvasWidth;
-      uniforms[43] = 1 / frame.canvasHeight;
+      uniforms[16] = frame.foamColor.r;
+      uniforms[17] = frame.foamColor.g;
+      uniforms[18] = frame.foamColor.b;
+      uniforms[19] = frame.foamOpacity;
+      uniforms[20] = frame.extinctionCoeff.x;
+      uniforms[21] = frame.extinctionCoeff.y;
+      uniforms[22] = frame.extinctionCoeff.z;
+      uniforms[23] = frame.extinctionMultiplier;
+      uniforms[24] = frame.refractionStrength;
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
       // Environment uniforms

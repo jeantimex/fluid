@@ -123,8 +123,6 @@ const config: ScreenSpaceConfig = {
   extinctionCoeff: { x: 2.12, y: 0.43, z: 0.3 },
   extinctionMultiplier: 2.24,
   refractionStrength: 9.15,
-  shadowSoftness: 1.0,
-  shadowRadiusScale: 1.0,
 
   // Wireframe
   showBoundsWireframe: false,
