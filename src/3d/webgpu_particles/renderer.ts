@@ -973,7 +973,9 @@ export class Renderer {
 
     shadowPass.setPipeline(this.shadowParticlePipeline);
     shadowPass.setBindGroup(0, this.shadowParticleBindGroup);
-    shadowPass.draw(6, buffers.particleCount, 0, 0);
+    if (config.showParticleShadows) {
+      shadowPass.draw(6, buffers.particleCount, 0, 0);
+    }
 
     if (faceCount > 0) {
       shadowPass.setPipeline(this.shadowObstaclePipeline);

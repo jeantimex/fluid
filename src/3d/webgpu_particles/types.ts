@@ -13,4 +13,5 @@ export interface ParticlesConfig extends SimConfig, EnvironmentConfig {
   extinctionCoefficients: { x: number; y: number; z: number };
   showBoundsWireframe: boolean;
   boundsWireframeColor: { r: number; g: number; b: number };
+  showParticleShadows: boolean;
 }
