@@ -125,6 +125,7 @@ const config: ScreenSpaceConfig = {
   extinctionCoeff: { x: 2.12, y: 0.43, z: 0.3 },
   extinctionMultiplier: 2.24,
   refractionStrength: 9.15,
+  showFluidShadow: true,
 
   // Wireframe
   showBoundsWireframe: false,
@@ -221,6 +222,7 @@ renderingFolder
 renderingFolder
   .add(config, 'refractionStrength', 0, 20, 0.01)
   .name('Refraction Strength');
+renderingFolder.add(config, 'showFluidShadow').name('Show Fluid Shadow');
 
 renderingFolder.addColor(config, 'waterColor').name('Water Color');
 renderingFolder.addColor(config, 'deepWaterColor').name('Deep Water Color');

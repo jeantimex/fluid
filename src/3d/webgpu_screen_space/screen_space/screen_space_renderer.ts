@@ -230,17 +230,19 @@ export class ScreenSpaceRenderer {
     }
 
     // Shadow pass: render thickness from light's perspective, then smooth
-    const shadowVP = this.shadowPass.encode(encoder, resources, frame);
-    frame.shadowViewProjection = shadowVP;
-    if (resources.shadowTexture && resources.shadowSmoothTexture) {
-      this.smoothPass.encode(
-        encoder,
-        resources,
-        frame,
-        resources.shadowTexture,
-        resources.shadowSmoothTexture,
-        resources.shadowTexture // bilateral depth ref = shadow itself
-      );
+    if (this.config.showFluidShadow) {
+      const shadowVP = this.shadowPass.encode(encoder, resources, frame);
+      frame.shadowViewProjection = shadowVP;
+      if (resources.shadowTexture && resources.shadowSmoothTexture) {
+        this.smoothPass.encode(
+          encoder,
+          resources,
+          frame,
+          resources.shadowTexture,
+          resources.shadowSmoothTexture,
+          resources.shadowTexture // bilateral depth ref = shadow itself
+        );
+      }
     }
 
     if (
