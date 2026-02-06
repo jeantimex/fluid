@@ -64,6 +64,17 @@ struct DensityShadowUniforms {
 
 @group(0) @binding(4) var<uniform> densityShadow: DensityShadowUniforms;
 
+struct ShadowUniforms {
+  lightViewProjection: mat4x4<f32>,
+  shadowSoftness: f32,
+  particleShadowRadius: f32,
+  pad0: vec2<f32>,
+};
+
+@group(0) @binding(5) var shadowTex: texture_depth_2d;
+@group(0) @binding(6) var shadowSampler: sampler_comparison;
+@group(0) @binding(7) var<uniform> shadowUniforms: ShadowUniforms;
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   // Compute ray direction for this pixel
@@ -135,6 +146,34 @@ fn transmittance(opticalDepth: f32) -> vec3<f32> {
   return exp(-opticalDepth * densityShadow.extinctionCoefficients);
 }
 
+fn sampleShadowMap(worldPos: vec3<f32>) -> f32 {
+  let lightPos = shadowUniforms.lightViewProjection * vec4<f32>(worldPos, 1.0);
+  let ndc = lightPos.xyz / lightPos.w;
+  let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z < 0.0 || ndc.z > 1.0) {
+    return 1.0;
+  }
+
+  // Fixed bias for floor
+  let depth = ndc.z - 0.0005;
+  let softness = shadowUniforms.shadowSoftness;
+
+  if (softness <= 0.001) {
+    return textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
+  }
+
+  let texel = vec2<f32>(1.0 / 2048.0) * softness;
+  var sum = 0.0;
+  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
+  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
+  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
+  
+  return sum * 0.2;
+}
+
 fn getEnvironmentColorShadowed(origin: vec3<f32>, dir: vec3<f32>, params: EnvironmentUniforms) -> vec3<f32> {
   // 1. Check Floor
   let floorMin = params.floorCenter - 0.5 * params.floorSize;
@@ -151,11 +190,18 @@ fn getEnvironmentColorShadowed(origin: vec3<f32>, dir: vec3<f32>, params: Enviro
 
     let tileCol = getTileColor(hitPos, params);
 
+    // Volume-based shadow (transmittance)
     let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-    let shadowMap = transmittance(shadowDepth * 2.0);
+    let volumeShadow = transmittance(shadowDepth * 2.0);
     
-    // Modulate by shadow map only, no additional ambient/sun factor for floor
-    var finalColor = tileCol * shadowMap * params.globalBrightness;
+    // 2D Shadow Map (particles + obstacle)
+    let shadow2D = sampleShadowMap(hitPos);
+    
+    let ambient = clamp(params.floorAmbient, 0.0, 1.0);
+    let sun = max(0.0, params.dirToSun.y) * params.sunBrightness;
+    
+    // Combine both shadows: Ambient + Sun * Shadow2D * VolumeShadow
+    var finalColor = tileCol * (ambient + sun * shadow2D * volumeShadow) * params.globalBrightness;
 
     let gray = dot(finalColor, vec3<f32>(0.299, 0.587, 0.114));
     finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * params.globalSaturation;
@@ -171,10 +217,15 @@ fn getEnvironmentColorShadowed(origin: vec3<f32>, dir: vec3<f32>, params: Enviro
   let obsNormal = obs.yzw;
 
   if (obsT >= 0.0 && (!hasFloorHit || obsT < floorT)) {
+    let worldPos = origin + dir * obsT;
     let a = clamp(params.obstacleAlpha, 0.0, 1.0);
     let ambient = params.floorAmbient;
     let sun = max(0.0, dot(obsNormal, params.dirToSun)) * params.sunBrightness;
-    let lit = params.obstacleColor * (ambient + sun);
+    
+    // Obstacle also receives shadows
+    let shadow = sampleShadowMap(worldPos);
+    let lit = params.obstacleColor * (ambient + sun * shadow);
+    
     return mix(bgCol, lit, a);
   }
 

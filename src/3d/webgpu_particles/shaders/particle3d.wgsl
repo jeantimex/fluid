@@ -141,7 +141,8 @@ struct Uniforms {
 struct ShadowUniforms {
   lightViewProjection: mat4x4<f32>,
   shadowSoftness: f32,
-  pad0: vec3<f32>,
+  particleShadowRadius: f32,
+  pad0: vec2<f32>,
 };
 
 @group(0) @binding(7) var<uniform> shadowUniforms: ShadowUniforms;

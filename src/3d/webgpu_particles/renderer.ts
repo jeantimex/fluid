@@ -574,6 +574,9 @@ export class Renderer {
         { binding: 2, resource: densityTextureView },
         { binding: 3, resource: this.densitySampler },
         { binding: 4, resource: { buffer: this.densityUniformBuffer } },
+        { binding: 5, resource: this.shadowTexture.createView() },
+        { binding: 6, resource: this.shadowSampler },
+        { binding: 7, resource: { buffer: this.shadowUniformBuffer } },
       ],
     });
   }
