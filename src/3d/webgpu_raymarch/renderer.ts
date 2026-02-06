@@ -79,11 +79,9 @@
 
 import raymarchShader from './shaders/raymarch.wgsl?raw';
 import blitShader from './shaders/blit.wgsl?raw';
-import shadowShader from '../webgpu_particles/shaders/shadow.wgsl?raw';
 import wireframeShader from './shaders/wireframe.wgsl?raw';
 import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
 import type { RaymarchConfig } from './types.ts';
-import { mat4LookAt, mat4Multiply, mat4Ortho } from '../webgpu_particles/math_utils.ts';
 
 /**
  * Two-pass volume renderer: raymarch at half resolution, then blit to canvas.
@@ -116,39 +114,6 @@ export class RaymarchRenderer {
   /** CPU-side typed array mirroring the uniform buffer contents (96 floats). */
   private uniformData = new Float32Array(96);
 
-  // ---------------------------------------------------------------------------
-  // Shadow Map Rendering (Particles + Obstacle)
-  // ---------------------------------------------------------------------------
-
-  /** Uniform buffer for shadow map settings. */
-  private shadowUniformBuffer: GPUBuffer;
-
-  /** Bind group for particle shadow rendering. */
-  private shadowParticleBindGroup!: GPUBindGroup;
-
-  /** Bind group for obstacle shadow rendering. */
-  private shadowObstacleBindGroup!: GPUBindGroup;
-
-  /** Pipeline for particle shadow map rendering. */
-  private shadowParticlePipeline: GPURenderPipeline;
-
-  /** Pipeline for obstacle shadow map rendering. */
-  private shadowObstaclePipeline: GPURenderPipeline;
-
-  /** Depth texture for shadow map. */
-  private shadowTexture!: GPUTexture;
-
-  /** Shadow map resolution (square). */
-  private shadowMapSize = 2048;
-
-  /** Comparison sampler for shadow map sampling. */
-  private shadowSampler: GPUSampler;
-
-  /** Obstacle face vertex buffer for shadow rendering. */
-  private lineVertexBuffer: GPUBuffer;
-
-  /** CPU-side obstacle face vertex data. */
-  private lineVertexData: Float32Array;
 
   // ---------------------------------------------------------------------------
   // Blit / Half-Resolution Rendering
@@ -280,12 +245,6 @@ export class RaymarchRenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // Shadow uniforms: lightViewProjection (64) + softness + radius + padding = 80 bytes (round to 96)
-    this.shadowUniformBuffer = device.createBuffer({
-      size: 96,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
     // -------------------------------------------------------------------------
     // Density Volume Sampler (trilinear, clamp-to-edge on all axes)
     // -------------------------------------------------------------------------
@@ -294,62 +253,6 @@ export class RaymarchRenderer {
       addressModeU: 'clamp-to-edge',
       addressModeV: 'clamp-to-edge',
       addressModeW: 'clamp-to-edge',
-      magFilter: 'linear',
-      minFilter: 'linear',
-    });
-
-    // -------------------------------------------------------------------------
-    // Shadow Map Pipelines
-    // -------------------------------------------------------------------------
-
-    const shadowModule = device.createShaderModule({ code: shadowShader });
-
-    this.shadowParticlePipeline = device.createRenderPipeline({
-      layout: 'auto',
-      vertex: { module: shadowModule, entryPoint: 'vs_particles' },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
-      depthStencil: {
-        format: 'depth24plus',
-        depthWriteEnabled: true,
-        depthCompare: 'less',
-      },
-    });
-
-    this.shadowObstaclePipeline = device.createRenderPipeline({
-      layout: 'auto',
-      vertex: {
-        module: shadowModule,
-        entryPoint: 'vs_obstacle',
-        buffers: [
-          {
-            arrayStride: 40,
-            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
-          },
-        ],
-      },
-      primitive: { topology: 'triangle-list', cullMode: 'back' },
-      depthStencil: {
-        format: 'depth24plus',
-        depthWriteEnabled: true,
-        depthCompare: 'less',
-      },
-    });
-
-    // Allocate for face vertices (36 × 10 floats)
-    this.lineVertexData = new Float32Array(360);
-    this.lineVertexBuffer = device.createBuffer({
-      size: this.lineVertexData.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
-
-    this.shadowTexture = this.device.createTexture({
-      size: [this.shadowMapSize, this.shadowMapSize],
-      format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-
-    this.shadowSampler = this.device.createSampler({
-      compare: 'less',
       magFilter: 'linear',
       minFilter: 'linear',
     });
@@ -416,33 +319,14 @@ export class RaymarchRenderer {
    *
    * @param densityTextureView - 3D texture view from the {@link SplatPipeline}
    */
-  createBindGroup(
-    densityTextureView: GPUTextureView,
-    positionsBuffer: GPUBuffer
-  ): void {
+  createBindGroup(densityTextureView: GPUTextureView): void {
     this.bindGroup = this.device.createBindGroup({
       layout: this.pipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: densityTextureView },
         { binding: 1, resource: this.sampler },
         { binding: 2, resource: { buffer: this.uniformBuffer } },
-        { binding: 3, resource: this.shadowTexture.createView() },
-        { binding: 4, resource: this.shadowSampler },
-        { binding: 5, resource: { buffer: this.shadowUniformBuffer } },
       ],
-    });
-
-    this.shadowParticleBindGroup = this.device.createBindGroup({
-      layout: this.shadowParticlePipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.shadowUniformBuffer } },
-        { binding: 1, resource: { buffer: positionsBuffer } },
-      ],
-    });
-
-    this.shadowObstacleBindGroup = this.device.createBindGroup({
-      layout: this.shadowObstaclePipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: this.shadowUniformBuffer } }],
     });
   }
 
@@ -501,123 +385,6 @@ export class RaymarchRenderer {
         { binding: 1, resource: this.blitSampler },
       ],
     });
-  }
-
-  // ===========================================================================
-  // Obstacle Geometry Builder (for shadow map)
-  // ===========================================================================
-
-  private buildObstacleGeometry(config: RaymarchConfig): {
-    faceCount: number;
-  } {
-    const hx = config.obstacleSize.x * 0.5;
-    const hy = config.obstacleSize.y * 0.5;
-    const hz = config.obstacleSize.z * 0.5;
-
-    if (hx <= 0 || hy <= 0 || hz <= 0) {
-      return { faceCount: 0 };
-    }
-
-    const cx = config.obstacleCentre.x;
-    const cy = config.obstacleCentre.y;
-    const cz = config.obstacleCentre.z;
-
-    const color = config.obstacleColor ?? { r: 1, g: 0, b: 0 };
-    const alpha = config.obstacleAlpha ?? 0.8;
-
-    const degToRad = Math.PI / 180;
-    const rx = config.obstacleRotation.x * degToRad;
-    const ry = config.obstacleRotation.y * degToRad;
-    const rz = config.obstacleRotation.z * degToRad;
-    const cosX = Math.cos(rx), sinX = Math.sin(rx);
-    const cosY = Math.cos(ry), sinY = Math.sin(ry);
-    const cosZ = Math.cos(rz), sinZ = Math.sin(rz);
-
-    const rotate = (
-      lx: number,
-      ly: number,
-      lz: number
-    ): [number, number, number] => {
-      const y1 = ly * cosX - lz * sinX;
-      const z1 = ly * sinX + lz * cosX;
-      const x2 = lx * cosY + z1 * sinY;
-      const z2 = -lx * sinY + z1 * cosY;
-      const x3 = x2 * cosZ - y1 * sinZ;
-      const y3 = x2 * sinZ + y1 * cosZ;
-      return [x3 + cx, y3 + cy, z2 + cz];
-    };
-
-    const c = [
-      rotate(-hx, -hy, -hz),
-      rotate(+hx, -hy, -hz),
-      rotate(+hx, +hy, -hz),
-      rotate(-hx, +hy, -hz),
-      rotate(-hx, -hy, +hz),
-      rotate(+hx, -hy, +hz),
-      rotate(+hx, +hy, +hz),
-      rotate(-hx, +hy, +hz),
-    ];
-
-    const rotateDir = (
-      lx: number,
-      ly: number,
-      lz: number
-    ): [number, number, number] => {
-      const y1 = ly * cosX - lz * sinX;
-      const z1 = ly * sinX + lz * cosX;
-      const x2 = lx * cosY + z1 * sinY;
-      const z2 = -lx * sinY + z1 * cosY;
-      const x3 = x2 * cosZ - y1 * sinZ;
-      const y3 = x2 * sinZ + y1 * cosZ;
-      return [x3, y3, z2];
-    };
-
-    const faceNormals: [number, number, number][] = [
-      rotateDir(0, 0, -1),
-      rotateDir(0, 0, +1),
-      rotateDir(-1, 0, 0),
-      rotateDir(+1, 0, 0),
-      rotateDir(0, -1, 0),
-      rotateDir(0, +1, 0),
-    ];
-
-    let offset = 0;
-
-    const faceVert = (
-      p: [number, number, number],
-      n: [number, number, number]
-    ) => {
-      this.lineVertexData[offset++] = p[0];
-      this.lineVertexData[offset++] = p[1];
-      this.lineVertexData[offset++] = p[2];
-      this.lineVertexData[offset++] = n[0];
-      this.lineVertexData[offset++] = n[1];
-      this.lineVertexData[offset++] = n[2];
-      this.lineVertexData[offset++] = color.r;
-      this.lineVertexData[offset++] = color.g;
-      this.lineVertexData[offset++] = color.b;
-      this.lineVertexData[offset++] = alpha;
-    };
-
-    const faces = [
-      [0, 2, 1, 0, 3, 2],
-      [4, 5, 6, 4, 6, 7],
-      [0, 4, 7, 0, 7, 3],
-      [1, 2, 6, 1, 6, 5],
-      [0, 1, 5, 0, 5, 4],
-      [3, 7, 6, 3, 6, 2],
-    ];
-
-    for (let fi = 0; fi < faces.length; fi++) {
-      const n = faceNormals[fi];
-      for (const idx of faces[fi]) {
-        faceVert(c[idx], n);
-      }
-    }
-
-    const faceCount = 36;
-
-    return { faceCount };
   }
 
   // ===========================================================================
@@ -696,8 +463,7 @@ export class RaymarchRenderer {
     encoder: GPUCommandEncoder,
     targetView: GPUTextureView,
     camera: OrbitCamera,
-    config: RaymarchConfig,
-    particleCount: number
+    config: RaymarchConfig
   ): void {
     this.ensureOffscreenTexture(
       this.canvas.width,
@@ -863,92 +629,13 @@ export class RaymarchRenderer {
     this.uniformData[104] = config.obstacleColor.r;
     this.uniformData[105] = config.obstacleColor.g;
     this.uniformData[106] = config.obstacleColor.b;
-    
-    // 0: None, 1: Particle, 2: Volumetric, 3: Both
-    let shadowTypeIndex = 0;
-    if (config.shadowType === 'Particle') shadowTypeIndex = 1;
-    else if (config.shadowType === 'Volumetric') shadowTypeIndex = 2;
-    else if (config.shadowType === 'Both') shadowTypeIndex = 3;
+
+    // 0: None, 1: Volumetric
+    const shadowTypeIndex = config.shadowType === 'Volumetric' ? 1 : 0;
     this.uniformData[107] = shadowTypeIndex;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);
-
-    // -------------------------------------------------------------------------
-    // Shadow Pass (particles + obstacle)
-    // -------------------------------------------------------------------------
-
-    const bounds = config.boundsSize;
-    const floor = config.floorSize;
-
-    const lightDistance = Math.max(bounds.x + bounds.z, floor.x + floor.z);
-    const orthoSize = lightDistance * 0.6;
-
-    const lightPos = {
-      x: sunDir.x * lightDistance,
-      y: sunDir.y * lightDistance,
-      z: sunDir.z * lightDistance,
-    };
-
-    const lightView = mat4LookAt(
-      lightPos,
-      { x: 0, y: 0, z: 0 },
-      { x: 0, y: 1, z: 0 }
-    );
-
-    const lightProj = mat4Ortho(
-      -orthoSize,
-      orthoSize,
-      -orthoSize,
-      orthoSize,
-      0.1,
-      -lightDistance * 3.0
-    );
-
-    const lightViewProj = mat4Multiply(lightProj, lightView);
-
-    const shadowParticleRadius = Math.max(0.001, config.smoothingRadius);
-    const shadowParticleRadiusNdc = shadowParticleRadius / orthoSize;
-
-    const shadowUniforms = new Float32Array(20);
-    shadowUniforms.set(lightViewProj);
-    shadowUniforms[16] = config.shadowSoftness ?? 1.0;
-    shadowUniforms[17] = shadowParticleRadiusNdc;
-    this.device.queue.writeBuffer(this.shadowUniformBuffer, 0, shadowUniforms);
-
-    const { faceCount } = this.buildObstacleGeometry(config);
-    if (faceCount > 0) {
-      this.device.queue.writeBuffer(
-        this.lineVertexBuffer,
-        0,
-        this.lineVertexData.buffer,
-        this.lineVertexData.byteOffset,
-        faceCount * 10 * 4
-      );
-    }
-
-    const shadowPass = encoder.beginRenderPass({
-      colorAttachments: [],
-      depthStencilAttachment: {
-        view: this.shadowTexture.createView(),
-        depthClearValue: 1.0,
-        depthLoadOp: 'clear',
-        depthStoreOp: 'store',
-      },
-    });
-
-    shadowPass.setPipeline(this.shadowParticlePipeline);
-    shadowPass.setBindGroup(0, this.shadowParticleBindGroup);
-    shadowPass.draw(6, particleCount, 0, 0);
-
-    if (faceCount > 0) {
-      shadowPass.setPipeline(this.shadowObstaclePipeline);
-      shadowPass.setBindGroup(0, this.shadowObstacleBindGroup);
-      shadowPass.setVertexBuffer(0, this.lineVertexBuffer, 0);
-      shadowPass.draw(faceCount);
-    }
-
-    shadowPass.end();
 
     // -------------------------------------------------------------------------
     // Pass 1: Raymarch into half-res offscreen texture (with depth)

@@ -63,9 +63,6 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
    */
   renderScale: number;
 
-  /** Softness of the particle shadow map sampling (0 = hard). */
-  shadowSoftness: number;
-
   /** Maximum number of ray steps before the march terminates. */
   maxSteps: number;
 
@@ -97,9 +94,8 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
 
   
 
-    /** Shadow calculation mode. */
-
-    shadowType: 'None' | 'Particle' | 'Volumetric' | 'Both';
+    /** Shadow calculation mode (volumetric only). */
+    shadowType: 'None' | 'Volumetric';
 
   
 

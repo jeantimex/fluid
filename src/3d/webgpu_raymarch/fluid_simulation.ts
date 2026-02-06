@@ -308,10 +308,7 @@ export class FluidSimulation {
     this.pipelines.createBindGroups(this.buffers);
 
     this.splatPipeline.recreate(this.config, this.buffers.predicted);
-    this.renderer.createBindGroup(
-      this.splatPipeline.textureView,
-      this.buffers.positions
-    );
+    this.renderer.createBindGroup(this.splatPipeline.textureView);
   }
 
   /**
@@ -860,8 +857,7 @@ export class FluidSimulation {
       encoder,
       this.context.getCurrentTexture().createView(),
       camera,
-      this.config,
-      this.buffers.particleCount
+      this.config
     );
 
     this.device.queue.submit([encoder.finish()]);

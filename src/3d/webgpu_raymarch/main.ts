@@ -149,12 +149,11 @@ const config: RaymarchConfig = {
   stepSize: 0.02,
   lightStepSize: 0.1,
   renderScale: 0.5,
-  shadowSoftness: 1.0,
   maxSteps: 512,
   indexOfRefraction: 1.33,
   numRefractions: 4,
   extinctionCoefficients: { x: 12, y: 4, z: 4 },
-  shadowType: 'Both',
+  shadowType: 'Volumetric',
   showShadows: true,
   showBoundsWireframe: false,
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
@@ -204,7 +203,7 @@ raymarchFolder.add(config, 'renderScale', 0.1, 1.0, 0.05).name('Render Scale');
 raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
 raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
 raymarchFolder
-  .add(config, 'shadowType', ['None', 'Particle', 'Volumetric', 'Both'])
+  .add(config, 'shadowType', ['None', 'Volumetric'])
   .name('Shadow Type');
 
 const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');

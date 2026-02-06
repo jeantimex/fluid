@@ -102,13 +102,6 @@ struct RaymarchParams {
   shadowType: f32,                   // 107
 };
 
-/// Shadow map uniforms (light-space projection + sampling params).
-struct ShadowUniforms {
-  lightViewProjection: mat4x4<f32>,
-  shadowSoftness: f32,
-  particleShadowRadius: f32,
-  pad0: vec2<f32>,
-};
 
 // =============================================================================
 // Bindings
@@ -122,15 +115,6 @@ struct ShadowUniforms {
 
 /// Uniform parameter buffer.
 @group(0) @binding(2) var<uniform> params: RaymarchParams;
-
-/// Particle shadow map (depth).
-@group(0) @binding(3) var shadowTex: texture_depth_2d;
-
-/// Comparison sampler for shadow map.
-@group(0) @binding(4) var shadowSampler: sampler_comparison;
-
-/// Shadow map uniforms.
-@group(0) @binding(5) var<uniform> shadowUniforms: ShadowUniforms;
 
 // =============================================================================
 // Vertex Stage
@@ -632,36 +616,6 @@ fn transmittance(opticalDepth: f32) -> vec3<f32> {
   return exp(-opticalDepth * params.extinctionCoefficients);
 }
 
-/// Samples the particle shadow map at a world position.
-fn sampleShadow(worldPos: vec3<f32>, ndotl: f32) -> f32 {
-  // shadowType: 0: None, 1: Particle, 2: Volumetric, 3: Both
-  if (params.shadowType < 0.5 || params.shadowType == 2.0) { return 1.0; }
-  let lightPos = shadowUniforms.lightViewProjection * vec4<f32>(worldPos, 1.0);
-  let ndc = lightPos.xyz / lightPos.w;
-  let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
-
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z < 0.0 || ndc.z > 1.0) {
-    return 1.0;
-  }
-
-  let bias = max(0.0005 * (1.0 - ndotl), 0.0001);
-  let depth = ndc.z - bias;
-  let softness = shadowUniforms.shadowSoftness;
-
-  if (softness <= 0.001) {
-    return textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
-  }
-
-  let texel = vec2<f32>(1.0 / 2048.0) * softness;
-  var sum = 0.0;
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
-  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
-
-  return sum * 0.2;
-}
 
 // =============================================================================
 // Environment Sampling (Sky + Floor)
@@ -744,15 +698,13 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     if (params.debugFloorMode < 0.5) {
       let tileCol = getTileColor(hitPos, params);
 
-      // Shadow Map modulation
+      // Volumetric shadow modulation
       let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-      let shadowMap = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 2.0);
-      let ndotl = max(dot(vec3<f32>(0.0, 1.0, 0.0), params.dirToSun), 0.0);
-      let shadowScene = sampleShadow(hitPos, ndotl);
-      
+      let shadowMap = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 1.0);
+
       // lighting = Combine shadows with ambient to ensure tiles are never pitch black
       let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-      let lighting = select(1.0, shadowMap.x * shadowScene * (1.0 - ambient) + ambient, params.shadowType > 0.5);
+      let lighting = select(1.0, shadowMap.x * (1.0 - ambient) + ambient, params.shadowType > 0.5);
 
       // Color adjustments
       var finalColor = tileCol * lighting * params.globalBrightness;
@@ -784,14 +736,11 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
     // Volumetric shadow
     let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-    let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 2.0);
-    
-    // Particle shadow
-    let shadowPart = sampleShadow(hitPos, sun);
-    
-    // Combine shadows based on shadowType
-    let shadowFinal = select(1.0, shadowVol.x * shadowPart, params.shadowType > 0.5);
-    
+    let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 1.0);
+
+    // Apply shadow based on shadowType
+    let shadowFinal = select(1.0, shadowVol.x, params.shadowType > 0.5);
+
     let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadowFinal);
     return mix(bgCol, lit, a);
   }
@@ -967,11 +916,10 @@ fn fs_main(in: VSOut) -> FSOutput {
           let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
           let obsPos = rayPos + rayDir * obstacleT;
 
-          // Combined shadow (Volumetric + Particle)
+          // Volumetric shadow
           let shadowDepth = calculateDensityForShadow(obsPos, params.dirToSun, 100.0);
-          let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 2.0);
-          let shadowPart = sampleShadow(obsPos, sun);
-          let shadowFinal = select(1.0, shadowVol.x * shadowPart, params.shadowType > 0.5);
+          let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 1.0);
+          let shadowFinal = select(1.0, shadowVol.x, params.shadowType > 0.5);
 
           let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadowFinal);
           totalLight = totalLight + lit * totalTransmittance * a;
@@ -988,13 +936,12 @@ fn fs_main(in: VSOut) -> FSOutput {
           let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
           let obsPos = rayPos + rayDir * obstacleT;
 
-          // Combined shadow (Volumetric + Particle)
-          let shadowDepth = calculateDensityForShadow(obsPos, params.dirToSun, 100.0);
-          let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 2.0);
-          let shadowPart = sampleShadow(obsPos, sun);
-          let shadowFinal = select(1.0, shadowVol.x * shadowPart, params.shadowType > 0.5);
+          // Volumetric shadow
+          let shadowDepth2 = calculateDensityForShadow(obsPos, params.dirToSun, 100.0);
+          let shadowVol2 = select(vec3<f32>(1.0), transmittance(shadowDepth2 * 2.0), params.shadowType >= 1.0);
+          let shadowFinal2 = select(1.0, shadowVol2.x, params.shadowType > 0.5);
 
-          let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadowFinal);
+          let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadowFinal2);
           totalLight = totalLight + lit * totalTransmittance * a;
           totalTransmittance = totalTransmittance * (1.0 - a);
           let exitT = max(obstacleHit.tExit, obstacleT);
