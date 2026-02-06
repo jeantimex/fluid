@@ -24,35 +24,39 @@ export interface EnvironmentConfig {
   tileCol4: RGB; // +X, -Z
   tileColVariation: Vec3; // HSV variation
   debugFloorMode: number; // 0=normal, 1=red, 2=flat
+  globalBrightness: number;
+  globalSaturation: number;
 }
 
 export function createDefaultEnvironmentConfig(): EnvironmentConfig {
   return {
-    // Lighting (from Raymarch demo defaults)
-    dirToSun: { x: -0.83, y: 0.42, z: -0.36 }, // Approximate normalized vector
+    // Lighting (from basic demo defaults)
+    dirToSun: { x: -0.83, y: 0.42, z: -0.36 },
     floorAmbient: 0.58,
     sceneExposure: 1.1,
     sunBrightness: 1.0,
 
-    // Sky (Matches raymarch.wgsl hardcoded values)
+    // Sky
     skyColorHorizon: { r: 1.0, g: 1.0, b: 1.0 },
     skyColorZenith: { r: 0.08, g: 0.37, b: 0.73 },
-    skyColorGround: { r: 0.35 * 0.53, g: 0.3 * 0.53, b: 0.35 * 0.53 }, // 0.1855, 0.159, 0.1855
+    skyColorGround: { r: 0.55, g: 0.50, b: 0.55 },
     sunPower: 500.0,
 
     // Floor
     floorSize: { x: 80, y: 0.05, z: 80 },
-    floorCenter: { x: 0, y: -5.025, z: 0 }, // Just below bounds usually
-    tileScale: 1.0,
-    tileDarkFactor: 0.5,
+    floorCenter: { x: 0, y: -5.0, z: 0 },
+    tileScale: 0.87,
+    tileDarkFactor: 0.2, // HSV Value shift for checker pattern
     
-    // Raymarch demo colors
-    tileCol1: { r: 126 / 255, g: 183 / 255, b: 231 / 255 }, // Blue
-    tileCol2: { r: 210 / 255, g: 165 / 255, b: 240 / 255 }, // Purple
-    tileCol3: { r: 153 / 255, g: 229 / 255, b: 199 / 255 }, // Green
-    tileCol4: { r: 237 / 255, g: 225 / 255, b: 167 / 255 }, // Yellow
-    tileColVariation: { x: 0, y: 0, z: 0 },
+    // Unity basic scene colors
+    tileCol1: { r: 0.5647059, g: 0.4683025, b: 0.25490198 },   // Yellowish
+    tileCol2: { r: 0.424268, g: 0.27100393, b: 0.6603774 },    // Pinkish
+    tileCol3: { r: 0.14057493, g: 0.3679245, b: 0.16709903 },  // Greenish
+    tileCol4: { r: 0.07164471, g: 0.19658183, b: 0.4339623 },  // Bluish
+    tileColVariation: { x: 0.2, y: 0.0, z: 0.73 },
     debugFloorMode: 0,
+    globalBrightness: 1.0,
+    globalSaturation: 1.0,
   };
 }
 
@@ -111,17 +115,17 @@ export function writeEnvironmentUniforms(
   buffer[i++] = env.tileCol1.b;
   buffer[i++] = env.sunBrightness;
 
-  // 28-31: tileCol2, pad
+  // 28-31: tileCol2, globalBrightness
   buffer[i++] = env.tileCol2.r;
   buffer[i++] = env.tileCol2.g;
   buffer[i++] = env.tileCol2.b;
-  buffer[i++] = 0;
+  buffer[i++] = env.globalBrightness;
 
-  // 32-35: tileCol3, pad
+  // 32-35: tileCol3, globalSaturation
   buffer[i++] = env.tileCol3.r;
   buffer[i++] = env.tileCol3.g;
   buffer[i++] = env.tileCol3.b;
-  buffer[i++] = 0;
+  buffer[i++] = env.globalSaturation;
 
   // 36-39: tileCol4, pad
   buffer[i++] = env.tileCol4.r;

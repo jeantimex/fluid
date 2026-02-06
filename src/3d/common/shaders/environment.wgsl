@@ -21,9 +21,9 @@ struct EnvironmentUniforms {
   tileCol1: vec3<f32>,
   sunBrightness: f32,
   tileCol2: vec3<f32>,
-  pad1: f32,
+  globalBrightness: f32,
   tileCol3: vec3<f32>,
-  pad2: f32,
+  globalSaturation: f32,
   tileCol4: vec3<f32>,
   pad3: f32,
   tileColVariation: vec3<f32>,
@@ -96,7 +96,7 @@ fn envRotateLocalToWorld(v: vec3<f32>, rotDeg: vec3<f32>) -> vec3<f32> {
 fn envRgbToHsv(rgb: vec3<f32>) -> vec3<f32> {
   let K = vec4<f32>(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
   let p = select(vec4<f32>(rgb.gb, K.xy), vec4<f32>(rgb.bg, K.wz), rgb.g < rgb.b);
-  let q = select(vec4<f32>(p.xyw, rgb.r), vec4<f32>(rgb.r, p.yzx), rgb.r < p.x);
+  let q = select(vec4<f32>(rgb.r, p.yzx), vec4<f32>(p.xyw, rgb.r), rgb.r < p.x);
   let d = q.x - min(q.w, q.y);
   let e = 1.0e-10;
   return vec3<f32>(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
@@ -140,6 +140,10 @@ fn envSrgbToLinear(col: vec3<f32>) -> vec3<f32> {
 
 fn envModulo(x: f32, y: f32) -> f32 {
   return x - y * floor(x / y);
+}
+
+fn envLinearToSrgb(color: vec3<f32>) -> vec3<f32> {
+  return pow(color, vec3<f32>(1.0 / 2.2));
 }
 
 // =============================================================================
@@ -209,47 +213,50 @@ fn getEnvironmentColor(origin: vec3<f32>, dir: vec3<f32>, params: EnvironmentUni
   if (hasFloorHit) {
     hitPos = origin + dir * floorT;
 
-    // Debug Modes
-    if (params.debugFloorMode >= 1.5) {
-      // Flat quadrant colors
-      var debugTileCol = params.tileCol1;
-      if (hitPos.x >= 0.0) { debugTileCol = params.tileCol2; }
-      if (hitPos.z < 0.0) {
-        if (hitPos.x < 0.0) { debugTileCol = params.tileCol3; }
-        else { debugTileCol = params.tileCol4; }
-      }
-      bgCol = envSrgbToLinear(debugTileCol);
-    } else if (params.debugFloorMode >= 0.5) {
-      // Solid red
-      bgCol = vec3<f32>(1.0, 0.0, 0.0);
+    // Rotate tile coordinates by 270 degrees (matching Unity/basic scene)
+    let rotatedPos = vec2<f32>(-hitPos.z, hitPos.x);
+
+    // Select base color based on quadrant
+    var tileCol: vec3<f32>;
+    if (rotatedPos.x < 0.0) {
+      tileCol = params.tileCol1;
     } else {
-      // Normal Checkerboard
-      var tileCol = params.tileCol1;
-      if (hitPos.x >= 0.0) { tileCol = params.tileCol2; }
-      if (hitPos.z < 0.0) {
-        if (hitPos.x < 0.0) { tileCol = params.tileCol3; }
-        else { tileCol = params.tileCol4; }
-      }
-
-      let tileCoord = floor(hitPos.xz * params.tileScale);
-      let isDarkTile = envModulo(tileCoord.x, 2.0) == envModulo(tileCoord.y, 2.0);
-
-      if (isDarkTile) {
-        tileCol = tileCol * params.tileDarkFactor;
-      }
-
-      if (any(params.tileColVariation != vec3<f32>(0.0))) {
-        var rngState = envHashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
-        let randomVariation = envRandomSNorm3(&rngState) * params.tileColVariation * 0.1;
-        tileCol = envTweakHsv(tileCol, randomVariation);
-      }
-      
-      // Checkerboard lighting (Ambient + Sun)
-      let ambient = params.floorAmbient;
-      let sunNDotL = max(0.0, params.dirToSun.y); // Floor is flat Y-up
-      let sun = sunNDotL * params.sunBrightness;
-      bgCol = tileCol * (ambient + sun); 
+      tileCol = params.tileCol2;
     }
+    if (rotatedPos.y < 0.0) {
+      if (rotatedPos.x < 0.0) {
+        tileCol = params.tileCol3;
+      } else {
+        tileCol = params.tileCol4;
+      }
+    }
+
+    // Apply gamma correction (linear to sRGB)
+    tileCol = envLinearToSrgb(tileCol);
+
+    // Calculate tile coordinates
+    let tileCoord = floor(rotatedPos * params.tileScale);
+
+    // Apply HSV variation per tile (multiply by 0.1 like Unity)
+    if (any(params.tileColVariation != vec3<f32>(0.0))) {
+      var rngState = envHashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
+      let randomVariation = envRandomSNorm3(&rngState) * params.tileColVariation * 0.1;
+      tileCol = envTweakHsv(tileCol, randomVariation);
+    }
+
+    // Checkerboard pattern
+    let isDarkTile = envModulo(tileCoord.x, 2.0) == envModulo(tileCoord.y, 2.0);
+    if (isDarkTile) {
+      tileCol = envTweakHsv(tileCol, vec3<f32>(0.0, 0.0, params.tileDarkFactor));
+    }
+    
+    // Exact same color adjustments as src/basic/shaders/scene.wgsl
+    var finalColor = tileCol * params.globalBrightness;
+
+    let gray = dot(finalColor, vec3<f32>(0.299, 0.587, 0.114));
+    finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * params.globalSaturation;
+
+    bgCol = finalColor;
   } else {
     bgCol = getSkyColor(dir, params);
   }

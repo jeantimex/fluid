@@ -144,6 +144,9 @@ export function setupGui(
       'Density Debug': 4,
     }).name('Floor Mode');
 
+    envFolder.add(envConfig, 'globalBrightness', 0.1, 4.0, 0.1).name('Brightness');
+    envFolder.add(envConfig, 'globalSaturation', 0.0, 2.0, 0.1).name('Saturation');
+
     // Tile Colors
     const tileColorState = {
       tileCol1: rgbToHex(envConfig.tileCol1),
@@ -154,9 +157,10 @@ export function setupGui(
 
     const updateTileColor = (key: string) => (value: string) => {
       const rgb = hexToRgb(value);
-      envConfig[key].r = rgb.r / 255;
-      envConfig[key].g = rgb.g / 255;
-      envConfig[key].b = rgb.b / 255;
+      // Convert hex (sRGB) to linear for the shader
+      envConfig[key].r = Math.pow(rgb.r / 255, 2.2);
+      envConfig[key].g = Math.pow(rgb.g / 255, 2.2);
+      envConfig[key].b = Math.pow(rgb.b / 255, 2.2);
     };
 
     envFolder.addColor(tileColorState, 'tileCol1').name('Tile Color 1').onChange(updateTileColor('tileCol1'));
