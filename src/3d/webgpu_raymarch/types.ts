@@ -91,9 +91,22 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
    */
   numRefractions: number;
 
-  /** Multiplier applied to the "dark" tiles in the checkerboard (0–1). */
-  tileDarkOffset: number;
+    /** Multiplier applied to the "dark" tiles in the checkerboard (0–1). */
 
-  /** Whether to enable volume and scene shadows. */
-  showShadows: boolean;
-}
+    tileDarkOffset: number;
+
+  
+
+    /** Shadow calculation mode. */
+
+    shadowType: 'None' | 'Particle' | 'Volumetric' | 'Both';
+
+  
+
+    /** Whether to enable volume and scene shadows. */
+
+    showShadows: boolean;
+
+  }
+
+  

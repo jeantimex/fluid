@@ -863,7 +863,13 @@ export class RaymarchRenderer {
     this.uniformData[104] = config.obstacleColor.r;
     this.uniformData[105] = config.obstacleColor.g;
     this.uniformData[106] = config.obstacleColor.b;
-    this.uniformData[107] = config.showShadows ? 1.0 : 0.0;
+    
+    // 0: None, 1: Particle, 2: Volumetric, 3: Both
+    let shadowTypeIndex = 0;
+    if (config.shadowType === 'Particle') shadowTypeIndex = 1;
+    else if (config.shadowType === 'Volumetric') shadowTypeIndex = 2;
+    else if (config.shadowType === 'Both') shadowTypeIndex = 3;
+    this.uniformData[107] = shadowTypeIndex;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

@@ -99,7 +99,7 @@ struct RaymarchParams {
   obstacleRotation: vec3<f32>,       // 100-102
   obstacleAlpha: f32,                // 103
   obstacleColor: vec3<f32>,          // 104-106
-  showShadows: f32,                  // 107
+  shadowType: f32,                   // 107
 };
 
 /// Shadow map uniforms (light-space projection + sampling params).
@@ -634,7 +634,8 @@ fn transmittance(opticalDepth: f32) -> vec3<f32> {
 
 /// Samples the particle shadow map at a world position.
 fn sampleShadow(worldPos: vec3<f32>, ndotl: f32) -> f32 {
-  if (params.showShadows < 0.5) { return 1.0; }
+  // shadowType: 0: None, 1: Particle, 2: Volumetric, 3: Both
+  if (params.shadowType < 0.5 || params.shadowType == 2.0) { return 1.0; }
   let lightPos = shadowUniforms.lightViewProjection * vec4<f32>(worldPos, 1.0);
   let ndc = lightPos.xyz / lightPos.w;
   let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
@@ -745,13 +746,13 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
       // Shadow Map modulation
       let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-      let shadowMap = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.showShadows > 0.5);
+      let shadowMap = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 2.0);
       let ndotl = max(dot(vec3<f32>(0.0, 1.0, 0.0), params.dirToSun), 0.0);
       let shadowScene = sampleShadow(hitPos, ndotl);
       
       // lighting = Combine shadows with ambient to ensure tiles are never pitch black
       let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-      let lighting = select(1.0, shadowMap.x * shadowScene * (1.0 - ambient) + ambient, params.showShadows > 0.5);
+      let lighting = select(1.0, shadowMap.x * shadowScene * (1.0 - ambient) + ambient, params.shadowType > 0.5);
 
       // Color adjustments
       var finalColor = tileCol * lighting * params.globalBrightness;
