@@ -514,7 +514,7 @@ export class RaymarchRenderer {
     this.uniformData[20] = hx;
     this.uniformData[21] = minY + size.y;
     this.uniformData[22] = hz;
-    this.uniformData[23] = config.floorCenter.y; // floorY at 23
+    this.uniformData[23] = config.floorCenter.y + config.floorSize.y * 0.5; // floorY = top surface of floor
 
     this.uniformData[24] = config.densityOffset;
     this.uniformData[25] = config.densityMultiplier / 1000; // Scale down for shader
@@ -604,10 +604,10 @@ export class RaymarchRenderer {
     this.uniformData[86] = config.floorSize.z;
     this.uniformData[87] = 0; // pad14
 
-    // Floor center
-    this.uniformData[88] = 0; // floorCenter.x
-    this.uniformData[89] = -5.0 + config.floorSize.y * 0.5; // floorCenter.y
-    this.uniformData[90] = 0; // floorCenter.z
+    // Floor center - top of floor should be at y=-5.0 (fluid bottom)
+    this.uniformData[88] = config.floorCenter.x;
+    this.uniformData[89] = config.floorCenter.y; // -5.5, so top is at -5.0
+    this.uniformData[90] = config.floorCenter.z;
     this.uniformData[91] = 0; // pad15
 
     // --- Obstacle box ---
