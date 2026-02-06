@@ -149,42 +149,7 @@ fn getEnvironmentColorShadowed(origin: vec3<f32>, dir: vec3<f32>, params: Enviro
   if (hasFloorHit) {
     hitPos = origin + dir * floorT;
 
-    // Rotate tile coordinates by 270 degrees (matching Unity/basic scene)
-    let rotatedPos = vec2<f32>(-hitPos.z, hitPos.x);
-
-    // Select base color based on quadrant
-    var tileCol: vec3<f32>;
-    if (rotatedPos.x < 0.0) {
-      tileCol = params.tileCol1;
-    } else {
-      tileCol = params.tileCol2;
-    }
-    if (rotatedPos.y < 0.0) {
-      if (rotatedPos.x < 0.0) {
-        tileCol = params.tileCol3;
-      } else {
-        tileCol = params.tileCol4;
-      }
-    }
-
-    // Apply gamma correction (linear to sRGB)
-    tileCol = envLinearToSrgb(tileCol);
-
-    // Calculate tile coordinates
-    let tileCoord = floor(rotatedPos * params.tileScale);
-
-    // Apply HSV variation per tile (multiply by 0.1 like Unity)
-    if (any(params.tileColVariation != vec3<f32>(0.0))) {
-      var rngState = envHashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
-      let randomVariation = envRandomSNorm3(&rngState) * params.tileColVariation * 0.1;
-      tileCol = envTweakHsv(tileCol, randomVariation);
-    }
-
-    // Checkerboard pattern
-    let isDarkTile = envModulo(tileCoord.x, 2.0) == envModulo(tileCoord.y, 2.0);
-    if (isDarkTile) {
-      tileCol = envTweakHsv(tileCol, vec3<f32>(0.0, 0.0, params.tileDarkFactor));
-    }
+    let tileCol = getTileColor(hitPos, params);
 
     let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
     let shadowMap = transmittance(shadowDepth * 2.0);

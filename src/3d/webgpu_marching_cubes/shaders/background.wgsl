@@ -90,12 +90,14 @@ fn getShadowedEnv(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
   let hasFloorHit = floorHit.y >= max(floorHit.x, 0.0);
   let floorT = select(floorHit.x, 0.0, floorHit.x < 0.0);
 
+  var bgCol: vec3<f32>;
+  var hitPos: vec3<f32>;
+
   if (hasFloorHit) {
-    let hitPos = origin + dir * floorT;
+    hitPos = origin + dir * floorT;
     
-    // --- Re-implement Floor Logic from environment.wgsl but with Shadow ---
     if (uniforms.debugFloorMode >= 0.5) {
-        // Debug modes (simplified)
+        // Debug modes
         if (uniforms.debugFloorMode >= 1.5) {
              var debugTileCol = uniforms.tileCol1;
              if (hitPos.x >= 0.0) { debugTileCol = uniforms.tileCol2; }
@@ -103,29 +105,12 @@ fn getShadowedEnv(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
                if (hitPos.x < 0.0) { debugTileCol = uniforms.tileCol3; }
                else { debugTileCol = uniforms.tileCol4; }
              }
-             return envSrgbToLinear(debugTileCol);
+             bgCol = envLinearToSrgb(debugTileCol);
+        } else {
+             bgCol = vec3<f32>(1.0, 0.0, 0.0);
         }
-        return vec3<f32>(1.0, 0.0, 0.0);
     } else {
-        var tileCol = uniforms.tileCol1;
-        if (hitPos.x >= 0.0) { tileCol = uniforms.tileCol2; }
-        if (hitPos.z < 0.0) {
-          if (hitPos.x < 0.0) { tileCol = uniforms.tileCol3; }
-          else { tileCol = uniforms.tileCol4; }
-        }
-
-        let tileCoord = floor(hitPos.xz * uniforms.tileScale);
-        let isDarkTile = envModulo(tileCoord.x, 2.0) == envModulo(tileCoord.y, 2.0);
-
-        if (isDarkTile) {
-          tileCol = tileCol * uniforms.tileDarkFactor;
-        }
-
-        if (any(uniforms.tileColVariation != vec3<f32>(0.0))) {
-          var rngState = envHashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
-          let randomVariation = envRandomSNorm3(&rngState) * uniforms.tileColVariation * 0.1;
-          tileCol = envTweakHsv(tileCol, randomVariation);
-        }
+        let tileCol = getTileColor(hitPos, uniforms);
 
         // Apply Shadow
         let shadow = sampleShadow(hitPos);
@@ -135,11 +120,32 @@ fn getShadowedEnv(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         
         // Lighting = Ambient + Sun * Shadow
         let lighting = ambient + sun * shadow;
-        return tileCol * lighting;
+        var finalColor = tileCol * lighting * uniforms.globalBrightness;
+
+        let gray = dot(finalColor, vec3<f32>(0.299, 0.587, 0.114));
+        finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * uniforms.globalSaturation;
+
+        bgCol = finalColor;
     }
+  } else {
+    bgCol = getSkyColor(dir, uniforms);
   }
 
-  return getSkyColor(dir, uniforms);
+  // 2. Check Obstacle (blend over background)
+  let obs = getObstacleHit(origin, dir, uniforms);
+  let obsT = obs.x;
+  let obsNormal = obs.yzw;
+
+  if (obsT >= 0.0 && (!hasFloorHit || obsT < floorT)) {
+    let a = clamp(uniforms.obstacleAlpha, 0.0, 1.0);
+    let ambient = uniforms.floorAmbient;
+    let sun = max(0.0, dot(obsNormal, uniforms.dirToSun)) * uniforms.sunBrightness;
+    let shadow = sampleShadow(origin + dir * obsT);
+    let lit = uniforms.obstacleColor * (ambient + sun * shadow);
+    return mix(bgCol, lit, a);
+  }
+
+  return bgCol;
 }
 
 @fragment
