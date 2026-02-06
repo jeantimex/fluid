@@ -40,9 +40,12 @@ export class CompositePass {
       magFilter: 'linear',
       minFilter: 'linear',
     });
-    // Render uniforms: inverse view-projection (16) + foam/extinction (8) + refraction (1) + padding = 28 floats = 112 bytes (rounded to 128 bytes)
+    // Render uniforms: 
+    // inverseVP (64) + waterColor (12) + deepColor (12) + foamColor (12) + 
+    // foamOpacity (4) + extinction (12) + extinctionMul (4) + refraction (4) = 124 bytes
+    // Using 36 floats = 144 bytes to be safe with alignment.
     this.uniformBuffer = device.createBuffer({
-      size: 128,
+      size: 160,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -325,18 +328,26 @@ export class CompositePass {
       if (!this.compositeBindGroup) {
         return;
       }
-      // Render uniforms (inverse view-projection + foam/extinction)
-      const uniforms = new Float32Array(28);
-      uniforms.set(frame.inverseViewProjection, 0);
-      uniforms[16] = frame.foamColor.r;
-      uniforms[17] = frame.foamColor.g;
-      uniforms[18] = frame.foamColor.b;
-      uniforms[19] = frame.foamOpacity;
-      uniforms[20] = frame.extinctionCoeff.x;
-      uniforms[21] = frame.extinctionCoeff.y;
-      uniforms[22] = frame.extinctionCoeff.z;
-      uniforms[23] = frame.extinctionMultiplier;
-      uniforms[24] = frame.refractionStrength;
+      // Render uniforms (inverse view-projection + colors + params)
+      const uniforms = new Float32Array(36);
+      uniforms.set(frame.inverseViewProjection, 0); // 0-15
+      uniforms[16] = frame.waterColor.r;
+      uniforms[17] = frame.waterColor.g;
+      uniforms[18] = frame.waterColor.b;
+      uniforms[19] = 0; // pad
+      uniforms[20] = frame.deepWaterColor.r;
+      uniforms[21] = frame.deepWaterColor.g;
+      uniforms[22] = frame.deepWaterColor.b;
+      uniforms[23] = 0; // pad
+      uniforms[24] = frame.foamColor.r;
+      uniforms[25] = frame.foamColor.g;
+      uniforms[26] = frame.foamColor.b;
+      uniforms[27] = frame.foamOpacity;
+      uniforms[28] = frame.extinctionCoeff.x;
+      uniforms[29] = frame.extinctionCoeff.y;
+      uniforms[30] = frame.extinctionCoeff.z;
+      uniforms[31] = frame.extinctionMultiplier;
+      uniforms[32] = frame.refractionStrength;
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
       // Environment uniforms

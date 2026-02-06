@@ -110,6 +110,8 @@ const config: ScreenSpaceConfig = {
   bubbleScale: 0.3,
   foamLifetimeMin: 10,
   foamLifetimeMax: 30,
+  waterColor: { r: 0.3, g: 0.9, b: 0.8 },
+  deepWaterColor: { r: 0.02, g: 0.15, b: 0.45 },
   foamColor: { r: 0.95, g: 0.98, b: 1.0 },
   foamOpacity: 2.5,
   sprayClassifyMaxNeighbours: 5,
@@ -219,6 +221,9 @@ renderingFolder
 renderingFolder
   .add(config, 'refractionStrength', 0, 20, 0.01)
   .name('Refraction Strength');
+
+renderingFolder.addColor(config, 'waterColor').name('Water Color');
+renderingFolder.addColor(config, 'deepWaterColor').name('Deep Water Color');
 
 // ---------------------------------------------------------------------------
 // Debug GUI Controls (screen-space demo only)

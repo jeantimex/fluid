@@ -22,6 +22,8 @@ export interface ScreenSpaceFrame extends EnvironmentConfig {
   foamParticleRadius: number;
   near: number;
   far: number;
+  waterColor: RGB;
+  deepWaterColor: RGB;
   foamColor: RGB;
   foamOpacity: number;
   extinctionCoeff: Vec3;

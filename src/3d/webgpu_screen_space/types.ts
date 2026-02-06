@@ -24,6 +24,8 @@ export interface ScreenSpaceConfig extends SimConfig, EnvironmentConfig {
   bubbleChangeScaleSpeed: number;
 
   // Rendering
+  waterColor: RGB;
+  deepWaterColor: RGB;
   extinctionCoeff: Vec3;
   extinctionMultiplier: number;
   refractionStrength: number;

@@ -7,12 +7,15 @@ struct FullscreenOut {
 
 struct RenderUniforms {
   inverseViewProjection: mat4x4<f32>,
+  waterColor: vec3<f32>,
+  pad0: f32,
+  deepWaterColor: vec3<f32>,
+  pad1: f32,
   foamColor: vec3<f32>,
   foamOpacity: f32,
   extinctionCoeff: vec3<f32>,
   extinctionMultiplier: f32,
   refractionStrength: f32,
-  pad0: vec3<f32>,
 };
 
 @vertex
@@ -73,6 +76,9 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let floorHit = boxHit.y >= max(boxHit.x, 0.0);
   let finalBg = bg;
 
+  let base = renderUniforms.deepWaterColor;
+  let shallow = renderUniforms.waterColor;
+  
   let lightDir = normalize(envUniforms.dirToSun);
   let ndotl = max(dot(normal, lightDir), 0.0) * envUniforms.sunBrightness;
 
@@ -81,17 +87,21 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let spec = pow(max(dot(normal, halfDir), 0.0), 64.0) * envUniforms.sunBrightness;
   let fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
 
-  let base = vec3<f32>(0.02, 0.15, 0.45);
-  let diffuse = base * (0.35 * envUniforms.floorAmbient + 0.65 * ndotl);
-  let specular = vec3<f32>(0.9, 0.95, 1.0) * spec * (0.2 + 0.8 * fresnel);
-
   let alpha = clamp(thickness * 4.0, 0.0, 1.0);
 
   let offset = normal.xy * renderUniforms.refractionStrength;
   let refractThickness = textureSample(thicknessTex, samp, in.uv + offset).r;
 
+  // Beer-Lambert Law for absorption
   let absorption = exp(-refractThickness * renderUniforms.extinctionCoeff * renderUniforms.extinctionMultiplier);
-  let refracted = mix(finalBg, base, 1.0 - absorption);
+  
+  // Blend between shallow and deep color based on absorption
+  let fluidColor = mix(base, shallow, absorption);
+  
+  let diffuse = fluidColor * (0.35 * envUniforms.floorAmbient + 0.65 * ndotl);
+  let specular = vec3<f32>(0.9, 0.95, 1.0) * spec * (0.2 + 0.8 * fresnel);
+
+  let refracted = mix(finalBg, fluidColor, 1.0 - absorption);
 
   // Obstacle shading
   let obsHit = getObstacleHit(worldNear.xyz, rayDir, envUniforms);
