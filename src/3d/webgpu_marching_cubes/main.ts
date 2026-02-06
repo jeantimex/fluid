@@ -173,39 +173,6 @@ marchingFolder
     config.surfaceColor.b = rgb.b / 255;
   });
 
-// Environment GUI Controls
-const envFolder = gui.addFolder('Environment');
-envFolder.close();
-
-envFolder.add(config, 'debugFloorMode', {
-  Normal: 0,
-  'Red Hit': 1,
-  'Flat Colors': 2,
-}).name('Floor Mode');
-
-envFolder.add(config, 'floorAmbient', 0, 1, 0.01).name('Ambient Light');
-envFolder.add(config, 'sceneExposure', 0.1, 5, 0.1).name('Exposure');
-
-// Tile Colors
-const tileColorState = {
-  tileCol1: rgbToHex(config.tileCol1),
-  tileCol2: rgbToHex(config.tileCol2),
-  tileCol3: rgbToHex(config.tileCol3),
-  tileCol4: rgbToHex(config.tileCol4),
-};
-
-const updateTileColor = (key: 'tileCol1' | 'tileCol2' | 'tileCol3' | 'tileCol4') => (value: string) => {
-  const rgb = hexToRgb(value);
-  config[key].r = rgb.r / 255;
-  config[key].g = rgb.g / 255;
-  config[key].b = rgb.b / 255;
-};
-
-envFolder.addColor(tileColorState, 'tileCol1').name('Tile Color 1').onChange(updateTileColor('tileCol1'));
-envFolder.addColor(tileColorState, 'tileCol2').name('Tile Color 2').onChange(updateTileColor('tileCol2'));
-envFolder.addColor(tileColorState, 'tileCol3').name('Tile Color 3').onChange(updateTileColor('tileCol3'));
-envFolder.addColor(tileColorState, 'tileCol4').name('Tile Color 4').onChange(updateTileColor('tileCol4'));
-
 /**
  * Main Application Entry Point
  *

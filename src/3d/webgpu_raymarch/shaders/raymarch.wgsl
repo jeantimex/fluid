@@ -51,7 +51,7 @@ struct RaymarchParams {
   minBounds: vec3<f32>,              // 16-18
   voxelsPerUnit: f32,                // 19
   maxBounds: vec3<f32>,              // 20-22
-  pad5: f32,                         // 23
+  floorY: f32,                       // 23
   densityOffset: f32,                // 24
   densityMultiplier: f32,            // 25
   stepSize: f32,                     // 26
@@ -61,8 +61,8 @@ struct RaymarchParams {
   maxSteps: f32,                     // 30
   tileScale: f32,                    // 31
   tileDarkOffset: f32,               // 32
-  pad_align0: f32,                   // 33
-  pad_align1: f32,                   // 34
+  globalBrightness: f32,             // 33
+  globalSaturation: f32,             // 34
   pad_align2: f32,                   // 35
   tileCol1: vec3<f32>,               // 36-38
   pad6: f32,                         // 39
@@ -77,25 +77,29 @@ struct RaymarchParams {
   dirToSun: vec3<f32>,               // 56-58
   pad10: f32,                        // 59
   extinctionCoefficients: vec3<f32>, // 60-62
-  pad11: f32,                        // 63
+  sunPower: f32,                     // 63
   fluidColor: vec3<f32>,             // 64-66
   pad12: f32,                        // 67
-  indexOfRefraction: f32,            // 68
-  numRefractions: f32,               // 69
-  tileDarkFactor: f32,               // 70
-  floorAmbient: f32,                 // 71
-  floorSize: vec3<f32>,              // 72-74
-  sceneExposure: f32,                // 75
-  floorCenter: vec3<f32>,            // 76-78
-  pad14: f32,                        // 79
-  obstacleCenter: vec3<f32>,         // 80-82
-  pad15: f32,                        // 83
-  obstacleHalfSize: vec3<f32>,       // 84-86
-  pad16: f32,                        // 87
-  obstacleRotation: vec3<f32>,       // 88-90
-  pad17: f32,                        // 91
-  obstacleColor: vec3<f32>,          // 92-94
-  obstacleAlpha: f32,                // 95
+  skyColorHorizon: vec3<f32>,        // 68-70
+  indexOfRefraction: f32,            // 71
+  skyColorZenith: vec3<f32>,         // 72-74
+  numRefractions: f32,               // 75
+  skyColorGround: vec3<f32>,         // 76-78
+  tileDarkFactor: f32,               // 79
+  floorAmbient: f32,                 // 80
+  sceneExposure: f32,                // 81
+  floorSize: vec3<f32>,              // 82-84
+  pad14: f32,                        // 85
+  floorCenter: vec3<f32>,            // 86-88
+  pad15: f32,                        // 89
+  obstacleCenter: vec3<f32>,         // 90-92
+  pad16: f32,                        // 93
+  obstacleHalfSize: vec3<f32>,       // 94-96
+  pad17: f32,                        // 97
+  obstacleRotation: vec3<f32>,       // 98-100
+  obstacleAlpha: f32,                // 101
+  obstacleColor: vec3<f32>,          // 102-104
+  pad18: f32,                        // 105
 };
 
 /// Shadow map uniforms (light-space projection + sampling params).
@@ -485,7 +489,8 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
 fn rgbToHsv(rgb: vec3<f32>) -> vec3<f32> {
   let K = vec4<f32>(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
   let p = select(vec4<f32>(rgb.gb, K.xy), vec4<f32>(rgb.bg, K.wz), rgb.g < rgb.b);
-  let q = select(vec4<f32>(p.xyw, rgb.r), vec4<f32>(rgb.r, p.yzx), rgb.r < p.x);
+  // Fixed: swapped arguments to match corrected select logic
+  let q = select(vec4<f32>(rgb.r, p.yzx), vec4<f32>(p.xyw, rgb.r), rgb.r < p.x);
 
   let d = q.x - min(q.w, q.y);
   let e = 1.0e-10;
@@ -627,19 +632,15 @@ fn sampleShadow(worldPos: vec3<f32>, ndotl: f32) -> f32 {
 ///
 /// A sharp sun highlight is added using pow(dot(dir, sunDir), 500).
 fn skyColor(dir: vec3<f32>) -> vec3<f32> {
-  let colGround = vec3<f32>(0.35, 0.3, 0.35) * 0.53;
-  let colSkyHorizon = vec3<f32>(1.0, 1.0, 1.0);
-  let colSkyZenith = vec3<f32>(0.08, 0.37, 0.73);
-
-  // Sun disc (very tight falloff for a small bright spot)
-  let sun = pow(max(0.0, dot(dir, params.dirToSun)), 500.0);
+  // Sun disc (dynamic sun power)
+  let sun = pow(max(0.0, dot(dir, params.dirToSun)), params.sunPower);
   // Sky gradient: smoothstep from horizon to zenith
   let skyGradientT = pow(smoothstep(0.0, 0.4, dir.y), 0.35);
   // Ground-to-sky transition at the horizon
   let groundToSkyT = smoothstep(-0.01, 0.0, dir.y);
-  let skyGradient = mix(colSkyHorizon, colSkyZenith, skyGradientT);
+  let skyGradient = mix(params.skyColorHorizon, params.skyColorZenith, skyGradientT);
 
-  var res = mix(colGround, skyGradient, groundToSkyT);
+  var res = mix(params.skyColorGround, skyGradient, groundToSkyT);
   if (dir.y >= -0.01) {
     res = res + sun; // Add sun only above the horizon
   }
@@ -661,17 +662,23 @@ fn skyColor(dir: vec3<f32>) -> vec3<f32> {
 ///   - mode 1: solid red (floor hit visualization)
 ///   - mode 2: flat quadrant colors (no checkerboard)
 fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
-  // Test ray against floor slab AABB
-  let floorMin = params.floorCenter - 0.5 * params.floorSize;
-  let floorMax = params.floorCenter + 0.5 * params.floorSize;
-  let floorHit = rayBoxIntersection(origin, dir, floorMin, floorMax);
-  let hasFloorHit = floorHit.y >= max(floorHit.x, 0.0);
-  let floorT = select(floorHit.x, 0.0, floorHit.x < 0.0);
+  // Check floor intersection using ray-plane intersection (matching basic demo)
+  var floorT = -1.0;
+  if (abs(dir.y) > 0.0001) {
+    let t = (params.floorY - origin.y) / dir.y;
+    if (t > 0.0) { floorT = t; }
+  }
+  
+  let hasFloorHit = floorT > 0.0;
 
   var bgCol: vec3<f32>;
   if (hasFloorHit) {
     // Ray hits the floor — compute the hit position
     let hitPos = origin + dir * floorT;
+
+    // Check if within floor bounds
+    let halfSize = params.floorSize.x * 0.5;
+    if (abs(hitPos.x) < halfSize && abs(hitPos.z) < halfSize) {
 
     // --- Debug mode 2: flat quadrant colors (no checkerboard) ---
     if (params.debugFloorMode >= 1.5) {
@@ -682,7 +689,6 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         else { debugTileCol = params.tileCol4; }
       }
       bgCol = srgbToLinear(debugTileCol);
-      // Obstacle blending happens below.
     }
 
     // --- Debug mode 1: solid red ---
@@ -692,41 +698,63 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
     // --- Normal rendering: checkerboard tiles ---
     if (params.debugFloorMode < 0.5) {
+      // Rotate tile coordinates by 270 degrees (matching Unity/basic scene)
+      let rotatedPos = vec2<f32>(-hitPos.z, hitPos.x);
 
-    // Select base color by floor quadrant (±X, ±Z)
-    var tileCol = params.tileCol1;
-    if (hitPos.x >= 0.0) { tileCol = params.tileCol2; }
-    if (hitPos.z < 0.0) {
-      if (hitPos.x < 0.0) { tileCol = params.tileCol3; }
-      else { tileCol = params.tileCol4; }
+      // Select base color based on quadrant
+      var tileCol: vec3<f32>;
+      if (rotatedPos.x < 0.0) {
+        tileCol = params.tileCol1;
+      } else {
+        tileCol = params.tileCol2;
+      }
+      if (rotatedPos.y < 0.0) {
+        if (rotatedPos.x < 0.0) {
+          tileCol = params.tileCol3;
+        } else {
+          tileCol = params.tileCol4;
+        }
+      }
+
+      // NO gamma correction here because tileCol is already linear and 
+      // the blit pass converts the final linear output to sRGB.
+
+      // Calculate tile coordinates
+      let tileCoord = floor(rotatedPos * params.tileScale);
+
+      // Apply HSV variation per tile (multiply by 0.1 like Unity)
+      if (any(params.tileColVariation != vec3<f32>(0.0))) {
+        var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
+        let randomVariation = randomSNorm3(&rngState) * params.tileColVariation * 0.1;
+        tileCol = tweakHsv(tileCol, randomVariation);
+      }
+
+      // Checkerboard pattern
+      let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
+      if (isDarkTile) {
+        tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, params.tileDarkFactor));
+      }
+
+      // Shadow Map modulation
+      let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
+      let shadowMap = transmittance(shadowDepth * 2.0);
+      let ndotl = max(dot(vec3<f32>(0.0, 1.0, 0.0), params.dirToSun), 0.0);
+      let shadowScene = sampleShadow(hitPos, ndotl);
+      
+      // lighting = Combine shadows with ambient to ensure tiles are never pitch black
+      let ambient = clamp(params.floorAmbient, 0.0, 1.0);
+      let lighting = shadowMap * shadowScene * (1.0 - ambient) + ambient;
+
+      // Color adjustments
+      var finalColor = tileCol * lighting * params.globalBrightness;
+
+      let gray = dot(finalColor, vec3<f32>(0.299, 0.587, 0.114));
+      finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * params.globalSaturation;
+
+      bgCol = finalColor;
     }
-
-    // Checkerboard: darken alternating tiles
-    let tileCoord = floor(hitPos.xz * params.tileScale);
-    let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
-
-    if (isDarkTile) {
-      tileCol = tileCol * params.tileDarkFactor;
-    }
-
-    // Optional per-tile HSV variation (adds visual richness)
-    if (any(params.tileColVariation != vec3<f32>(0.0))) {
-      var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
-      let randomVariation = randomSNorm3(&rngState) * params.tileColVariation * 0.1;
-      tileCol = tweakHsv(tileCol, randomVariation);
-    }
-
-    // Shadow: compute density between floor hit and sun
-    let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-    let shadowMap = transmittance(shadowDepth * 2.0);
-    let ndotl = max(dot(vec3<f32>(0.0, 1.0, 0.0), params.dirToSun), 0.0);
-    let shadowScene = sampleShadow(hitPos, ndotl);
-
-    // Final lighting: blend density shadow and particle shadow with ambient
-    let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-    let lighting = shadowMap * shadowScene * (1.0 - ambient) + ambient;
-
-    bgCol = tileCol * lighting;
+    } else {
+      bgCol = skyColor(dir);
     }
   } else {
     // No floor hit — return sky color

@@ -144,8 +144,12 @@ export function setupGui(
       'Density Debug': 4,
     }).name('Floor Mode');
 
-    envFolder.add(envConfig, 'globalBrightness', 0.1, 4.0, 0.1).name('Brightness');
-    envFolder.add(envConfig, 'globalSaturation', 0.0, 2.0, 0.1).name('Saturation');
+    if (typeof envConfig.globalBrightness === 'number') {
+      envFolder.add(envConfig, 'globalBrightness', 0.1, 4.0, 0.1).name('Brightness');
+    }
+    if (typeof envConfig.globalSaturation === 'number') {
+      envFolder.add(envConfig, 'globalSaturation', 0.0, 2.0, 0.1).name('Saturation');
+    }
 
     // Tile Colors
     const tileColorState = {

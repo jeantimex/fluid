@@ -257,9 +257,9 @@ export class RaymarchRenderer {
     // Uniform Buffer
     // -------------------------------------------------------------------------
 
-    this.uniformData = new Float32Array(96); // 96 floats = 384 bytes
+    this.uniformData = new Float32Array(108); // Increased size
 
-    this.uniformBuffer = device.createBuffer({
+    this.uniformBuffer = this.device.createBuffer({
       size: this.uniformData.byteLength,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -726,7 +726,7 @@ export class RaymarchRenderer {
     this.uniformData[20] = hx;
     this.uniformData[21] = minY + size.y;
     this.uniformData[22] = hz;
-    this.uniformData[23] = 0; // pad
+    this.uniformData[23] = config.floorCenter.y; // floorY at 23
 
     this.uniformData[24] = config.densityOffset;
     this.uniformData[25] = config.densityMultiplier / 1000; // Scale down for shader
@@ -738,7 +738,9 @@ export class RaymarchRenderer {
     this.uniformData[30] = config.maxSteps;
     this.uniformData[31] = config.tileScale;
     this.uniformData[32] = config.tileDarkOffset;
-    // 33, 34, 35: pad_align0, pad_align1, pad_align2
+    this.uniformData[33] = config.globalBrightness;
+    this.uniformData[34] = config.globalSaturation;
+    this.uniformData[35] = 0; // pad_align2
 
     // --- Tile colors (4 quadrant colors, linear space) ---
     this.uniformData[36] = config.tileCol1.r;
@@ -767,18 +769,18 @@ export class RaymarchRenderer {
     this.uniformData[54] = config.tileColVariation.z;
     this.uniformData[55] = config.debugFloorMode;
 
-    // --- Sun direction (hardcoded normalized vector) ---
-    const sunDir = { x: 0.83, y: 0.42, z: 0.36 };
+    // --- Sun direction ---
+    const sunDir = config.dirToSun;
     this.uniformData[56] = sunDir.x; // dirToSun.x
     this.uniformData[57] = sunDir.y; // dirToSun.y
     this.uniformData[58] = sunDir.z; // dirToSun.z
     this.uniformData[59] = 0; // pad10
 
-    // --- Extinction coefficients for Beer–Lambert transmittance ---
+    // --- Extinction coefficients ---
     this.uniformData[60] = config.extinctionCoefficients.x;
     this.uniformData[61] = config.extinctionCoefficients.y;
     this.uniformData[62] = config.extinctionCoefficients.z;
-    this.uniformData[63] = 0; // pad11
+    this.uniformData[63] = config.sunPower; // sunPower at 63
 
     // --- Fluid absorption color ---
     this.uniformData[64] = config.fluidColor.r;
@@ -786,44 +788,58 @@ export class RaymarchRenderer {
     this.uniformData[66] = config.fluidColor.b;
     this.uniformData[67] = 0; // pad12
 
+    // --- Sky Colors ---
+    this.uniformData[68] = config.skyColorHorizon.r;
+    this.uniformData[69] = config.skyColorHorizon.g;
+    this.uniformData[70] = config.skyColorHorizon.b;
+    this.uniformData[71] = config.indexOfRefraction; // indexOfRefraction at 71
+
+    this.uniformData[72] = config.skyColorZenith.r;
+    this.uniformData[73] = config.skyColorZenith.g;
+    this.uniformData[74] = config.skyColorZenith.b;
+    this.uniformData[75] = config.numRefractions; // numRefractions at 75
+
+    this.uniformData[76] = config.skyColorGround.r;
+    this.uniformData[77] = config.skyColorGround.g;
+    this.uniformData[78] = config.skyColorGround.b;
+    this.uniformData[79] = config.tileDarkFactor; // tileDarkFactor at 79
+
     // --- Optical & lighting parameters ---
-    this.uniformData[68] = config.indexOfRefraction;
-    this.uniformData[69] = config.numRefractions;
-    this.uniformData[70] = config.tileDarkFactor;
-    this.uniformData[71] = config.floorAmbient;
+    this.uniformData[80] = config.floorAmbient;
+    this.uniformData[81] = config.sceneExposure;
 
     // --- Floor geometry ---
-    this.uniformData[72] = config.floorSize.x;
-    this.uniformData[73] = config.floorSize.y;
-    this.uniformData[74] = config.floorSize.z;
-    this.uniformData[75] = config.sceneExposure;
+    this.uniformData[82] = config.floorSize.x;
+    this.uniformData[83] = config.floorSize.y;
+    this.uniformData[84] = config.floorSize.z;
+    this.uniformData[85] = 0; // pad14
 
-    // Floor center: horizontally centered, positioned just below the fluid bounds
-    this.uniformData[76] = 0; // floorCenter.x
-    this.uniformData[77] = -5.0 - config.floorSize.y * 0.5; // floorCenter.y
-    this.uniformData[78] = 0; // floorCenter.z
-    this.uniformData[79] = 0; // pad14
+    // Floor center
+    this.uniformData[86] = 0; // floorCenter.x
+    this.uniformData[87] = -5.0 + config.floorSize.y * 0.5; // floorCenter.y (raised slightly)
+    this.uniformData[88] = 0; // floorCenter.z
+    this.uniformData[89] = 0; // pad15
 
     // --- Obstacle box ---
-    this.uniformData[80] = config.obstacleCentre.x;
-    this.uniformData[81] = config.obstacleCentre.y;
-    this.uniformData[82] = config.obstacleCentre.z;
-    this.uniformData[83] = 0; // pad15
+    this.uniformData[90] = config.obstacleCentre.x;
+    this.uniformData[91] = config.obstacleCentre.y;
+    this.uniformData[92] = config.obstacleCentre.z;
+    this.uniformData[93] = 0; // pad16
 
-    this.uniformData[84] = config.obstacleSize.x * 0.5;
-    this.uniformData[85] = config.obstacleSize.y * 0.5;
-    this.uniformData[86] = config.obstacleSize.z * 0.5;
-    this.uniformData[87] = 0; // pad16
+    this.uniformData[94] = config.obstacleSize.x * 0.5;
+    this.uniformData[95] = config.obstacleSize.y * 0.5;
+    this.uniformData[96] = config.obstacleSize.z * 0.5;
+    this.uniformData[97] = 0; // pad17
 
-    this.uniformData[88] = config.obstacleRotation.x;
-    this.uniformData[89] = config.obstacleRotation.y;
-    this.uniformData[90] = config.obstacleRotation.z;
-    this.uniformData[91] = 0; // pad17
+    this.uniformData[98] = config.obstacleRotation.x;
+    this.uniformData[99] = config.obstacleRotation.y;
+    this.uniformData[100] = config.obstacleRotation.z;
+    this.uniformData[101] = config.obstacleAlpha;
 
-    this.uniformData[92] = config.obstacleColor.r;
-    this.uniformData[93] = config.obstacleColor.g;
-    this.uniformData[94] = config.obstacleColor.b;
-    this.uniformData[95] = config.obstacleAlpha;
+    this.uniformData[102] = config.obstacleColor.r;
+    this.uniformData[103] = config.obstacleColor.g;
+    this.uniformData[104] = config.obstacleColor.b;
+    this.uniformData[105] = 0; // pad18
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

@@ -136,6 +136,8 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
       tEnv.sceneExposure = sEnv.sceneExposure;
       tEnv.sunBrightness = sEnv.sunBrightness;
       tEnv.debugFloorMode = sEnv.debugFloorMode;
+      tEnv.globalBrightness = sEnv.globalBrightness;
+      tEnv.globalSaturation = sEnv.globalSaturation;
       
       if (sEnv.tileCol1 && tEnv.tileCol1) Object.assign(tEnv.tileCol1, sEnv.tileCol1);
       if (sEnv.tileCol2 && tEnv.tileCol2) Object.assign(tEnv.tileCol2, sEnv.tileCol2);
@@ -196,14 +198,10 @@ function updateGui(adapter: FluidAppAdapter): void {
       .name('Density Multiplier');
     raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
     raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
-    raymarchFolder.add(config, 'shadowSoftness', 0.0, 4.0, 0.05).name('Softness');
     const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
     extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');
     extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
     extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
-    raymarchFolder
-      .add(config, 'tileDarkFactor', 0.1, 0.9, 0.01)
-      .name('Tile Dark Factor');
   }
 
   // -------------------------------------------------------------------------

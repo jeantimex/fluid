@@ -47,6 +47,7 @@
 
 import './style.css';
 import { createConfig } from '../common/config.ts';
+import { createDefaultEnvironmentConfig } from '../common/environment.ts';
 import { setupGui } from '../common/gui.ts';
 
 /**
@@ -131,11 +132,12 @@ if (!app) throw new Error('Missing #app container');
 const canvas = createCanvas(app);
 
 // Initialize simulation configuration with default values.
-// Spreads the base SPH config (particle count, bounds, gravity, etc.) then
-// adds raymarch-specific parameters: density volume resolution, ray step sizes,
-// floor tile colors, extinction coefficients, and refraction settings.
+// Spreads the base SPH config (particle count, bounds, gravity, etc.), 
+// the shared environment config (colors, brightness, etc.), then
+// adds raymarch-specific parameters.
 const config: RaymarchConfig = {
   ...createConfig(),
+  ...createDefaultEnvironmentConfig(),
   viscosityStrength: 0.001,
   iterationsPerFrame: 3,
   nearPressureMultiplier: 2.25,
@@ -149,23 +151,9 @@ const config: RaymarchConfig = {
   shadowSoftness: 1.0,
   maxSteps: 512,
   fluidColor: { r: 0.4, g: 0.7, b: 1.0 },
-  tileCol1: { r: 0.20392157, g: 0.5176471, b: 0.7764706 },
-  tileCol2: { r: 0.6081319, g: 0.36850303, b: 0.8584906 },
-  tileCol3: { r: 0.3019758, g: 0.735849, b: 0.45801795 },
-  tileCol4: { r: 0.8018868, g: 0.6434483, b: 0.36690104 },
-  tileColVariation: { x: 0.33, y: 0, z: 0.47 },
-  tileScale: 1,
-  tileDarkOffset: -0.35,
-  tileDarkFactor: 0.5,
-  floorAmbient: 0.58,
-  sceneExposure: 1.1,
-  debugFloorMode: 0,
-  extinctionCoefficients: { x: 12, y: 4, z: 4 },
   indexOfRefraction: 1.33,
   numRefractions: 4,
-  floorSize: { x: 80, y: 0.05, z: 80 },
-  obstacleColor: { r: 1.0, g: 0.0, b: 0.0 },
-  obstacleAlpha: 0.8,
+  extinctionCoefficients: { x: 12, y: 4, z: 4 },
   showBoundsWireframe: false,
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
 };
@@ -227,62 +215,6 @@ const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
 extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');
 extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
 extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
-
-raymarchFolder
-  .add(config, 'tileDarkFactor', 0.1, 0.9, 0.01)
-  .name('Tile Dark Factor');
-
-// Proxy state object holding hex-string versions of the tile colors.
-// lil-gui's addColor binds to these strings; onChange callbacks convert
-// back to normalized [0,1] and write into the config for the shader.
-const tileColorState = {
-  tileCol1: rgbToHex(config.tileCol1),
-  tileCol2: rgbToHex(config.tileCol2),
-  tileCol3: rgbToHex(config.tileCol3),
-  tileCol4: rgbToHex(config.tileCol4),
-};
-
-
-raymarchFolder
-  .addColor(tileColorState, 'tileCol1')
-  .name('Tile Color 1')
-  .onChange((value: string) => {
-    const rgb = hexToRgb(value);
-    config.tileCol1.r = rgb.r / 255;
-    config.tileCol1.g = rgb.g / 255;
-    config.tileCol1.b = rgb.b / 255;
-  });
-
-raymarchFolder
-  .addColor(tileColorState, 'tileCol2')
-  .name('Tile Color 2')
-  .onChange((value: string) => {
-    const rgb = hexToRgb(value);
-    config.tileCol2.r = rgb.r / 255;
-    config.tileCol2.g = rgb.g / 255;
-    config.tileCol2.b = rgb.b / 255;
-  });
-
-raymarchFolder
-  .addColor(tileColorState, 'tileCol3')
-  .name('Tile Color 3')
-  .onChange((value: string) => {
-    const rgb = hexToRgb(value);
-    config.tileCol3.r = rgb.r / 255;
-    config.tileCol3.g = rgb.g / 255;
-    config.tileCol3.b = rgb.b / 255;
-  });
-
-raymarchFolder
-  .addColor(tileColorState, 'tileCol4')
-  .name('Tile Color 4')
-  .onChange((value: string) => {
-    const rgb = hexToRgb(value);
-    config.tileCol4.r = rgb.r / 255;
-    config.tileCol4.g = rgb.g / 255;
-    config.tileCol4.b = rgb.b / 255;
-  });
-
 
 /**
  * Main Application Entry Point
