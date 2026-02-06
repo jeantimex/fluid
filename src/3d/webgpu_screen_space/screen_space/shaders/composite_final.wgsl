@@ -90,9 +90,11 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
 
   if (floorHit) {
     let inBounds = shadowUV.x >= 0.0 && shadowUV.x <= 1.0 && shadowUV.y >= 0.0 && shadowUV.y <= 1.0;
-    if (inBounds) {
-      let shadowAtten = exp(-shadowVal * renderUniforms.extinctionCoeff * renderUniforms.extinctionMultiplier);
-      let ambientMin = 0.17;
+    if (inBounds && shadowVal > 0.0) {
+      // Apply Beer-Lambert attenuation for shadow
+      // Use a smaller multiplier for lighter shadows
+      let shadowAtten = exp(-shadowVal * renderUniforms.extinctionCoeff * renderUniforms.extinctionMultiplier * 0.15);
+      let ambientMin = 0.5; // Higher ambient = lighter shadows
       let shadow = shadowAtten * (1.0 - ambientMin) + ambientMin;
       bg = bg * shadow;
     }

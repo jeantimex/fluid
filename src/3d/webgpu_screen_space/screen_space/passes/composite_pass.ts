@@ -315,7 +315,7 @@ export class CompositePass {
         { binding: 4, resource: this.sampler },
         { binding: 5, resource: { buffer: this.uniformBuffer } },
         { binding: 6, resource: { buffer: this.envUniformBuffer } },
-        { binding: 7, resource: resources.shadowSmoothTexture.createView() },
+        { binding: 7, resource: resources.shadowTexture!.createView() },
       ],
     });
   }
