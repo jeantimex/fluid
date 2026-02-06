@@ -88,24 +88,37 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let shadowUV = vec2<f32>(shadowNdc.x * 0.5 + 0.5, 1.0 - (shadowNdc.y * 0.5 + 0.5));
   let shadowVal = textureSample(shadowTex, samp, shadowUV).r;
 
+  let lightDir = normalize(envUniforms.dirToSun);
+
   if (floorHit) {
+    var shadowFactor = 1.0;
+
+    // Fluid shadow from shadow texture
     let inBounds = shadowUV.x >= 0.0 && shadowUV.x <= 1.0 && shadowUV.y >= 0.0 && shadowUV.y <= 1.0;
     if (inBounds && shadowVal > 0.0) {
       // Apply subtle shadow like raymarch demo
       // Very light shadows with high ambient floor
       let shadowAtten = exp(-shadowVal * 0.3);
       let ambientMin = 0.7; // High ambient = very subtle shadows
-      let shadow = shadowAtten * (1.0 - ambientMin) + ambientMin;
-      bg = bg * shadow;
+      shadowFactor = shadowAtten * (1.0 - ambientMin) + ambientMin;
     }
+
+    // Obstacle shadow - cast ray from floor toward sun
+    let obstacleShadowHit = getObstacleHit(floorHitPos, lightDir, envUniforms);
+    if (obstacleShadowHit.x >= 0.0) {
+      // Obstacle blocks light - apply shadow
+      let obstacleAmbient = 0.5; // Obstacle shadow is a bit darker than fluid shadow
+      shadowFactor = min(shadowFactor, obstacleAmbient);
+    }
+
+    bg = bg * shadowFactor;
   }
 
   let finalBg = bg;
 
   let base = renderUniforms.deepWaterColor;
   let shallow = renderUniforms.waterColor;
-  
-  let lightDir = normalize(envUniforms.dirToSun);
+
   let ndotl = max(dot(normal, lightDir), 0.0) * envUniforms.sunBrightness;
 
   let viewDir = normalize(worldNear.xyz - world.xyz); // From surface to camera

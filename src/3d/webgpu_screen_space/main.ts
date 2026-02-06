@@ -96,7 +96,7 @@ const canvas = createCanvas(app);
 const config: ScreenSpaceConfig = {
   ...createConfig(),
   ...createDefaultEnvironmentConfig(),
-  viscosityStrength: 0.0,
+  viscosityStrength: 0.01,
   iterationsPerFrame: 3,
   screenSpaceDebugMode: 4,
 

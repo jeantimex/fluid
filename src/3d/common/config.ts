@@ -15,7 +15,7 @@ export function createConfig(): SimConfig {
 
     boundsSize: { x: 24, y: 10, z: 15 },
     obstacleSize: { x: 0, y: 0, z: 0 },
-    obstacleCentre: { x: 0, y: -2, z: 0 },
+    obstacleCentre: { x: 0, y: 0, z: 0 },
     obstacleRotation: { x: 0, y: 0, z: 0 },
     obstacleColor: { r: 1.0, g: 0.0, b: 0.0 },
     obstacleAlpha: 0.8,
