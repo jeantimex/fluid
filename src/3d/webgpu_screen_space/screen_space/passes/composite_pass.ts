@@ -40,12 +40,11 @@ export class CompositePass {
       magFilter: 'linear',
       minFilter: 'linear',
     });
-    // Render uniforms: 
-    // inverseVP (64) + waterColor (12) + deepColor (12) + foamColor (12) + 
-    // foamOpacity (4) + extinction (12) + extinctionMul (4) + refraction (4) = 124 bytes
-    // Using 36 floats = 144 bytes to be safe with alignment.
+    // Render uniforms:
+    // inverseVP (64) + waterColor (16) + deepColor (16) + foamColor (16) +
+    // extinction (16) + refraction + 3 pad (16) + shadowVP (64) = 208 bytes
     this.uniformBuffer = device.createBuffer({
-      size: 160,
+      size: 224,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -98,6 +97,11 @@ export class CompositePass {
           binding: 6,
           visibility: GPUShaderStage.FRAGMENT,
           buffer: { type: 'uniform' },
+        },
+        {
+          binding: 7,
+          visibility: GPUShaderStage.FRAGMENT,
+          texture: { sampleType: 'float' },
         },
       ],
     });
@@ -294,7 +298,8 @@ export class CompositePass {
       !resources.smoothTextureB ||
       !resources.normalTexture ||
       !resources.smoothTextureA ||
-      !resources.foamTexture
+      !resources.foamTexture ||
+      !resources.shadowSmoothTexture
     ) {
       this.compositeBindGroup = null;
       return;
@@ -310,6 +315,7 @@ export class CompositePass {
         { binding: 4, resource: this.sampler },
         { binding: 5, resource: { buffer: this.uniformBuffer } },
         { binding: 6, resource: { buffer: this.envUniformBuffer } },
+        { binding: 7, resource: resources.shadowSmoothTexture.createView() },
       ],
     });
   }
@@ -328,8 +334,8 @@ export class CompositePass {
       if (!this.compositeBindGroup) {
         return;
       }
-      // Render uniforms (inverse view-projection + colors + params)
-      const uniforms = new Float32Array(36);
+      // Render uniforms (inverse view-projection + colors + params + shadowVP)
+      const uniforms = new Float32Array(52);
       uniforms.set(frame.inverseViewProjection, 0); // 0-15
       uniforms[16] = frame.waterColor.r;
       uniforms[17] = frame.waterColor.g;
@@ -348,6 +354,13 @@ export class CompositePass {
       uniforms[30] = frame.extinctionCoeff.z;
       uniforms[31] = frame.extinctionMultiplier;
       uniforms[32] = frame.refractionStrength;
+      uniforms[33] = 0; // pad2
+      uniforms[34] = 0; // pad3
+      uniforms[35] = 0; // pad4
+      // shadowVP at offset 36 (byte offset 144, 16-byte aligned for mat4x4)
+      if (frame.shadowViewProjection) {
+        uniforms.set(frame.shadowViewProjection, 36);
+      }
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
       // Environment uniforms

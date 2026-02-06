@@ -11,6 +11,8 @@ export interface ScreenSpaceTextures {
   smoothTextureA: GPUTexture | null;
   smoothTextureB: GPUTexture | null;
   foamTexture: GPUTexture | null;
+  shadowTexture: GPUTexture | null;
+  shadowSmoothTexture: GPUTexture | null;
 }
 
 export interface ScreenSpaceFrame extends EnvironmentConfig {
@@ -42,6 +44,9 @@ export interface ScreenSpaceFrame extends EnvironmentConfig {
   showBoundsWireframe: boolean;
   boundsWireframeColor: RGB;
   boundsSize: Vec3;
+
+  // Shadow
+  shadowViewProjection: Float32Array | null;
 }
 
 export interface DepthPassResources extends ScreenSpaceTextures {

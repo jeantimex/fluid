@@ -16,6 +16,10 @@ struct RenderUniforms {
   extinctionCoeff: vec3<f32>,
   extinctionMultiplier: f32,
   refractionStrength: f32,
+  pad2: f32,
+  pad3: f32,
+  pad4: f32,
+  shadowVP: mat4x4<f32>,
 };
 
 @vertex
@@ -43,6 +47,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> FullscreenOut {
 @group(0) @binding(4) var samp: sampler;
 @group(0) @binding(5) var<uniform> renderUniforms: RenderUniforms;
 @group(0) @binding(6) var<uniform> envUniforms: EnvironmentUniforms;
+@group(0) @binding(7) var shadowTex: texture_2d<f32>;
 
 @fragment
 fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
@@ -74,6 +79,25 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   let floorMax = envUniforms.floorCenter + 0.5 * envUniforms.floorSize;
   let boxHit = envRayBoxIntersection(worldNear.xyz, rayDir, floorMin, floorMax);
   let floorHit = boxHit.y >= max(boxHit.x, 0.0);
+
+  // Apply fluid shadow to floor
+  let floorT = max(boxHit.x, 0.0);
+  let floorHitPos = worldNear.xyz + rayDir * floorT;
+  let shadowClip = renderUniforms.shadowVP * vec4<f32>(floorHitPos, 1.0);
+  let shadowNdc = shadowClip.xy / shadowClip.w;
+  let shadowUV = vec2<f32>(shadowNdc.x * 0.5 + 0.5, 1.0 - (shadowNdc.y * 0.5 + 0.5));
+  let shadowVal = textureSample(shadowTex, samp, shadowUV).r;
+
+  if (floorHit) {
+    let inBounds = shadowUV.x >= 0.0 && shadowUV.x <= 1.0 && shadowUV.y >= 0.0 && shadowUV.y <= 1.0;
+    if (inBounds) {
+      let shadowAtten = exp(-shadowVal * renderUniforms.extinctionCoeff * renderUniforms.extinctionMultiplier);
+      let ambientMin = 0.17;
+      let shadow = shadowAtten * (1.0 - ambientMin) + ambientMin;
+      bg = bg * shadow;
+    }
+  }
+
   let finalBg = bg;
 
   let base = renderUniforms.deepWaterColor;

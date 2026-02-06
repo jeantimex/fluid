@@ -23,6 +23,7 @@ import { ThicknessPass } from './passes/thickness_pass.ts';
 import { NormalPass } from './passes/normal_pass.ts';
 import { SmoothPass } from './passes/smooth_pass.ts';
 import { CompositePass } from './passes/composite_pass.ts';
+import { ShadowPass } from './passes/shadow_pass.ts';
 
 export class ScreenSpaceRenderer {
   private device: GPUDevice;
@@ -38,6 +39,8 @@ export class ScreenSpaceRenderer {
   private smoothTextureA: GPUTexture | null = null;
   private smoothTextureB: GPUTexture | null = null;
   private foamTexture: GPUTexture | null = null;
+  private shadowTexture: GPUTexture | null = null;
+  private shadowSmoothTexture: GPUTexture | null = null;
 
   private buffers: SimBuffers | null = null;
 
@@ -47,6 +50,7 @@ export class ScreenSpaceRenderer {
   private smoothPass: SmoothPass;
   private foamPass: FoamPass;
   private compositePass: CompositePass;
+  private shadowPass: ShadowPass;
 
   constructor(
     device: GPUDevice,
@@ -64,6 +68,7 @@ export class ScreenSpaceRenderer {
     this.smoothPass = new SmoothPass(device);
     this.foamPass = new FoamPass(device);
     this.compositePass = new CompositePass(device, format);
+    this.shadowPass = new ShadowPass(device);
   }
 
   createBindGroups(buffers: SimBuffers) {
@@ -77,11 +82,14 @@ export class ScreenSpaceRenderer {
       smoothTextureA: this.smoothTextureA,
       smoothTextureB: this.smoothTextureB,
       foamTexture: this.foamTexture,
+      shadowTexture: this.shadowTexture,
+      shadowSmoothTexture: this.shadowSmoothTexture,
     };
 
     this.depthPass.createBindGroup(resources);
     this.thicknessPass.createBindGroup(resources);
     this.normalPass.createBindGroup(resources);
+    this.shadowPass.createBindGroup(buffers);
 
     if (buffers instanceof SimulationBuffersLinear) {
       this.foamPass.createBindGroup(
@@ -141,6 +149,20 @@ export class ScreenSpaceRenderer {
         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
+    // Shadow textures at 1/4 resolution (like Unity)
+    const shadowW = Math.max(1, Math.floor(this.width / 4));
+    const shadowH = Math.max(1, Math.floor(this.height / 4));
+    this.shadowTexture = this.device.createTexture({
+      size: { width: shadowW, height: shadowH },
+      format: 'r16float',
+      usage: colorUsage,
+    });
+    this.shadowSmoothTexture = this.device.createTexture({
+      size: { width: shadowW, height: shadowH },
+      format: 'r16float',
+      usage: colorUsage,
+    });
+
     this.depthPass.resize(this.width, this.height);
     this.thicknessPass.resize(this.width, this.height);
     this.normalPass.resize(this.width, this.height);
@@ -186,6 +208,7 @@ export class ScreenSpaceRenderer {
       showBoundsWireframe: this.config.showBoundsWireframe,
       boundsWireframeColor: this.config.boundsWireframeColor,
       boundsSize: this.config.boundsSize,
+      shadowViewProjection: null,
     };
 
     const resources: ScreenSpaceTextures & { buffers: SimBuffers } = {
@@ -196,12 +219,28 @@ export class ScreenSpaceRenderer {
       smoothTextureA: this.smoothTextureA,
       smoothTextureB: this.smoothTextureB,
       foamTexture: this.foamTexture,
+      shadowTexture: this.shadowTexture,
+      shadowSmoothTexture: this.shadowSmoothTexture,
     };
 
     this.depthPass.encode(encoder, resources, frame);
     this.thicknessPass.encode(encoder, resources, frame);
     if (resources.foamTexture) {
       this.foamPass.encode(encoder, resources, frame, resources.foamTexture);
+    }
+
+    // Shadow pass: render thickness from light's perspective, then smooth
+    const shadowVP = this.shadowPass.encode(encoder, resources, frame);
+    frame.shadowViewProjection = shadowVP;
+    if (resources.shadowTexture && resources.shadowSmoothTexture) {
+      this.smoothPass.encode(
+        encoder,
+        resources,
+        frame,
+        resources.shadowTexture,
+        resources.shadowSmoothTexture,
+        resources.shadowTexture // bilateral depth ref = shadow itself
+      );
     }
 
     if (
