@@ -777,11 +777,22 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
   // If the obstacle is the closest hit, alpha-blend it over the background
   if (hasObstacleHit && (!hasFloorHit || obstacleT < floorT)) {
+    let hitPos = origin + dir * obstacleT;
     let a = clamp(params.obstacleAlpha, 0.0, 1.0);
     let ambient = clamp(params.floorAmbient, 0.0, 1.0);
     let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
-    let shadow = sampleShadow(origin + dir * obstacleT, sun);
-    let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadow);
+
+    // Volumetric shadow
+    let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
+    let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 2.0);
+    
+    // Particle shadow
+    let shadowPart = sampleShadow(hitPos, sun);
+    
+    // Combine shadows based on shadowType
+    let shadowFinal = select(1.0, shadowVol.x * shadowPart, params.shadowType > 0.5);
+    
+    let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadowFinal);
     return mix(bgCol, lit, a);
   }
 
@@ -955,8 +966,14 @@ fn fs_main(in: VSOut) -> FSOutput {
           let ambient = clamp(params.floorAmbient, 0.0, 1.0);
           let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
           let obsPos = rayPos + rayDir * obstacleT;
-          let shadow = sampleShadow(obsPos, sun);
-          let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadow);
+
+          // Combined shadow (Volumetric + Particle)
+          let shadowDepth = calculateDensityForShadow(obsPos, params.dirToSun, 100.0);
+          let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 2.0);
+          let shadowPart = sampleShadow(obsPos, sun);
+          let shadowFinal = select(1.0, shadowVol.x * shadowPart, params.shadowType > 0.5);
+
+          let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadowFinal);
           totalLight = totalLight + lit * totalTransmittance * a;
           totalTransmittance = totalTransmittance * (1.0 - a);
           // Move ray past the obstacle to avoid repeated hits
@@ -970,8 +987,14 @@ fn fs_main(in: VSOut) -> FSOutput {
           let ambient = clamp(params.floorAmbient, 0.0, 1.0);
           let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
           let obsPos = rayPos + rayDir * obstacleT;
-          let shadow = sampleShadow(obsPos, sun);
-          let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadow);
+
+          // Combined shadow (Volumetric + Particle)
+          let shadowDepth = calculateDensityForShadow(obsPos, params.dirToSun, 100.0);
+          let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 2.0);
+          let shadowPart = sampleShadow(obsPos, sun);
+          let shadowFinal = select(1.0, shadowVol.x * shadowPart, params.shadowType > 0.5);
+
+          let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadowFinal);
           totalLight = totalLight + lit * totalTransmittance * a;
           totalTransmittance = totalTransmittance * (1.0 - a);
           let exitT = max(obstacleHit.tExit, obstacleT);
