@@ -44,7 +44,7 @@ export function createDefaultEnvironmentConfig(): EnvironmentConfig {
 
     // Floor
     floorSize: { x: 100, y: 1, z: 100 },
-    floorCenter: { x: 0, y: -5.0, z: 0 },
+    floorCenter: { x: 0, y: -5.5, z: 0 },
     tileScale: 1.0,
     tileDarkFactor: -0.35, // HSV Value shift for checker pattern
     
