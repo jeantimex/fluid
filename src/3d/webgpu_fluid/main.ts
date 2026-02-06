@@ -127,6 +127,9 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
     tRay.fluidColor.g = sRay.fluidColor.g;
     tRay.fluidColor.b = sRay.fluidColor.b;
   }
+  if (sRay.renderScale !== undefined && tRay.renderScale !== undefined) {
+    tRay.renderScale = sRay.renderScale;
+  }
   
   // Sync Environment
   const sEnv = s as any;
@@ -196,6 +199,7 @@ function updateGui(adapter: FluidAppAdapter): void {
     raymarchFolder
       .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
       .name('Density Multiplier');
+    raymarchFolder.add(config, 'renderScale', 0.1, 1.0, 0.05).name('Render Scale');
     raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
     raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
     const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');

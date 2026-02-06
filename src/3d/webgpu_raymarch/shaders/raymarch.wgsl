@@ -88,18 +88,19 @@ struct RaymarchParams {
   tileDarkFactor: f32,               // 79
   floorAmbient: f32,                 // 80
   sceneExposure: f32,                // 81
-  floorSize: vec3<f32>,              // 82-84
-  pad14: f32,                        // 85
-  floorCenter: vec3<f32>,            // 86-88
-  pad15: f32,                        // 89
-  obstacleCenter: vec3<f32>,         // 90-92
-  pad16: f32,                        // 93
-  obstacleHalfSize: vec3<f32>,       // 94-96
-  pad17: f32,                        // 97
-  obstacleRotation: vec3<f32>,       // 98-100
-  obstacleAlpha: f32,                // 101
-  obstacleColor: vec3<f32>,          // 102-104
-  pad18: f32,                        // 105
+  pad_align_floor: vec2<f32>,        // 82-83
+  floorSize: vec3<f32>,              // 84-86
+  pad14: f32,                        // 87
+  floorCenter: vec3<f32>,            // 88-90
+  pad15: f32,                        // 91
+  obstacleCenter: vec3<f32>,         // 92-94
+  pad16: f32,                        // 95
+  obstacleHalfSize: vec3<f32>,       // 96-98
+  pad17: f32,                        // 99
+  obstacleRotation: vec3<f32>,       // 100-102
+  obstacleAlpha: f32,                // 103
+  obstacleColor: vec3<f32>,          // 104-106
+  pad18: f32,                        // 107
 };
 
 /// Shadow map uniforms (light-space projection + sampling params).
@@ -548,6 +549,10 @@ fn modulo(x: f32, y: f32) -> f32 {
   return x - y * floor(x / y);
 }
 
+fn linearToSrgb(color: vec3<f32>) -> vec3<f32> {
+  return pow(color, vec3<f32>(1.0 / 2.2));
+}
+
 // =============================================================================
 // Lighting & Shadows
 // =============================================================================
@@ -688,7 +693,7 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         if (hitPos.x < 0.0) { debugTileCol = params.tileCol3; }
         else { debugTileCol = params.tileCol4; }
       }
-      bgCol = srgbToLinear(debugTileCol);
+      bgCol = linearToSrgb(debugTileCol);
     }
 
     // --- Debug mode 1: solid red ---
@@ -716,8 +721,8 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
         }
       }
 
-      // NO gamma correction here because tileCol is already linear and 
-      // the blit pass converts the final linear output to sRGB.
+      // Apply gamma correction (linear to sRGB)
+      tileCol = linearToSrgb(tileCol);
 
       // Calculate tile coordinates
       let tileCoord = floor(rotatedPos * params.tileScale);

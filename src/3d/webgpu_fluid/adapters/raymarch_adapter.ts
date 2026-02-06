@@ -20,6 +20,7 @@ export class RaymarchAdapter implements FluidAppAdapter<RaymarchConfig> {
     densityMultiplier: 0.03,
     stepSize: 0.08,
     lightStepSize: 0.1,
+    renderScale: 0.5,
     shadowSoftness: 1.0,
     maxSteps: 512,
     extinctionCoefficients: { x: 18, y: 8, z: 2 },

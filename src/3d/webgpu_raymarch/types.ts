@@ -57,6 +57,12 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
   /** World-space distance between successive samples along shadow/light rays. */
   lightStepSize: number;
 
+  /**
+   * Scaling factor for the offscreen raymarch texture (0–1).
+   * 0.5 = half resolution (faster), 1.0 = full resolution (crisper).
+   */
+  renderScale: number;
+
   /** Softness of the particle shadow map sampling (0 = hard). */
   shadowSoftness: number;
 

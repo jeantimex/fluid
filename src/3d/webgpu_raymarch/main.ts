@@ -148,6 +148,7 @@ const config: RaymarchConfig = {
   densityMultiplier: 0.05,
   stepSize: 0.02,
   lightStepSize: 0.1,
+  renderScale: 0.5,
   shadowSoftness: 1.0,
   maxSteps: 512,
   fluidColor: { r: 0.4, g: 0.7, b: 1.0 },
@@ -208,6 +209,7 @@ raymarchFolder.add(config, 'densityOffset', 0, 400, 1).name('Density Offset');
 raymarchFolder
   .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
   .name('Density Multiplier');
+raymarchFolder.add(config, 'renderScale', 0.1, 1.0, 0.05).name('Render Scale');
 raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
 raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
 

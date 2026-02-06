@@ -431,21 +431,23 @@ export class RaymarchRenderer {
   }
 
   /**
-   * Ensures the offscreen half-resolution texture matches the current canvas
+   * Ensures the offscreen texture matches the scaled canvas
    * size. Recreates the texture and blit bind group only when dimensions change.
    *
    * @param canvasWidth  - Current canvas pixel width
    * @param canvasHeight - Current canvas pixel height
+   * @param renderScale  - Scaling factor (0-1)
    */
   private ensureOffscreenTexture(
     canvasWidth: number,
-    canvasHeight: number
+    canvasHeight: number,
+    renderScale: number
   ): void {
-    const halfW = Math.max(1, Math.floor(canvasWidth / 2));
-    const halfH = Math.max(1, Math.floor(canvasHeight / 2));
+    const targetW = Math.max(1, Math.floor(canvasWidth * renderScale));
+    const targetH = Math.max(1, Math.floor(canvasHeight * renderScale));
 
     // Skip recreation if dimensions haven't changed
-    if (halfW === this.offscreenWidth && halfH === this.offscreenHeight) {
+    if (targetW === this.offscreenWidth && targetH === this.offscreenHeight) {
       return;
     }
 
@@ -456,11 +458,11 @@ export class RaymarchRenderer {
       this.offscreenDepthTexture.destroy();
     }
 
-    this.offscreenWidth = halfW;
-    this.offscreenHeight = halfH;
+    this.offscreenWidth = targetW;
+    this.offscreenHeight = targetH;
 
     this.offscreenTexture = this.device.createTexture({
-      size: { width: halfW, height: halfH },
+      size: { width: targetW, height: targetH },
       format: this.format,
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -470,7 +472,7 @@ export class RaymarchRenderer {
 
     // Create depth texture for raymarch depth output
     this.offscreenDepthTexture = this.device.createTexture({
-      size: { width: halfW, height: halfH },
+      size: { width: targetW, height: targetH },
       format: 'depth24plus',
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
@@ -681,7 +683,11 @@ export class RaymarchRenderer {
     config: RaymarchConfig,
     particleCount: number
   ): void {
-    this.ensureOffscreenTexture(this.canvas.width, this.canvas.height);
+    this.ensureOffscreenTexture(
+      this.canvas.width,
+      this.canvas.height,
+      config.renderScale
+    );
 
     const basis = camera.basis;
     const pos = camera.position;
@@ -807,39 +813,41 @@ export class RaymarchRenderer {
     // --- Optical & lighting parameters ---
     this.uniformData[80] = config.floorAmbient;
     this.uniformData[81] = config.sceneExposure;
+    this.uniformData[82] = 0; // pad_align_floor
+    this.uniformData[83] = 0; // pad_align_floor
 
     // --- Floor geometry ---
-    this.uniformData[82] = config.floorSize.x;
-    this.uniformData[83] = config.floorSize.y;
-    this.uniformData[84] = config.floorSize.z;
-    this.uniformData[85] = 0; // pad14
+    this.uniformData[84] = config.floorSize.x;
+    this.uniformData[85] = config.floorSize.y;
+    this.uniformData[86] = config.floorSize.z;
+    this.uniformData[87] = 0; // pad14
 
     // Floor center
-    this.uniformData[86] = 0; // floorCenter.x
-    this.uniformData[87] = -5.0 + config.floorSize.y * 0.5; // floorCenter.y (raised slightly)
-    this.uniformData[88] = 0; // floorCenter.z
-    this.uniformData[89] = 0; // pad15
+    this.uniformData[88] = 0; // floorCenter.x
+    this.uniformData[89] = -5.0 + config.floorSize.y * 0.5; // floorCenter.y
+    this.uniformData[90] = 0; // floorCenter.z
+    this.uniformData[91] = 0; // pad15
 
     // --- Obstacle box ---
-    this.uniformData[90] = config.obstacleCentre.x;
-    this.uniformData[91] = config.obstacleCentre.y;
-    this.uniformData[92] = config.obstacleCentre.z;
-    this.uniformData[93] = 0; // pad16
+    this.uniformData[92] = config.obstacleCentre.x;
+    this.uniformData[93] = config.obstacleCentre.y;
+    this.uniformData[94] = config.obstacleCentre.z;
+    this.uniformData[95] = 0; // pad16
 
-    this.uniformData[94] = config.obstacleSize.x * 0.5;
-    this.uniformData[95] = config.obstacleSize.y * 0.5;
-    this.uniformData[96] = config.obstacleSize.z * 0.5;
-    this.uniformData[97] = 0; // pad17
+    this.uniformData[96] = config.obstacleSize.x * 0.5;
+    this.uniformData[97] = config.obstacleSize.y * 0.5;
+    this.uniformData[98] = config.obstacleSize.z * 0.5;
+    this.uniformData[99] = 0; // pad17
 
-    this.uniformData[98] = config.obstacleRotation.x;
-    this.uniformData[99] = config.obstacleRotation.y;
-    this.uniformData[100] = config.obstacleRotation.z;
-    this.uniformData[101] = config.obstacleAlpha;
+    this.uniformData[100] = config.obstacleRotation.x;
+    this.uniformData[101] = config.obstacleRotation.y;
+    this.uniformData[102] = config.obstacleRotation.z;
+    this.uniformData[103] = config.obstacleAlpha;
 
-    this.uniformData[102] = config.obstacleColor.r;
-    this.uniformData[103] = config.obstacleColor.g;
-    this.uniformData[104] = config.obstacleColor.b;
-    this.uniformData[105] = 0; // pad18
+    this.uniformData[104] = config.obstacleColor.r;
+    this.uniformData[105] = config.obstacleColor.g;
+    this.uniformData[106] = config.obstacleColor.b;
+    this.uniformData[107] = 0; // pad18
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);
