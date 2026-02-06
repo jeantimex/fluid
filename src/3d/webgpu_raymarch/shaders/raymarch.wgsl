@@ -78,8 +78,7 @@ struct RaymarchParams {
   pad10: f32,                        // 59
   extinctionCoefficients: vec3<f32>, // 60-62
   sunPower: f32,                     // 63
-  fluidColor: vec3<f32>,             // 64-66
-  pad12: f32,                        // 67
+  pad12: vec4<f32>,                  // 64-67
   skyColorHorizon: vec3<f32>,        // 68-70
   indexOfRefraction: f32,            // 71
   skyColorZenith: vec3<f32>,         // 72-74
@@ -100,7 +99,7 @@ struct RaymarchParams {
   obstacleRotation: vec3<f32>,       // 100-102
   obstacleAlpha: f32,                // 103
   obstacleColor: vec3<f32>,          // 104-106
-  pad18: f32,                        // 107
+  showShadows: f32,                  // 107
 };
 
 /// Shadow map uniforms (light-space projection + sampling params).
@@ -589,14 +588,12 @@ fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) 
 /// T = exp(−τ × σ) where σ is the per-channel extinction coefficient.
 /// Higher extinction → more absorption → darker color for that channel.
 fn transmittance(opticalDepth: f32) -> vec3<f32> {
-  let T = exp(-opticalDepth * params.extinctionCoefficients);
-  let tintStrength = clamp(opticalDepth * 0.15, 0.0, 1.0);
-  let tint = mix(vec3<f32>(1.0), params.fluidColor, tintStrength);
-  return T * tint;
+  return exp(-opticalDepth * params.extinctionCoefficients);
 }
 
 /// Samples the particle shadow map at a world position.
 fn sampleShadow(worldPos: vec3<f32>, ndotl: f32) -> f32 {
+  if (params.showShadows < 0.5) { return 1.0; }
   let lightPos = shadowUniforms.lightViewProjection * vec4<f32>(worldPos, 1.0);
   let ndc = lightPos.xyz / lightPos.w;
   let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
@@ -742,13 +739,13 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
       // Shadow Map modulation
       let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-      let shadowMap = transmittance(shadowDepth * 2.0);
+      let shadowMap = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.showShadows > 0.5);
       let ndotl = max(dot(vec3<f32>(0.0, 1.0, 0.0), params.dirToSun), 0.0);
       let shadowScene = sampleShadow(hitPos, ndotl);
       
       // lighting = Combine shadows with ambient to ensure tiles are never pitch black
       let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-      let lighting = shadowMap * shadowScene * (1.0 - ambient) + ambient;
+      let lighting = select(1.0, shadowMap.x * shadowScene * (1.0 - ambient) + ambient, params.showShadows > 0.5);
 
       // Color adjustments
       var finalColor = tileCol * lighting * params.globalBrightness;
@@ -1001,16 +998,12 @@ fn fs_main(in: VSOut) -> FSOutput {
         normal = -normal;
      }
 
-     // Determine IOR pair based on current medium:
-     //   Travelling through fluid: iorA = fluid, iorB = air (exiting)
-     //   Travelling through air:   iorA = air,   iorB = fluid (entering)
-     // WGSL select(falseVal, trueVal, condition):
-     let response = calculateReflectionAndRefraction(rayDir, normal, select(iorAir, iorFluid, travellingThroughFluid), select(iorFluid, iorAir, travellingThroughFluid));
+     // Indicies of refraction
+     let iorA = select(iorAir, iorFluid, travellingThroughFluid);
+     let iorB = select(iorFluid, iorAir, travellingThroughFluid);
 
-     // Sun shadowing from obstacle/particles (shadow map) applied to surface lighting only.
-     let ndotl = max(dot(normal, params.dirToSun), 0.0);
-     let shadow = sampleShadow(surfaceInfo.pos, ndotl);
-     let surfaceLighting = clamp(params.floorAmbient, 0.0, 1.0) + ndotl * shadow * (1.0 - clamp(params.floorAmbient, 0.0, 1.0));
+     // Calculate reflection and refraction, and choose which path to follow
+     let response = calculateReflectionAndRefraction(rayDir, normal, iorA, iorB);
 
      // --- Heuristic: which ray to trace? ---
      // Probe density along both directions to estimate which path
@@ -1025,7 +1018,7 @@ fn fs_main(in: VSOut) -> FSOutput {
 
      if (traceRefractedRay) {
         // --- Follow refraction, add reflection contribution now ---
-        let reflectLight = sampleEnvironment(surfaceInfo.pos, response.reflectDir) * surfaceLighting;
+        let reflectLight = sampleEnvironment(surfaceInfo.pos, response.reflectDir);
         let reflectTrans = transmittance(densityReflect);
         totalLight = totalLight + reflectLight * totalTransmittance * reflectTrans * response.reflectWeight;
 
@@ -1035,7 +1028,7 @@ fn fs_main(in: VSOut) -> FSOutput {
         totalTransmittance = totalTransmittance * response.refractWeight;
      } else {
         // --- Follow reflection, add refraction contribution now ---
-        let refractLight = sampleEnvironment(surfaceInfo.pos, response.refractDir) * surfaceLighting;
+        let refractLight = sampleEnvironment(surfaceInfo.pos, response.refractDir);
         let refractTrans = transmittance(densityRefract);
         totalLight = totalLight + refractLight * totalTransmittance * refractTrans * response.refractWeight;
 
@@ -1055,11 +1048,6 @@ fn fs_main(in: VSOut) -> FSOutput {
   let densityRemainder = calculateDensityForShadow(rayPos, rayDir, 1000.0);
   let finalBg = sampleEnvironment(rayPos, rayDir);
   totalLight = totalLight + finalBg * totalTransmittance * transmittance(densityRemainder);
-
-  if (hitFluid) {
-    let tint = mix(vec3<f32>(1.0), params.fluidColor, 0.5);
-    totalLight = totalLight * tint;
-  }
 
   // Apply exposure and output (linear space — blit pass handles sRGB conversion)
   let exposure = max(params.sceneExposure, 0.0);

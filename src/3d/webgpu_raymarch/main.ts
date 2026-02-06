@@ -151,10 +151,10 @@ const config: RaymarchConfig = {
   renderScale: 0.5,
   shadowSoftness: 1.0,
   maxSteps: 512,
-  fluidColor: { r: 0.4, g: 0.7, b: 1.0 },
   indexOfRefraction: 1.33,
   numRefractions: 4,
   extinctionCoefficients: { x: 12, y: 4, z: 4 },
+  showShadows: true,
   showBoundsWireframe: false,
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
 };
@@ -191,16 +191,6 @@ const { stats, gui } = setupGui(
 
 const raymarchFolder = gui.addFolder('Raymarch');
 raymarchFolder.close();
-const fluidColorState = { fluidColor: rgbToHex(config.fluidColor) };
-raymarchFolder
-  .addColor(fluidColorState, 'fluidColor')
-  .name('Fluid Color')
-  .onChange((value: string) => {
-    const rgb = hexToRgb(value);
-    config.fluidColor.r = rgb.r / 255;
-    config.fluidColor.g = rgb.g / 255;
-    config.fluidColor.b = rgb.b / 255;
-  });
 raymarchFolder
   .add(config, 'densityTextureRes', 32, 256, 1)
   .name('Density Texture Res')
@@ -212,6 +202,7 @@ raymarchFolder
 raymarchFolder.add(config, 'renderScale', 0.1, 1.0, 0.05).name('Render Scale');
 raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
 raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
+raymarchFolder.add(config, 'showShadows').name('Show Shadows');
 
 const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
 extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');

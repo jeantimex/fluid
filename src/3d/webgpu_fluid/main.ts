@@ -122,11 +122,6 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
   // Sync Raymarch specific
   const sRay = s as any;
   const tRay = t as any;
-  if (sRay.fluidColor && tRay.fluidColor) {
-    tRay.fluidColor.r = sRay.fluidColor.r;
-    tRay.fluidColor.g = sRay.fluidColor.g;
-    tRay.fluidColor.b = sRay.fluidColor.b;
-  }
   if (sRay.renderScale !== undefined && tRay.renderScale !== undefined) {
     tRay.renderScale = sRay.renderScale;
   }
@@ -190,7 +185,6 @@ function updateGui(adapter: FluidAppAdapter): void {
   else if (adapter.name === 'Raymarch') {
     const raymarchFolder = mainGui.addFolder('Raymarch');
     raymarchFolder.close();
-    raymarchFolder.addColor(config, 'fluidColor').name('Fluid Color');
     raymarchFolder
       .add(config, 'densityTextureRes', 32, 256, 1)
       .name('Density Texture Res')

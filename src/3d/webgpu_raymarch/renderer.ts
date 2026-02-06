@@ -28,35 +28,51 @@
  * | 16–18  | boundsSize             | vec3<f32> |
  * | 19     | densityOffset          | f32       |
  * | 20     | densityMultiplier      | f32       |
- * | 21     | stepSize               | f32       |
- * | 22     | lightStepSize          | f32       |
- * | 23     | aspect                 | f32       |
- * | 24     | fovY                   | f32       |
- * | 25     | maxSteps               | f32       |
- * | 26     | tileScale              | f32       |
- * | 27     | tileDarkOffset         | f32       |
- * | 28–30  | tileCol1               | vec3<f32> |
- * | 32–34  | tileCol2               | vec3<f32> |
- * | 36–38  | tileCol3               | vec3<f32> |
- * | 40–42  | tileCol4               | vec3<f32> |
- * | 44–46  | tileColVariation       | vec3<f32> |
- * | 47     | debugFloorMode         | f32       |
- * | 48–50  | dirToSun               | vec3<f32> |
- * | 52–54  | extinctionCoefficients | vec3<f32> |
- * | 56–58  | fluidColor             | vec3<f32> |
- * | 60     | indexOfRefraction       | f32       |
- * | 61     | numRefractions         | f32       |
- * | 62     | tileDarkFactor         | f32       |
- * | 63     | floorAmbient           | f32       |
- * | 64–66  | floorSize              | vec3<f32> |
- * | 67     | sceneExposure          | f32       |
- * | 68–70  | floorCenter            | vec3<f32> |
- * | 72–74  | obstacleCenter         | vec3<f32> |
- * | 76–78  | obstacleHalfSize       | vec3<f32> |
- * | 80–82  | obstacleRotation       | vec3<f32> |
- * | 83     | pad                    | f32       |
- * | 84–86  | obstacleColor          | vec3<f32> |
- * | 87     | obstacleAlpha          | f32       |
+ * | 0–2   | viewPos                | vec3<f32> |
+ * | 4–6   | cameraRight            | vec3<f32> |
+ * | 8–10  | cameraUp               | vec3<f32> |
+ * | 12–14 | cameraForward          | vec3<f32> |
+ * | 16–18 | minBounds              | vec3<f32> |
+ * | 19     | voxelsPerUnit          | f32       |
+ * | 20–22 | maxBounds              | vec3<f32> |
+ * | 23     | floorY                 | f32       |
+ * | 24     | densityOffset          | f32       |
+ * | 25     | densityMultiplier      | f32       |
+ * | 26     | stepSize               | f32       |
+ * | 27     | lightStepSize          | f32       |
+ * | 28     | aspect                 | f32       |
+ * | 29     | fovY                   | f32       |
+ * | 30     | maxSteps               | f32       |
+ * | 31     | tileScale              | f32       |
+ * | 32     | tileDarkOffset         | f32       |
+ * | 33     | globalBrightness       | f32       |
+ * | 34     | globalSaturation       | f32       |
+ * | 36–38  | tileCol1               | vec3<f32> |
+ * | 40–42  | tileCol2               | vec3<f32> |
+ * | 44–46  | tileCol3               | vec3<f32> |
+ * | 48–50  | tileCol4               | vec3<f32> |
+ * | 52–54  | tileColVariation       | vec3<f32> |
+ * | 55     | debugFloorMode         | f32       |
+ * | 56–58  | dirToSun               | vec3<f32> |
+ * | 60–62  | extinctionCoefficients | vec3<f32> |
+ * | 63     | sunPower               | f32       |
+ * | 64-67  | pad12                  | vec4<f32> |
+ * | 68–70  | skyColorHorizon        | vec3<f32> |
+ * | 71     | indexOfRefraction      | f32       |
+ * | 72–74  | skyColorZenith         | vec3<f32> |
+ * | 75     | numRefractions         | f32       |
+ * | 76–78  | skyColorGround         | vec3<f32> |
+ * | 79     | tileDarkFactor         | f32       |
+ * | 80     | floorAmbient           | f32       |
+ * | 81     | sceneExposure          | f32       |
+ * | 84–86  | floorSize              | vec3<f32> |
+ * | 88–90  | floorCenter            | vec3<f32> |
+ * | 92–94  | obstacleCenter         | vec3<f32> |
+ * | 96–98  | obstacleHalfSize       | vec3<f32> |
+ * | 100–102| obstacleRotation       | vec3<f32> |
+ * | 103    | obstacleAlpha          | f32       |
+ * | 104–106| obstacleColor          | vec3<f32> |
+ * | 107    | pad                    | f32       |
  *
  * @module renderer
  */
@@ -788,11 +804,11 @@ export class RaymarchRenderer {
     this.uniformData[62] = config.extinctionCoefficients.z;
     this.uniformData[63] = config.sunPower; // sunPower at 63
 
-    // --- Fluid absorption color ---
-    this.uniformData[64] = config.fluidColor.r;
-    this.uniformData[65] = config.fluidColor.g;
-    this.uniformData[66] = config.fluidColor.b;
-    this.uniformData[67] = 0; // pad12
+    // --- Padding (formerly fluidColor) ---
+    this.uniformData[64] = 0;
+    this.uniformData[65] = 0;
+    this.uniformData[66] = 0;
+    this.uniformData[67] = 0;
 
     // --- Sky Colors ---
     this.uniformData[68] = config.skyColorHorizon.r;
@@ -847,7 +863,7 @@ export class RaymarchRenderer {
     this.uniformData[104] = config.obstacleColor.r;
     this.uniformData[105] = config.obstacleColor.g;
     this.uniformData[106] = config.obstacleColor.b;
-    this.uniformData[107] = 0; // pad18
+    this.uniformData[107] = config.showShadows ? 1.0 : 0.0;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

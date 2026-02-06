@@ -43,17 +43,17 @@ export function createDefaultEnvironmentConfig(): EnvironmentConfig {
     sunPower: 500.0,
 
     // Floor
-    floorSize: { x: 80, y: 0.05, z: 80 },
+    floorSize: { x: 100, y: 1, z: 100 },
     floorCenter: { x: 0, y: -5.0, z: 0 },
-    tileScale: 0.87,
-    tileDarkFactor: 0.2, // HSV Value shift for checker pattern
+    tileScale: 1.0,
+    tileDarkFactor: -0.35, // HSV Value shift for checker pattern
     
-    // Unity basic scene colors
-    tileCol1: { r: 0.5647059, g: 0.4683025, b: 0.25490198 },   // Yellowish
-    tileCol2: { r: 0.424268, g: 0.27100393, b: 0.6603774 },    // Pinkish
-    tileCol3: { r: 0.14057493, g: 0.3679245, b: 0.16709903 },  // Greenish
-    tileCol4: { r: 0.07164471, g: 0.19658183, b: 0.4339623 },  // Bluish
-    tileColVariation: { x: 0.2, y: 0.0, z: 0.73 },
+    // Unity Fluid Raymarch scene colors
+    tileCol1: { r: 0.20392157, g: 0.5176471, b: 0.7764706 },   // Light Blue
+    tileCol2: { r: 0.6081319, g: 0.36850303, b: 0.8584906 },    // Purple
+    tileCol3: { r: 0.3019758, g: 0.735849, b: 0.45801795 },  // Green
+    tileCol4: { r: 0.8018868, g: 0.6434483, b: 0.36690104 },  // Yellow/Brown
+    tileColVariation: { x: 0.33, y: 0.0, z: 0.47 },
     debugFloorMode: 0,
     globalBrightness: 1.0,
     globalSaturation: 1.0,

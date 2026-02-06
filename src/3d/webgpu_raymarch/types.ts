@@ -73,9 +73,6 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
   // Optical Properties
   // ---------------------------------------------------------------------------
 
-  /** Base color used for absorption tinting of the fluid. */
-  fluidColor: RGB;
-
   /**
    * Per-channel extinction (absorption) coefficients for Beer–Lambert
    * transmittance. Higher values make the fluid more opaque along that
@@ -96,4 +93,7 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
 
   /** Multiplier applied to the "dark" tiles in the checkerboard (0–1). */
   tileDarkOffset: number;
+
+  /** Whether to enable volume and scene shadows. */
+  showShadows: boolean;
 }

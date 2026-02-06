@@ -126,15 +126,6 @@ const config: ScreenSpaceConfig = {
   shadowSoftness: 1.0,
   shadowRadiusScale: 1.0,
 
-  // Environment (Unity scene match)
-  tileCol1: { r: 0.14057493, g: 0.3679245, b: 0.16709903 },
-  tileCol2: { r: 0.07164471, g: 0.19658183, b: 0.4339623 },
-  tileCol3: { r: 0.5647059, g: 0.4683025, b: 0.25490198 },
-  tileCol4: { r: 0.424268, g: 0.27100393, b: 0.6603774 },
-  tileScale: 0.87,
-  tileDarkFactor: 0.2,
-  tileColVariation: { x: 0.2, y: 0, z: 0.73 },
-
   // Wireframe
   showBoundsWireframe: false,
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
