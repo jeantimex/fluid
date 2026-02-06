@@ -61,7 +61,8 @@ fn sampleShadow(worldPos: vec3<f32>, ndotl: f32) -> f32 {
     return 1.0;
   }
 
-  let bias = max(0.0005 * (1.0 - ndotl), 0.0001);
+  // Use larger bias for obstacle to prevent self-shadowing artifacts
+  let bias = max(0.01 * (1.0 - ndotl), 0.005);
   let depth = ndc.z - bias;
   let softness = shadowUniforms.shadowSoftness;
 
@@ -85,8 +86,8 @@ fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
   let n = normalize(input.normal);
   let l = normalize(uniforms.lightDir);
   let ndotl = max(dot(n, l), 0.0);
-  let diffuse = ndotl * 0.5 + 0.5;
   let shadow = sampleShadow(input.worldPos, ndotl);
-  let shading = uniforms.ambient + diffuse * uniforms.sunBrightness * shadow;
+  // Use standard diffuse lighting (matching environment.wgsl) instead of half-lambert
+  let shading = uniforms.ambient + ndotl * uniforms.sunBrightness * shadow;
   return vec4<f32>(input.color.rgb * shading * uniforms.sceneExposure, input.color.a);
 }

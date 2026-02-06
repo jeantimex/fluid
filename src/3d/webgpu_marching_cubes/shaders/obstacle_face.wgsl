@@ -55,7 +55,8 @@ fn vs_main(input: VertexIn) -> VertexOut {
 fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
   let n = normalize(input.normal);
   let l = normalize(uniforms.lightDir);
-  let diffuse = dot(n, l) * 0.5 + 0.5;
-  let shading = uniforms.ambient + diffuse * uniforms.sunBrightness;
+  // Use standard diffuse lighting (matching environment.wgsl)
+  let ndotl = max(dot(n, l), 0.0);
+  let shading = uniforms.ambient + ndotl * uniforms.sunBrightness;
   return vec4<f32>(input.color.rgb * shading * uniforms.sceneExposure, input.color.a);
 }
