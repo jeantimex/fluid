@@ -205,6 +205,9 @@ raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
 raymarchFolder
   .add(config, 'shadowType', ['None', 'Volumetric'])
   .name('Shadow Type');
+raymarchFolder
+  .add(config, 'showShadows')
+  .name('Show Shadows');
 
 const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
 extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');

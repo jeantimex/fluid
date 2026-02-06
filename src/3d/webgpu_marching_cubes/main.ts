@@ -109,6 +109,7 @@ const config: MarchingCubesConfig = {
   isoLevel: 75,
   surfaceColor: { r: 15 / 255, g: 91 / 255, b: 234 / 255 },
   shadowSoftness: 1.0,
+  showParticleShadows: true,
   showBoundsWireframe: false,
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
 };
@@ -172,6 +173,10 @@ marchingFolder
     config.surfaceColor.g = rgb.g / 255;
     config.surfaceColor.b = rgb.b / 255;
   });
+
+marchingFolder
+  .add(config, 'showParticleShadows')
+  .name('Show Shadows');
 
 /**
  * Main Application Entry Point

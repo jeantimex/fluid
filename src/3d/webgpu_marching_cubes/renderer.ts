@@ -887,17 +887,20 @@ export class MarchingCubesRenderer {
       },
     });
 
-    // Mesh shadows
-    shadowPass.setPipeline(this.shadowMeshPipeline);
-    shadowPass.setBindGroup(0, this.shadowMeshBindGroup);
-    shadowPass.drawIndirect(this.renderArgsBuffer, 0);
+    // Only render shadows if enabled
+    if (config.showParticleShadows) {
+      // Mesh shadows
+      shadowPass.setPipeline(this.shadowMeshPipeline);
+      shadowPass.setBindGroup(0, this.shadowMeshBindGroup);
+      shadowPass.drawIndirect(this.renderArgsBuffer, 0);
 
-    // Obstacle shadows
-    if (faceCount > 0) {
-      shadowPass.setPipeline(this.shadowObstaclePipeline);
-      shadowPass.setBindGroup(0, this.shadowObstacleBindGroup);
-      shadowPass.setVertexBuffer(0, this.lineVertexBuffer, 0);
-      shadowPass.draw(faceCount);
+      // Obstacle shadows
+      if (faceCount > 0) {
+        shadowPass.setPipeline(this.shadowObstaclePipeline);
+        shadowPass.setBindGroup(0, this.shadowObstacleBindGroup);
+        shadowPass.setVertexBuffer(0, this.lineVertexBuffer, 0);
+        shadowPass.draw(faceCount);
+      }
     }
     shadowPass.end();
 

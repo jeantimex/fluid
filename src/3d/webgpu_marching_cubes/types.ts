@@ -33,6 +33,9 @@ export interface MarchingCubesConfig extends SimConfig, EnvironmentConfig {
   /** Scales shadow ray step size for softer shadows. */
   shadowSoftness: number;
 
+  /** Whether to show particle shadows. */
+  showParticleShadows: boolean;
+
   /** Whether to show the bounds wireframe. */
   showBoundsWireframe: boolean;
 
