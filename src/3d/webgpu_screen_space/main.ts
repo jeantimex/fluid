@@ -150,7 +150,7 @@ const { stats, gui } = setupGui(
   },
   {
     trackGPU: true, // Enable GPU timing statistics
-    title: 'WebGPU 3D Fluid (Screen-Space)',
+    title: 'WebGPU Screen Space',
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );

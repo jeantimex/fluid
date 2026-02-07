@@ -141,8 +141,6 @@ const config: RaymarchConfig = {
   viscosityStrength: 0.001,
   iterationsPerFrame: 3,
   nearPressureMultiplier: 2.25,
-  boundsSize: { x: 15, y: 10, z: 8 },
-  spawnRegions: [{ position: { x: -4, y: -1.42, z: 0 }, size: { x: 7, y: 7, z: 7 } }],
   densityTextureRes: 150,
   densityOffset: 200,
   densityMultiplier: 0.05,
@@ -177,7 +175,7 @@ const { stats, gui } = setupGui(
   },
   {
     trackGPU: true, // Enable GPU timing statistics
-    title: 'WebGPU 3D Fluid Raymarch',
+    title: 'WebGPU Raymarch',
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );

@@ -135,7 +135,7 @@ const { stats, gui } = setupGui(
   },
   {
     trackGPU: true, // Enable GPU timing statistics
-    title: 'WebGPU 3D Fluid',
+    title: 'WebGPU Particles',
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );

@@ -99,9 +99,6 @@ const canvas = createCanvas(app);
 const config: MarchingCubesConfig = {
   ...createConfig(),
   ...createDefaultEnvironmentConfig(),
-  timeScale: 1.0,
-  boundsSize: { x: 16, y: 12, z: 8 },
-  spawnRegions: [{ position: { x: 3.92, y: -1.94, z: 0 }, size: { x: 7, y: 7, z: 7 } }],
   viscosityStrength: 0.001,
   iterationsPerFrame: 3,
   nearPressureMultiplier: 2.25,
@@ -132,7 +129,7 @@ const { stats, gui } = setupGui(
   },
   {
     trackGPU: true, // Enable GPU timing statistics
-    title: 'WebGPU 3D Fluid Marching Cubes',
+    title: 'WebGPU Marching Cubes',
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
@@ -145,7 +142,7 @@ if (performanceFolder) {
     .add(timeMode, 'mode', { Normal: 'Normal', Slow: 'Slow' })
     .name('Time Mode')
     .onChange((value: string) => {
-      config.timeScale = value === 'Slow' ? 0.2 : 1.0;
+      config.timeScale = value === 'Slow' ? 0.4 : 2.0;
     });
 }
 
