@@ -24,7 +24,7 @@ export function createConfig(): SimConfig {
     obstacleAlpha: 0.8,
 
     interactionRadius: 2,
-    interactionStrength: 90,
+    interactionStrength: 50,
 
     particleRadius: 2.5, // In pixels, same as 2D
     // Unity Fluid Particles scene: particleSpawnDensity = 600

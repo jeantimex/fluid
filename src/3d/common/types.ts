@@ -62,6 +62,9 @@ export interface InputState {
   worldZ: number;
   pull: boolean;
   push: boolean;
+  rayOrigin?: Vec3;
+  rayDir?: Vec3;
+  isHoveringFluid?: boolean;
 }
 
 export interface SimState {

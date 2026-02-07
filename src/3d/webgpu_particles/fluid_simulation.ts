@@ -13,6 +13,7 @@ import { FluidPhysics, type PhysicsUniforms } from '../common/fluid_physics.ts';
 import { Renderer } from './renderer.ts';
 import { mat4Perspective, mat4Multiply } from '../common/math_utils.ts';
 import { DensitySplatPipeline } from './density_splat_pipeline.ts';
+import { PickingSystem } from '../common/picking_system.ts';
 
 /**
  * Orchestrates the full SPH fluid simulation pipeline on the GPU.
@@ -34,12 +35,17 @@ export class FluidSimulation {
   private grid: SpatialGrid;
   private renderer: Renderer;
   private splatPipeline: DensitySplatPipeline;
+  private pickingSystem: PickingSystem;
 
   private state!: SimState;
 
   // --- Grid Configuration ---
   private gridRes = { x: 0, y: 0, z: 0 };
   private gridTotalCells = 0;
+
+  // --- Interaction State ---
+  private isPicking = false;
+  private interactionPos = { x: 0, y: 0, z: 0 };
 
   // --- Uniform Buffers ---
   private physicsUniforms!: PhysicsUniforms;
@@ -75,6 +81,7 @@ export class FluidSimulation {
     this.grid = new SpatialGrid(device);
     this.renderer = new Renderer(device, canvas, format, config);
     this.splatPipeline = new DensitySplatPipeline(device);
+    this.pickingSystem = new PickingSystem(device);
 
     // Create all uniform buffers upfront
     this.physicsUniforms = {
@@ -133,6 +140,7 @@ export class FluidSimulation {
     this.physics.createBindGroups(this.buffers, this.physicsUniforms);
     this.grid.createBindGroups(this.buffers, this.gridUniforms);
     this.splatPipeline.recreate(this.config, this.buffers.predicted);
+    this.pickingSystem.createBindGroup(this.buffers.positions);
     
     // Update renderer with new buffers and the cull uniform buffer we manage here
     this.renderer.createBindGroup(this.buffers, this.splatPipeline.textureView, this.cullUniformBuffer);
@@ -169,6 +177,20 @@ export class FluidSimulation {
 
     const encoder = device.createCommandEncoder();
     
+    // Update interaction point via GPU picking
+    let pickingDispatched = false;
+    if (!this.isPicking && this.state.input.rayOrigin && this.state.input.rayDir) {
+      this.isPicking = true;
+      pickingDispatched = true;
+      this.pickingSystem.dispatch(
+        encoder,
+        this.state.input.rayOrigin,
+        this.state.input.rayDir,
+        config.smoothingRadius,
+        buffers.particleCount
+      );
+    }
+
     // Beginner note:
     // A single compute pass can contain many dispatches. This reduces CPU overhead
     // while keeping GPU work ordered exactly as recorded.
@@ -189,6 +211,38 @@ export class FluidSimulation {
     
     // Submit the recorded GPU work to the queue.
     device.queue.submit([encoder.finish()]);
+
+    // Read back picking result AFTER submission
+    if (pickingDispatched) {
+      this.pickingSystem.getResult().then(res => {
+        if (res && res.hit) {
+          let tx = res.hitPos.x;
+          let ty = res.hitPos.y;
+          let tz = res.hitPos.z;
+
+          // If pulling, offset slightly deeper into the fluid to keep clusters together
+          if (this.state.input.pull && this.state.input.rayDir) {
+            tx += this.state.input.rayDir.x * 0.5;
+            ty += this.state.input.rayDir.y * 0.5;
+            tz += this.state.input.rayDir.z * 0.5;
+          }
+
+          this.state.input.worldX = tx;
+          this.state.input.worldY = ty;
+          this.state.input.worldZ = tz;
+          this.state.input.isHoveringFluid = true;
+        } else {
+          this.state.input.isHoveringFluid = false;
+        }
+        this.isPicking = false;
+      });
+    }
+
+    // Smoothly interpolate the actual interaction position to avoid "splashing"
+    const lerp = 0.15; // Damping factor
+    this.interactionPos.x += (this.state.input.worldX - this.interactionPos.x) * lerp;
+    this.interactionPos.y += (this.state.input.worldY - this.interactionPos.y) * lerp;
+    this.interactionPos.z += (this.state.input.worldZ - this.interactionPos.z) * lerp;
   }
 
   private updateUniforms(timeStep: number): void {
@@ -203,9 +257,9 @@ export class FluidSimulation {
     this.computeData[1] = config.gravity;
     this.computeData[2] = config.interactionRadius;
     this.computeData[3] = interactionStrength;
-    this.computeData[4] = state.input.worldX;
-    this.computeData[5] = state.input.worldY;
-    this.computeData[6] = state.input.worldZ;
+    this.computeData[4] = this.interactionPos.x;
+    this.computeData[5] = this.interactionPos.y;
+    this.computeData[6] = this.interactionPos.z;
     this.computeData[7] = 0;
     device.queue.writeBuffer(this.physicsUniforms.external, 0, this.computeData);
 

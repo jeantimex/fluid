@@ -187,22 +187,20 @@ export function setupInputHandlers(
   };
 
   const getBoxIntersection = (ray: { origin: any; dir: any }) => {
-    const boxMin = {
-      x: -config.boundsSize.x / 2,
-      y: -config.boundsSize.y / 2,
-      z: -config.boundsSize.z / 2,
-    };
-    const boxMax = {
-      x: config.boundsSize.x / 2,
-      y: config.boundsSize.y / 2,
-      z: config.boundsSize.z / 2,
-    };
+    const size = config.boundsSize;
+    const hx = size.x * 0.5;
+    const hz = size.z * 0.5;
+    const minY = -5.0;
+    const boxMin = { x: -hx, y: minY, z: -hz };
+    const boxMax = { x: hx, y: minY + size.y, z: hz };
 
     const hit = rayBoxIntersectionT(ray.origin, ray.dir, boxMin, boxMax);
     if (!hit.hit) return null;
 
     // Use the point along the ray closest to the box center, clamped to the hit segment.
-    const tCenter = -(ray.origin.x * ray.dir.x + ray.origin.y * ray.dir.y + ray.origin.z * ray.dir.z);
+    const center = { x: 0, y: minY + size.y * 0.5, z: 0 };
+    const oc = { x: ray.origin.x - center.x, y: ray.origin.y - center.y, z: ray.origin.z - center.z };
+    const tCenter = -(oc.x * ray.dir.x + oc.y * ray.dir.y + oc.z * ray.dir.z);
     const t = Math.max(hit.tmin, Math.min(hit.tmax, tCenter));
     if (t < 0) return null;
     return vec3Add(ray.origin, vec3Scale(ray.dir, t));
@@ -219,6 +217,9 @@ export function setupInputHandlers(
     if (!input) return;
 
     const ray = getRay(event.clientX, event.clientY);
+    input.rayOrigin = ray.origin;
+    input.rayDir = ray.dir;
+
     const point = getBoxIntersection(ray) ?? getPlaneIntersection(ray);
 
     if (point) {
@@ -242,32 +243,36 @@ export function setupInputHandlers(
     const input = getInput();
     if (!input) return;
 
+    const size = config.boundsSize;
+    const hx = size.x * 0.5;
+    const hz = size.z * 0.5;
+    const minY = -5.0;
+    const boxMin = { x: -hx, y: minY, z: -hz };
+    const boxMax = { x: hx, y: minY + size.y, z: hz };
+
     const ray = getRay(e.clientX, e.clientY);
     const hit = rayBoxIntersection(
       ray.origin,
       ray.dir,
-      {
-        x: -config.boundsSize.x / 2,
-        y: -config.boundsSize.y / 2,
-        z: -config.boundsSize.z / 2,
-      },
-      {
-        x: config.boundsSize.x / 2,
-        y: config.boundsSize.y / 2,
-        z: config.boundsSize.z / 2,
-      }
+      boxMin,
+      boxMax
     );
 
-    if (hit && e.shiftKey && e.button !== 1) {
-      // Shift + Left/Right click inside the box → particle interaction
+    // Update ray immediately on mousedown
+    input.rayOrigin = ray.origin;
+    input.rayDir = ray.dir;
+
+    // Logic:
+    // 1. Right click inside box -> Always push
+    // 2. Left click on fluid -> Pull
+    // 3. Left click on background -> Orbit
+    if (hit && (e.button === 2 || input.isHoveringFluid)) {
       isInteractingParticle = true;
       updateInteraction(e);
 
-      // Set push/pull based on which mouse button
-      if (e.button === 0) input.pull = true; // Shift+Left click = attract
-      if (e.button === 2) input.push = true; // Shift+Right click = repel
+      if (e.button === 0) input.pull = true;
+      if (e.button === 2) input.push = true;
     } else {
-      // Click without Shift, or outside box → camera control
       isDraggingCamera = true;
       lastX = e.clientX;
       lastY = e.clientY;
@@ -282,6 +287,11 @@ export function setupInputHandlers(
   canvas.addEventListener('mousemove', (e) => {
     const input = getInput();
     if (!input) return;
+
+    // Always update ray for hover detection even when not interacting
+    const ray = getRay(e.clientX, e.clientY);
+    input.rayOrigin = ray.origin;
+    input.rayDir = ray.dir;
 
     if (isInteractingParticle) {
       // Update the 3D position for particle forces
