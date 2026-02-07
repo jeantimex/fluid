@@ -221,11 +221,8 @@ function updateGui(adapter: FluidAppAdapter): void {
     const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
     if (shadowFolder) {
       shadowFolder
-        .add(config, 'shadowType', ['None', 'Volumetric'])
-        .name('Shadow Type');
-      shadowFolder
-        .add(config, 'showShadows')
-        .name('Show Shadows');
+        .add(config, 'showParticleShadows')
+        .name('Particle Shadows');
     }
   }
 

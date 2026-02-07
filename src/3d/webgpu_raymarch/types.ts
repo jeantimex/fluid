@@ -92,17 +92,11 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
 
     tileDarkOffset: number;
 
-  
-
-    /** Shadow calculation mode (volumetric only). */
-    shadowType: 'None' | 'Volumetric';
-
-  
+    /** Softness of the volumetric shadows. */
+    shadowSoftness: number;
 
     /** Whether to enable volume and scene shadows. */
-
-    showShadows: boolean;
-
-  }
+    showParticleShadows: boolean;
+}
 
   

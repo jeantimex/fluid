@@ -99,13 +99,14 @@ struct RaymarchParams {
   obstacleRotation: vec3<f32>,       // 100-102
   obstacleAlpha: f32,                // 103
   obstacleColor: vec3<f32>,          // 104-106
-  pad17_color: f32,                  // 107
-  shadowType: f32,                   // 108
-  showShadows: f32,                  // 109
-  pad18: f32,                        // 110
-  pad19: f32,                        // 111
-  pad20: vec4<f32>,                  // 112-115
-  pad21: vec4<f32>,                  // 116-119
+  shadowSoftness: f32,               // 107
+  showParticleShadows: f32,          // 108
+  pad18: f32,                        // 109
+  pad19: f32,                        // 110
+  pad20: f32,                        // 111
+  pad21: vec4<f32>,                  // 112-115
+  pad22: vec4<f32>,                  // 116-119
+  pad23: vec4<f32>,                  // 120-123
 };
 
 
@@ -601,7 +602,7 @@ fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) 
     if (tStart >= tEnd) { return 0.0; }
 
     var opticalDepth = 0.0;
-    let shadowStep = params.lightStepSize * 2.0; // Coarser steps for performance
+    let shadowStep = params.lightStepSize * (2.0 + params.shadowSoftness); 
     var t = tStart;
 
     for (var i = 0; i < 32; i++) {
@@ -686,22 +687,23 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
 
       let tileCol = getTileColor(hitPos, params);
 
-      // Volumetric shadow modulation
-      let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-      let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 1.0);
+      var lighting = 1.0;
+      if (params.showParticleShadows > 0.5) {
+        // Volumetric shadow modulation
+        let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
+        let shadowVol = transmittance(shadowDepth * 2.0);
 
-      // Obstacle shadow
-      var shadowScene = 1.0;
-      if (params.showShadows > 0.5) {
+        // Obstacle shadow
+        var shadowScene = 1.0;
         let obsShadowHit = obstacleHitInfo(hitPos + params.dirToSun * 0.01, params.dirToSun);
         if (obsShadowHit.hit) {
           shadowScene = 0.2;
         }
-      }
 
-      // lighting = Combine shadows with ambient to ensure tiles are never pitch black
-      let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-      let lighting = select(1.0, shadowVol.x * shadowScene * (1.0 - ambient) + ambient, params.shadowType > 0.5);
+        // lighting = Combine shadows with ambient to ensure tiles are never pitch black
+        let ambient = clamp(params.floorAmbient, 0.0, 1.0);
+        lighting = shadowVol.x * shadowScene * (1.0 - ambient) + ambient;
+      }
 
       // Color adjustments
       var finalColor = tileCol * lighting * params.globalBrightness;
@@ -730,12 +732,12 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     let ambient = clamp(params.floorAmbient, 0.0, 1.0);
     let sun = max(0.0, dot(obstacleHit.normal, params.dirToSun));
 
-    // Volumetric shadow
-    let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
-    let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 1.0);
-
-    // Apply shadow based on shadowType
-    let shadowFinal = select(1.0, shadowVol.x, params.shadowType > 0.5);
+    var shadowFinal = 1.0;
+    if (params.showParticleShadows > 0.5) {
+      // Volumetric shadow
+      let shadowDepth = calculateDensityForShadow(hitPos, params.dirToSun, 100.0);
+      shadowFinal = transmittance(shadowDepth * 2.0).x;
+    }
 
     let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadowFinal);
     return mix(bgCol, lit, a);
@@ -914,8 +916,10 @@ fn fs_main(in: VSOut) -> FSOutput {
 
           // Volumetric shadow
           let shadowDepth = calculateDensityForShadow(obsPos, params.dirToSun, 100.0);
-          let shadowVol = select(vec3<f32>(1.0), transmittance(shadowDepth * 2.0), params.shadowType >= 1.0);
-          let shadowFinal = select(1.0, shadowVol.x, params.shadowType > 0.5);
+          var shadowFinal = 1.0;
+          if (params.showParticleShadows > 0.5) {
+            shadowFinal = transmittance(shadowDepth * 2.0).x;
+          }
 
           let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadowFinal);
           totalLight = totalLight + lit * totalTransmittance * a;
@@ -934,8 +938,10 @@ fn fs_main(in: VSOut) -> FSOutput {
 
           // Volumetric shadow
           let shadowDepth2 = calculateDensityForShadow(obsPos, params.dirToSun, 100.0);
-          let shadowVol2 = select(vec3<f32>(1.0), transmittance(shadowDepth2 * 2.0), params.shadowType >= 1.0);
-          let shadowFinal2 = select(1.0, shadowVol2.x, params.shadowType > 0.5);
+          var shadowFinal2 = 1.0;
+          if (params.showParticleShadows > 0.5) {
+            shadowFinal2 = transmittance(shadowDepth2 * 2.0).x;
+          }
 
           let lit = params.obstacleColor * (ambient + sun * (1.0 - ambient) * shadowFinal2);
           totalLight = totalLight + lit * totalTransmittance * a;
@@ -995,7 +1001,7 @@ fn fs_main(in: VSOut) -> FSOutput {
         let reflectTrans = transmittance(densityReflect);
         
         // Add obstacle shadow to reflected light if follow air ray
-        if (!travellingThroughFluid && params.showShadows > 0.5) {
+        if (!travellingThroughFluid && params.showParticleShadows > 0.5) {
            let obsShadow = obstacleHitInfo(surfaceInfo.pos + params.dirToSun * 0.01, params.dirToSun);
            if (obsShadow.hit) { reflectLight = reflectLight * 0.2; }
         }
@@ -1012,7 +1018,7 @@ fn fs_main(in: VSOut) -> FSOutput {
         let refractTrans = transmittance(densityRefract);
 
         // Add obstacle shadow to refracted light if follow air ray
-        if (!travellingThroughFluid && params.showShadows > 0.5) {
+        if (!travellingThroughFluid && params.showParticleShadows > 0.5) {
            let obsShadow = obstacleHitInfo(surfaceInfo.pos + params.dirToSun * 0.01, params.dirToSun);
            if (obsShadow.hit) { refractLight = refractLight * 0.2; }
         }
@@ -1036,7 +1042,7 @@ fn fs_main(in: VSOut) -> FSOutput {
   var finalBg = sampleEnvironment(rayPos, rayDir);
   
   // Final shadow check for air-path rays
-  if (!travellingThroughFluid && params.showShadows > 0.5) {
+  if (!travellingThroughFluid && params.showParticleShadows > 0.5) {
      let finalShadow = obstacleHitInfo(rayPos + params.dirToSun * 0.01, params.dirToSun);
      if (finalShadow.hit) { finalBg = finalBg * 0.2; }
   }

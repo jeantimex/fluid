@@ -151,8 +151,8 @@ const config: RaymarchConfig = {
   indexOfRefraction: 1.33,
   numRefractions: 4,
   extinctionCoefficients: { x: 12, y: 4, z: 4 },
-  shadowType: 'Volumetric',
-  showShadows: true,
+  shadowSoftness: 2.5,
+  showParticleShadows: true,
   showBoundsWireframe: false,
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
 };
@@ -204,11 +204,8 @@ raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
 const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
 if (shadowFolder) {
   shadowFolder
-    .add(config, 'shadowType', ['None', 'Volumetric'])
-    .name('Shadow Type');
-  shadowFolder
-    .add(config, 'showShadows')
-    .name('Show Shadows');
+    .add(config, 'showParticleShadows')
+    .name('Particle Shadows');
 }
 
 const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');

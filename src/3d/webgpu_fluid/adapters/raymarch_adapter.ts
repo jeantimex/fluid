@@ -25,6 +25,8 @@ export class RaymarchAdapter implements FluidAppAdapter<RaymarchConfig> {
     indexOfRefraction: 1.33,
     numRefractions: 4,
     tileDarkOffset: -0.35,
+    shadowSoftness: 2.5,
+    showParticleShadows: true,
     showBoundsWireframe: false,
     boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
   };
