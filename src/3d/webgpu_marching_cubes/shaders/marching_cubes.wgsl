@@ -1,3 +1,11 @@
+/**
+ * Marching Cubes Compute Shader
+ *
+ * Beginner note:
+ * This compute pass reads the 3D density texture and writes triangle vertices
+ * into a GPU buffer. Each workgroup processes a brick of voxels.
+ */
+
 struct Params {
   densityAndMax: vec4<u32>, // xyz = densityMapSize, w = maxTriangles
   isoLevel: f32,

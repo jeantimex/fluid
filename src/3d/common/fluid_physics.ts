@@ -28,6 +28,11 @@ export interface SpatialGridUniforms {
  * Orchestrates the SPH physics simulation steps.
  */
 export class FluidPhysics {
+  /**
+   * Beginner note:
+   * This class owns compute pipelines for the core SPH passes.
+   * It does not manage buffers; it just dispatches pipelines in order.
+   */
   private device: GPUDevice;
 
   // Physics Pipelines

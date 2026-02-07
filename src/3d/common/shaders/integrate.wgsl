@@ -59,6 +59,8 @@
  * ============================================================================
  */
 
+// Beginner note: this pass writes final positions (and clamps to bounds).
+
 /**
  * Integration Parameters Uniform Buffer
  *

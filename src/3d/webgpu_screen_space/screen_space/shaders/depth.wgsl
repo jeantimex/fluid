@@ -1,3 +1,9 @@
+/**
+ * Depth Pass Shader (screen-space fluids)
+ *
+ * Beginner note: renders particle depth into a depth texture using billboards.
+ */
+
 struct Uniforms {
   viewProjection: mat4x4<f32>,
   canvasSize: vec2<f32>,

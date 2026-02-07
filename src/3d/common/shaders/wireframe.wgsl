@@ -2,6 +2,8 @@
  * Simple wireframe shader for rendering bounding box edges.
  */
 
+// Beginner note: vertices are provided by a CPU-built line list.
+
 struct Uniforms {
   viewProjection: mat4x4<f32>,
 }

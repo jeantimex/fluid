@@ -78,6 +78,9 @@
  * ============================================================================
  */
 
+// Beginner note: scan turns per-cell counts into start offsets so each cell
+// knows where its particles live in the sorted arrays.
+
 /**
  * Scan Parameters Uniform Buffer
  *

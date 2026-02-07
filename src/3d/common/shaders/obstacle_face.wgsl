@@ -4,6 +4,9 @@
  * ==========================================================================
  */
 
+// Beginner note: this is a standard vertex/fragment shader that also samples
+// the shadow map to darken the obstacle where fluid blocks the light.
+
 struct Uniforms {
   viewProjection: mat4x4<f32>,
   canvasSize: vec2<f32>,

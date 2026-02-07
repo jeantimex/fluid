@@ -18,6 +18,9 @@
  * ============================================================================
  */
 
+// Beginner note: this pass advances foam particles and classifies them
+// as foam/bubble/spray based on local neighbor counts.
+
 struct FoamUpdateParams {
   dt: f32,
   gravity: f32,

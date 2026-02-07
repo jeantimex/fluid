@@ -40,6 +40,12 @@ import { writeEnvironmentUniforms } from '../common/environment.ts';
 import { preprocessShader } from '../common/shader_preprocessor.ts';
 
 export class MarchingCubesRenderer {
+  /**
+   * Beginner note:
+   * This renderer is a 2-stage pipeline:
+   * 1) compute marching cubes into a triangle buffer
+   * 2) draw that buffer with a standard render pipeline.
+   */
   private device: GPUDevice;
   private canvas: HTMLCanvasElement;
 

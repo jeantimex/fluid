@@ -19,6 +19,9 @@
  * ============================================================================
  */
 
+// Beginner note: clearOffsets zeros the histogram, countOffsets fills it and
+// records each particle’s local rank within its grid cell.
+
 /**
  * Sort Parameters Uniform Buffer
  *

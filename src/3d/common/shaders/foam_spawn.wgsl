@@ -18,6 +18,8 @@
  * ============================================================================
  */
 
+// Beginner note: foam particles are stored in a ring buffer using an atomic counter.
+
 @group(0) @binding(0) var<storage, read> fluidPositions: array<vec4<f32>>; // Predicted
 @group(0) @binding(1) var<storage, read> fluidVelocities: array<vec4<f32>>;
 @group(0) @binding(3) var<storage, read_write> foamPositions: array<vec4<f32>>;

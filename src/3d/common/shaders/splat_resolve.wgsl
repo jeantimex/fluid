@@ -12,6 +12,8 @@
 // Each thread processes one voxel (dispatched as 8×8×4 workgroups).
 // =============================================================================
 
+// Beginner note: this converts integer atomics back into float density.
+
 /// Parameters for the resolve pass.
 struct ResolveParams {
   fixedPointScale: f32,

@@ -88,6 +88,11 @@ import { preprocessShader } from '../common/shader_preprocessor.ts';
  * - Draw command submission
  */
 export class Renderer {
+  /**
+   * Beginner note:
+   * Render pipelines are like "GPU programs" for drawing.
+   * Bind groups are the inputs (buffers, textures, samplers) those programs read.
+   */
   // ===========================================================================
   // WebGPU Resources
   // ===========================================================================
@@ -264,7 +269,7 @@ export class Renderer {
     this.gradientBuffer.unmap();
 
     // -------------------------------------------------------------------------
-    // Create Particle Render Pipeline
+    // Create Particle Render Pipeline (billboard quads)
     // -------------------------------------------------------------------------
 
     const particleCode = preprocessShader(particleShader, {
@@ -294,7 +299,7 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
-    // Create Face Render Pipeline
+    // Create Face Render Pipeline (obstacle)
     // -------------------------------------------------------------------------
 
     const faceCode = preprocessShader(obstacleFaceShader, {
@@ -347,7 +352,7 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
-    // Create Background Render Pipeline
+    // Create Background Render Pipeline (sky + floor)
     // -------------------------------------------------------------------------
 
     const bgCode = preprocessShader(backgroundShader, {
@@ -376,7 +381,7 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
-    // Create Shadow Render Pipelines
+    // Create Shadow Render Pipelines (depth-only from light POV)
     // -------------------------------------------------------------------------
 
     const shadowCode = preprocessShader(shadowShader, {
@@ -422,7 +427,7 @@ export class Renderer {
     });
 
     // -------------------------------------------------------------------------
-    // Create Wireframe Render Pipeline
+    // Create Wireframe Render Pipeline (debug bounds)
     // -------------------------------------------------------------------------
 
     const wireframeModule = device.createShaderModule({ code: wireframeShader });
@@ -567,6 +572,7 @@ export class Renderer {
     densityTextureView: GPUTextureView,
     cullUniformBuffer: GPUBuffer
   ) {
+    // Bind groups connect GPU buffers/textures to shader bindings.
     this.particleBindGroup = this.device.createBindGroup({
       layout: this.particlePipeline.getBindGroupLayout(0),
       entries: [

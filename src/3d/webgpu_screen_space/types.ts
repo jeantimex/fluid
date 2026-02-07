@@ -2,8 +2,6 @@ import type { SimConfig, RGB, Vec3 } from '../common/types.ts';
 import type { EnvironmentConfig } from '../common/environment.ts';
 
 export interface ScreenSpaceConfig extends SimConfig, EnvironmentConfig {
-  screenSpaceDebugMode: number;
-
   // Foam
   foamSpawnRate: number;
   trappedAirVelocityMin: number;

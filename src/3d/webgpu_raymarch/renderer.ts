@@ -92,6 +92,11 @@ import type { RaymarchConfig } from './types.ts';
  * buffer, the density texture sampler, and the offscreen render target.
  */
 export class RaymarchRenderer {
+  /**
+   * Beginner note:
+   * This renderer runs a full-screen fragment shader that raymarches the
+   * 3D density texture and then blits the result to the swap chain.
+   */
   /** GPU device reference for resource creation and queue writes. */
   private device: GPUDevice;
 

@@ -18,6 +18,11 @@ import type { RaymarchConfig } from './types.ts';
  * Orchestrates the full SPH fluid simulation pipeline on the GPU.
  */
 export class FluidSimulation {
+  /**
+   * Beginner note:
+   * Computes SPH simulation on GPU, then the raymarch renderer visualizes
+   * the density volume produced by the splat pipeline.
+   */
   private device: GPUDevice;
   private context: GPUCanvasContext;
   private config: RaymarchConfig;

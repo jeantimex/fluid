@@ -20,6 +20,9 @@
  * ============================================================================
  */
 
+// Beginner note: scatter computes each particle’s final sorted slot so
+// neighbors in the same cell become contiguous in memory.
+
 /**
  * Sort Parameters Uniform Buffer
  *

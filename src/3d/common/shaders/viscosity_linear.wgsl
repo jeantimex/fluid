@@ -21,6 +21,8 @@
  * ============================================================================
  */
 
+// Beginner note: viscosity smooths velocity differences to reduce jitter.
+
 /**
  * Viscosity Parameters Uniform Buffer
  *

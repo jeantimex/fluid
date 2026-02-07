@@ -1,3 +1,9 @@
+/**
+ * Smooth Pass Shader (screen-space blur)
+ *
+ * Beginner note: applies a depth-aware blur to reduce particle noise.
+ */
+
 struct FullscreenOut {
   @builtin(position) position: vec4<f32>,
   @location(0) uv: vec2<f32>,

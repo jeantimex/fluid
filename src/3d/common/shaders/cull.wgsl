@@ -84,6 +84,8 @@
  * ============================================================================
  */
 
+// Beginner note: outputs visibleIndices[] and updates indirectArgs.instanceCount.
+
 /**
  * Culling Parameters Uniform Buffer
  *

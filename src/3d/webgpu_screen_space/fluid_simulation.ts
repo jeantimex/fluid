@@ -14,6 +14,11 @@ import { FoamPipeline, type FoamUniforms } from '../common/foam_pipeline.ts';
 import { ScreenSpaceRenderer } from './screen_space/screen_space_renderer.ts';
 
 export class FluidSimulation {
+  /**
+   * Beginner note:
+   * This class records compute passes for SPH + foam, then hands particle
+   * buffers to the screen-space renderer for post-processing.
+   */
   private device: GPUDevice;
   private context: GPUCanvasContext;
   private canvas: HTMLCanvasElement;

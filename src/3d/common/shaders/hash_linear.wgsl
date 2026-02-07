@@ -36,6 +36,8 @@
  * ============================================================================
  */
 
+// Beginner note: keys[] are cell IDs used for sorting; indices[] keeps the original index.
+
 /**
  * Hash Parameters Uniform Buffer
  *

@@ -10,6 +10,9 @@
 //     Fresnel equations, with configurable index of refraction
 //   - **Multiple refraction bounces**: iterative surface finding + Snell's law
 //   - **Floor with checkerboard tiles**: 4-quadrant colors, shadow mapping
+//
+// Beginner note: every pixel casts a ray through the density texture and
+// accumulates color/opacity as it marches through the volume.
 //   - **Procedural sky**: gradient from horizon to zenith with sun highlight
 //
 // ## Rendering Pipeline

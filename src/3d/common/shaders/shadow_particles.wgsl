@@ -1,5 +1,6 @@
 #include "shadow_common.wgsl"
 
+// Beginner note: this renders particles into the shadow map (depth only).
 
 @group(0) @binding(0) var<uniform> uniforms: ShadowUniforms;
 

@@ -1,3 +1,9 @@
+/**
+ * Foam Render Shader
+ *
+ * Beginner note: draws foam particles as soft billboards into a foam texture.
+ */
+
 struct Uniforms {
   viewProjection: mat4x4<f32>,
   canvasSize: vec2<f32>,

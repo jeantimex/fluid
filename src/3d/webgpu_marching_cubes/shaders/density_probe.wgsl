@@ -1,3 +1,9 @@
+/**
+ * Density Probe Shader
+ *
+ * Beginner note: reads a single voxel from the density texture for debugging.
+ */
+
 struct ProbeParams {
   coord: vec3<u32>,
   _pad0: u32,

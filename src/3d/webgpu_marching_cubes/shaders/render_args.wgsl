@@ -1,3 +1,10 @@
+/**
+ * Render Args Compute Shader
+ *
+ * Beginner note: converts the triangle counter into a drawIndirect argument
+ * buffer so the GPU can draw exactly the generated triangles.
+ */
+
 struct ArgsParams {
   maxTriangles: u32,
   _pad0: vec3<u32>,

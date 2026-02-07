@@ -20,6 +20,11 @@ export interface SpatialGridUniforms {
  * spatial hashing and sorting pipeline.
  */
 export class SpatialGrid {
+  /**
+   * Beginner note:
+   * This builds a sorted particle order so neighbor queries become fast.
+   * Think of it as a GPU-side spatial index.
+   */
   private device: GPUDevice;
   
   // Pipelines

@@ -55,6 +55,9 @@
  * ============================================================================
  */
 
+// Beginner note: one invocation = one particle. The compute grid is 1D (id.x).
+// Uniforms are tiny per-frame constants; storage buffers hold all particles.
+
 /**
  * Simulation Parameters Uniform Buffer
  *

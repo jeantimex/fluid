@@ -1,3 +1,9 @@
+/**
+ * Thickness Pass Shader
+ *
+ * Beginner note: accumulates particle thickness into a screen-space texture.
+ */
+
 struct Uniforms {
   viewProjection: mat4x4<f32>,
   canvasSize: vec2<f32>,

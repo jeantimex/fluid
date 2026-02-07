@@ -1,3 +1,9 @@
+/**
+ * Normal Pass Shader
+ *
+ * Beginner note: reconstructs surface normals from depth/thickness textures.
+ */
+
 struct FullscreenOut {
   @builtin(position) position: vec4<f32>,
   @location(0) uv: vec2<f32>,

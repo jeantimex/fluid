@@ -2,6 +2,9 @@
 // Shared Environment Shader (Sky + Floor)
 // =============================================================================
 
+// Beginner note: utility functions here are reused by multiple renderers to
+// shade the sky and ground consistently.
+
 struct EnvironmentUniforms {
   dirToSun: vec3<f32>,
   floorAmbient: f32,

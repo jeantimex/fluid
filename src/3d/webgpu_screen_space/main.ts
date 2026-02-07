@@ -99,7 +99,6 @@ const config: ScreenSpaceConfig = {
   ...createDefaultEnvironmentConfig(),
   viscosityStrength: 0.01,
   iterationsPerFrame: 3,
-  screenSpaceDebugMode: 4,
 
   // Foam Settings (matching Unity exact values)
   foamSpawnRate: 70,
@@ -237,20 +236,7 @@ if (shadowFolder) {
 renderingFolder.addColor(config, 'waterColor').name('Water Color');
 renderingFolder.addColor(config, 'deepWaterColor').name('Deep Water Color');
 
-// ---------------------------------------------------------------------------
-// Debug GUI Controls (screen-space demo only)
-// ---------------------------------------------------------------------------
-const debugFolder = gui.addFolder('Debug');
-debugFolder.close();
-debugFolder
-  .add(config, 'screenSpaceDebugMode', {
-    Shaded: 4,
-    Depth: 0,
-    Thickness: 1,
-    Normal: 2,
-    Smooth: 3,
-  })
-  .name('Screen-Space View');
+// Debug GUI removed (screen-space demo only)
 
 /**
  * Main Application Entry Point

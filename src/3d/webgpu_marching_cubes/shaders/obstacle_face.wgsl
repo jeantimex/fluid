@@ -19,6 +19,8 @@
  * ============================================================================
  */
 
+// Beginner note: this shader samples the shadow map to darken the obstacle.
+
 #include "../../common/shaders/shadow_common.wgsl"
 
 struct Uniforms {

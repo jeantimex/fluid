@@ -32,6 +32,9 @@
  * ============================================================================
  */
 
+// Beginner note: this pass reads predicted positions + sortOffsets and writes
+// per-particle density/near-density for the pressure solver.
+
 /**
  * Density Parameters Uniform Buffer
  *

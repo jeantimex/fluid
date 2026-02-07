@@ -26,6 +26,8 @@
 // by the same factor to recover the float density.
 // =============================================================================
 
+// Beginner note: this pass rasterizes particle density into a 3D voxel grid.
+
 /// Per-frame parameters for the splat pass.
 struct SplatParams {
   radius: f32,            // SPH smoothing radius in world units

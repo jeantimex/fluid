@@ -81,6 +81,8 @@
  * ============================================================================
  */
 
+// Beginner note: instance_index selects which particle to draw from visibleIndices.
+
 /**
  * Render Uniforms Buffer
  *

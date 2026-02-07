@@ -25,6 +25,12 @@ import { CompositePass } from './passes/composite_pass.ts';
 import { ShadowPass } from './passes/shadow_pass.ts';
 
 export class ScreenSpaceRenderer {
+  /**
+   * Beginner note:
+   * This renderer is a post-process pipeline. It renders particles into
+   * intermediate textures (depth/thickness/foam), smooths them, then
+   * composites a final shaded image.
+   */
   private device: GPUDevice;
   private canvas: HTMLCanvasElement;
   private config: ScreenSpaceConfig;
@@ -298,8 +304,7 @@ export class ScreenSpaceRenderer {
       encoder,
       resources,
       frame,
-      swapchainView,
-      this.config.screenSpaceDebugMode
+      swapchainView
     );
   }
 }

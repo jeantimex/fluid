@@ -21,6 +21,8 @@
  * ============================================================================
  */
 
+// Beginner note: simple line rendering for debug visualization.
+
 /**
  * Wireframe Uniforms Buffer
  *

@@ -21,6 +21,8 @@
  * ============================================================================
  */
 
+// Beginner note: pressure uses density to compute forces that repel particles.
+
 /**
  * Pressure Parameters Uniform Buffer
  *

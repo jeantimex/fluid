@@ -10,6 +10,8 @@
 // produce clip-space positions that fully cover the [-1, 1] NDC range).
 //
 // Fragment stage: samples the offscreen texture with bilinear filtering
+//
+// Beginner note: this is a simple post-process pass (copy + color conversion).
 // and outputs directly to the swap chain. This keeps the color path
 // consistent with the particle renderer (no extra conversion here).
 // =============================================================================

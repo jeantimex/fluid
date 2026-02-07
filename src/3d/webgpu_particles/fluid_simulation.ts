@@ -18,6 +18,12 @@ import { DensitySplatPipeline } from './density_splat_pipeline.ts';
  * Orchestrates the full SPH fluid simulation pipeline on the GPU.
  */
 export class FluidSimulation {
+  /**
+   * Beginner note:
+   * This class is the "CPU-side conductor." It prepares uniform data,
+   * records GPU commands (compute + render), and submits them every frame.
+   * The heavy math runs entirely on the GPU in WGSL shaders.
+   */
   private device: GPUDevice;
   private context: GPUCanvasContext;
   private config: ParticlesConfig;
@@ -104,6 +110,7 @@ export class FluidSimulation {
   }
 
   reset(): void {
+    // Reset = recreate GPU buffers + bind groups so shaders read the new data.
     if (this.buffers) {
       this.buffers.destroy();
     }
@@ -157,13 +164,14 @@ export class FluidSimulation {
     const frameTime = Math.min(dt * config.timeScale, maxDeltaTime);
     const timeStep = frameTime / config.iterationsPerFrame;
 
-    // Update uniforms once per frame as they are constant across substeps
+    // Update uniform buffers once per frame (same values used for each substep).
     this.updateUniforms(timeStep);
 
     const encoder = device.createCommandEncoder();
     
-    // Combine all simulation iterations into a single compute pass if possible
-    // or at least a single command buffer submission.
+    // Beginner note:
+    // A single compute pass can contain many dispatches. This reduces CPU overhead
+    // while keeping GPU work ordered exactly as recorded.
     const computePass = encoder.beginComputePass();
     for (let i = 0; i < config.iterationsPerFrame; i++) {
       this.physics.step(
@@ -176,17 +184,17 @@ export class FluidSimulation {
     }
     computePass.end();
 
-    // Add splat dispatches to the same encoder
+    // Density volume splat (compute) shares the same command buffer.
     this.splatPipeline.dispatch(encoder, buffers.particleCount, config);
     
-    // Single submission for the entire simulation step
+    // Submit the recorded GPU work to the queue.
     device.queue.submit([encoder.finish()]);
   }
 
   private updateUniforms(timeStep: number): void {
     const { config, state, buffers, device } = this;
     
-    // 1. External
+    // 1) External forces (gravity + user input)
     let interactionStrength = 0;
     if (state.input.push) interactionStrength = -config.interactionStrength;
     else if (state.input.pull) interactionStrength = config.interactionStrength;
@@ -201,7 +209,7 @@ export class FluidSimulation {
     this.computeData[7] = 0;
     device.queue.writeBuffer(this.physicsUniforms.external, 0, this.computeData);
 
-    // 2. Hash
+    // 2) Spatial hash params (grid layout + bounds)
     this.hashParamsData[0] = config.smoothingRadius;
     this.hashParamsData[1] = buffers.particleCount;
     this.hashParamsData[2] = -config.boundsSize.x * 0.5;
@@ -212,12 +220,12 @@ export class FluidSimulation {
     this.hashParamsData[7] = this.gridRes.z;
     device.queue.writeBuffer(this.gridUniforms.hash, 0, this.hashParamsData);
 
-    // 3. Sort
+    // 3) Sorting params (particle count + grid size)
     this.sortParamsData[0] = buffers.particleCount;
     this.sortParamsData[1] = this.gridTotalCells;
     device.queue.writeBuffer(this.gridUniforms.sort, 0, this.sortParamsData);
 
-    // 4. Scan
+    // 4) Prefix-sum params (hierarchical scan sizes)
     const blocksL0 = Math.ceil((this.gridTotalCells + 1) / 512);
     const blocksL1 = Math.ceil(blocksL0 / 512);
     this.scanParamsDataL0[0] = this.gridTotalCells + 1;
@@ -227,7 +235,7 @@ export class FluidSimulation {
     device.queue.writeBuffer(this.gridUniforms.scanL1, 0, this.scanParamsDataL1);
     device.queue.writeBuffer(this.gridUniforms.scanL2, 0, this.scanParamsDataL2);
 
-    // 5. Density
+    // 5) Density kernel constants + bounds
     const radius = config.smoothingRadius;
     const spikyPow2Scale = 15 / (2 * Math.PI * Math.pow(radius, 5));
     const spikyPow3Scale = 15 / (Math.PI * Math.pow(radius, 6));
@@ -245,7 +253,7 @@ export class FluidSimulation {
     this.densityParamsData[11] = 0;
     device.queue.writeBuffer(this.physicsUniforms.density, 0, this.densityParamsData);
 
-    // 6. Pressure
+    // 6) Pressure kernel constants + EOS params
     const spikyPow2DerivScale = 15 / (Math.PI * Math.pow(radius, 5));
     const spikyPow3DerivScale = 45 / (Math.PI * Math.pow(radius, 6));
     this.pressureParamsData[0] = timeStep;
@@ -266,7 +274,7 @@ export class FluidSimulation {
     this.pressureParamsData[15] = 0;
     device.queue.writeBuffer(this.physicsUniforms.pressure, 0, this.pressureParamsData);
 
-    // 7. Viscosity
+    // 7) Viscosity kernel constants + bounds
     const poly6Scale = 315 / (64 * Math.PI * Math.pow(radius, 9));
     this.viscosityParamsData[0] = timeStep;
     this.viscosityParamsData[1] = config.viscosityStrength;
@@ -282,7 +290,7 @@ export class FluidSimulation {
     this.viscosityParamsData[11] = 0;
     device.queue.writeBuffer(this.physicsUniforms.viscosity, 0, this.viscosityParamsData);
 
-    // 8. Integrate
+    // 8) Integration + boundary collision params
     this.integrateData[0] = timeStep;
     this.integrateData[1] = config.collisionDamping;
     const hasObstacle = config.obstacleSize.x > 0 && config.obstacleSize.y > 0 && config.obstacleSize.z > 0;
@@ -314,10 +322,10 @@ export class FluidSimulation {
     this.renderer.resize();
     const encoder = device.createCommandEncoder();
 
-    // Reset indirect draw counter
+    // Reset indirect draw counter (written by cull pass).
     this.device.queue.writeBuffer(buffers.indirectDraw, 0, this.indirectArgs);
 
-    // Cull Pass
+    // Cull params: view-projection matrix + particle radius + count.
     const aspect = this.context.canvas.width / this.context.canvas.height;
     const projection = mat4Perspective(Math.PI / 3, aspect, 0.1, 100.0);
     const viewProj = mat4Multiply(projection, viewMatrix);

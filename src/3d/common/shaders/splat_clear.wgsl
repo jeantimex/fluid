@@ -10,6 +10,8 @@
 // from the previous frame must be cleared first.
 // =============================================================================
 
+// Beginner note: this pass is just a parallel memset for the 3D density grid.
+
 /// Parameters for the clear pass.
 struct ClearParams {
   totalVoxels: u32,   // Total number of voxels in the density volume

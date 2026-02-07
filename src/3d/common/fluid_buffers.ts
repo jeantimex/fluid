@@ -17,6 +17,11 @@ export interface FluidBuffersOptions {
  * Supports both standard Spatial Hashing and Linear Grid modes.
  */
 export class FluidBuffers {
+  /**
+   * Beginner note:
+   * These GPU buffers are the simulation's "state." Shaders read/write them
+   * directly; the CPU only updates uniforms or recreates buffers on reset.
+   */
   static readonly DEFAULT_MAX_FOAM_PARTICLES = 1_280_000;
   // --- Core Particle Data (SoA) ---
   positions: GPUBuffer;

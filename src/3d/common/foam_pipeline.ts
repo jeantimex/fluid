@@ -10,6 +10,11 @@ export interface FoamUniforms {
 }
 
 export class FoamPipeline {
+  /**
+   * Beginner note:
+   * This pipeline is a small, separate compute system that spawns and updates
+   * foam particles using the same grid data as the SPH simulation.
+   */
   private device: GPUDevice;
 
   private foamClearCounter: GPUComputePipeline;

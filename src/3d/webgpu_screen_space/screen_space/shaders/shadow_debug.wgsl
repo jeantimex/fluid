@@ -1,4 +1,5 @@
 // Debug shader - renders all particles as white dots to verify shadow pass works
+// Beginner note: this bypasses shading and draws raw particle depth.
 
 struct Uniforms {
   viewProjection: mat4x4<f32>,

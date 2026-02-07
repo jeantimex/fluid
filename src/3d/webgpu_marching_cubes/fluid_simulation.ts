@@ -18,6 +18,11 @@ import type { MarchingCubesConfig } from './types.ts';
  * Orchestrates the full SPH fluid simulation pipeline on the GPU.
  */
 export class FluidSimulation {
+  /**
+   * Beginner note:
+   * Runs SPH compute passes to update particles, splats them into a 3D density
+   * texture, then marching cubes converts that density into a mesh.
+   */
   private device: GPUDevice;
   private context: GPUCanvasContext;
   private config: MarchingCubesConfig;

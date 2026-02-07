@@ -3,6 +3,8 @@
 // =============================================================================
 // Renders the shared environment (Sky + Floor) using a fullscreen triangle.
 
+// Beginner note: this pass ignores particles and draws only sky/floor.
+
 #include "../../common/shaders/environment.wgsl"
 
 // The shared environment.wgsl expects a 'uniforms' variable of type EnvironmentUniforms

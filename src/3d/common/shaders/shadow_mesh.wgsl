@@ -1,5 +1,6 @@
 #include "shadow_common.wgsl"
 
+// Beginner note: renders mesh/obstacle geometry into the shadow depth map.
 
 @group(0) @binding(0) var<uniform> uniforms: ShadowUniforms;
 

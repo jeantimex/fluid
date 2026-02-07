@@ -3,6 +3,8 @@
 // =============================================================================
 // Renders the shared environment (Sky + Floor) using a fullscreen triangle.
 
+// Beginner note: this draws the sky/floor and samples the shadow map.
+
 #include "../../common/shaders/environment.wgsl"
 #include "../../common/shaders/shadow_common.wgsl"
 

@@ -68,6 +68,9 @@
  * ============================================================================
  */
 
+// Beginner note: reorder copies particle data into sorted buffers;
+// copyBack writes sorted data back to the primary arrays.
+
 /**
  * Reorder Parameters Uniform Buffer
  *

@@ -4,6 +4,8 @@
 //
 // Samples the half-resolution offscreen texture produced by the raymarch pass
 // and writes it to the full-resolution swap chain, applying accurate
+//
+// Beginner note: this is a post-process copy + color conversion.
 // linear → sRGB gamma conversion via the piecewise sRGB transfer function.
 //
 // Vertex stage: generates a single oversized triangle that covers the entire
