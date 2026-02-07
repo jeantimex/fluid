@@ -73,7 +73,7 @@ struct RaymarchParams {
   tileCol4: vec3<f32>,               // 48-50
   pad9: f32,                         // 51
   tileColVariation: vec3<f32>,       // 52-54
-  debugFloorMode: f32,               // 55
+  pad11: f32,                        // 55
   dirToSun: vec3<f32>,               // 56-58
   pad10: f32,                        // 59
   extinctionCoefficients: vec3<f32>, // 60-62
@@ -99,12 +99,13 @@ struct RaymarchParams {
   obstacleRotation: vec3<f32>,       // 100-102
   obstacleAlpha: f32,                // 103
   obstacleColor: vec3<f32>,          // 104-106
-  shadowType: f32,                   // 107
-  showShadows: f32,                  // 108
-  pad18: f32,                        // 109
-  pad19: f32,                        // 110
-  pad20: f32,                        // 111
-  pad21: vec4<f32>,                  // 112-115 -> Total 116 floats = 464 bytes
+  pad17_color: f32,                  // 107
+  shadowType: f32,                   // 108
+  showShadows: f32,                  // 109
+  pad18: f32,                        // 110
+  pad19: f32,                        // 111
+  pad20: vec4<f32>,                  // 112-115
+  pad21: vec4<f32>,                  // 116-119
 };
 
 
@@ -683,24 +684,6 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     let halfSize = params.floorSize.x * 0.5;
     if (abs(hitPos.x) < halfSize && abs(hitPos.z) < halfSize) {
 
-    // --- Debug mode 2: flat quadrant colors (no checkerboard) ---
-    if (params.debugFloorMode >= 1.5) {
-      var debugTileCol = params.tileCol1;
-      if (hitPos.x >= 0.0) { debugTileCol = params.tileCol2; }
-      if (hitPos.z < 0.0) {
-        if (hitPos.x < 0.0) { debugTileCol = params.tileCol3; }
-        else { debugTileCol = params.tileCol4; }
-      }
-      bgCol = envLinearToSrgb(debugTileCol);
-    }
-
-    // --- Debug mode 1: solid red ---
-    if (params.debugFloorMode >= 0.5 && params.debugFloorMode < 1.5) {
-      bgCol = vec3<f32>(1.0, 0.0, 0.0);
-    }
-
-    // --- Normal rendering: checkerboard tiles ---
-    if (params.debugFloorMode < 0.5) {
       let tileCol = getTileColor(hitPos, params);
 
       // Volumetric shadow modulation
@@ -727,7 +710,6 @@ fn sampleEnvironment(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
       finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * params.globalSaturation;
 
       bgCol = finalColor;
-    }
     } else {
       bgCol = skyColor(dir);
     }

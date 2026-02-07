@@ -37,7 +37,7 @@ export class ScreenSpaceAdapter implements FluidAppAdapter<ScreenSpaceConfig> {
     extinctionCoeff: { x: 2.12, y: 0.43, z: 0.3 },
     extinctionMultiplier: 2.24,
     refractionStrength: 9.15,
-    shadowSoftness: 1.0,
+    shadowSoftness: 2.5,
     shadowRadiusScale: 1.0,
 
     showBoundsWireframe: false,

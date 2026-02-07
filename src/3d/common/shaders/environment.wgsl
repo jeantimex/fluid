@@ -11,7 +11,7 @@ struct EnvironmentUniforms {
   skyColorZenith: vec3<f32>,
   sceneExposure: f32,
   skyColorGround: vec3<f32>,
-  debugFloorMode: f32,
+  pad2: f32,
 
   floorSize: vec3<f32>,
   tileScale: f32,
@@ -254,31 +254,17 @@ fn getEnvironmentColor(origin: vec3<f32>, dir: vec3<f32>, params: EnvironmentUni
   if (hasFloorHit) {
     hitPos = origin + dir * floorT;
 
-    if (params.debugFloorMode >= 0.5) {
-        if (params.debugFloorMode >= 1.5) {
-             var debugTileCol = params.tileCol1;
-             if (hitPos.x >= 0.0) { debugTileCol = params.tileCol2; }
-             if (hitPos.z < 0.0) {
-               if (hitPos.x < 0.0) { debugTileCol = params.tileCol3; }
-               else { debugTileCol = params.tileCol4; }
-             }
-             bgCol = envLinearToSrgb(debugTileCol);
-        } else {
-             bgCol = vec3<f32>(1.0, 0.0, 0.0);
-        }
-    } else {
-        let tileCol = getTileColor(hitPos, params);
-        
-        let ambient = clamp(params.floorAmbient, 0.0, 1.0);
-        let sun = max(0.0, params.dirToSun.y) * params.sunBrightness;
-        
-        var finalColor = tileCol * (ambient + sun) * params.globalBrightness;
+    let tileCol = getTileColor(hitPos, params);
+    
+    let ambient = clamp(params.floorAmbient, 0.0, 1.0);
+    let sun = max(0.0, params.dirToSun.y) * params.sunBrightness;
+    
+    var finalColor = tileCol * (ambient + sun) * params.globalBrightness;
 
-        let gray = dot(finalColor, vec3<f32>(0.299, 0.587, 0.114));
-        finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * params.globalSaturation;
+    let gray = dot(finalColor, vec3<f32>(0.299, 0.587, 0.114));
+    finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * params.globalSaturation;
 
-        bgCol = finalColor;
-    }
+    bgCol = finalColor;
   } else {
     bgCol = getSkyColor(dir, params);
   }

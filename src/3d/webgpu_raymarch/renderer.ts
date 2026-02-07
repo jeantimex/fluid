@@ -52,7 +52,7 @@
  * | 44–46  | tileCol3               | vec3<f32> |
  * | 48–50  | tileCol4               | vec3<f32> |
  * | 52–54  | tileColVariation       | vec3<f32> |
- * | 55     | debugFloorMode         | f32       |
+ * | 55     | pad11                  | f32       |
  * | 56–58  | dirToSun               | vec3<f32> |
  * | 60–62  | extinctionCoefficients | vec3<f32> |
  * | 63     | sunPower               | f32       |
@@ -111,8 +111,8 @@ export class RaymarchRenderer {
   /** Bind group for the raymarch pass (density texture + sampler + uniforms). */
   private bindGroup!: GPUBindGroup;
 
-  /** CPU-side typed array mirroring the uniform buffer contents (96 floats). */
-  private uniformData = new Float32Array(96);
+  /** CPU-side typed array mirroring the uniform buffer contents (120 floats). */
+  private uniformData = new Float32Array(120);
 
 
   // ---------------------------------------------------------------------------
@@ -238,7 +238,7 @@ export class RaymarchRenderer {
     // Uniform Buffer
     // -------------------------------------------------------------------------
 
-    this.uniformData = new Float32Array(116); // 116 * 4 = 464 bytes
+    this.uniformData = new Float32Array(120); // 120 * 4 = 480 bytes
 
     this.uniformBuffer = this.device.createBuffer({
       size: this.uniformData.byteLength,
@@ -555,7 +555,7 @@ export class RaymarchRenderer {
     this.uniformData[52] = config.tileColVariation.x;
     this.uniformData[53] = config.tileColVariation.y;
     this.uniformData[54] = config.tileColVariation.z;
-    this.uniformData[55] = config.debugFloorMode;
+    this.uniformData[55] = 0; // pad11
 
     // --- Sun direction ---
     const sunDir = config.dirToSun;
@@ -629,12 +629,13 @@ export class RaymarchRenderer {
     this.uniformData[104] = config.obstacleColor.r;
     this.uniformData[105] = config.obstacleColor.g;
     this.uniformData[106] = config.obstacleColor.b;
+    this.uniformData[107] = 0; // pad17_color
 
     // 0: None, 1: Volumetric
     const shadowTypeIndex = config.shadowType === 'Volumetric' ? 1 : 0;
-    this.uniformData[107] = shadowTypeIndex;
+    this.uniformData[108] = shadowTypeIndex;
 
-    this.uniformData[108] = config.showShadows ? 1.0 : 0.0;
+    this.uniformData[109] = config.showShadows ? 1.0 : 0.0;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

@@ -20,7 +20,7 @@ export class ParticlesAdapter implements FluidAppAdapter<ParticlesConfig> {
     densityOffset: 0,
     densityMultiplier: 0.02,
     lightStepSize: 0.1,
-    shadowSoftness: 1.0,
+    shadowSoftness: 2.5,
     extinctionCoefficients: { x: 2.12, y: 0.43, z: 0.3 },
     showBoundsWireframe: false,
     boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },

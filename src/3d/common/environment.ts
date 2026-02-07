@@ -23,7 +23,6 @@ export interface EnvironmentConfig {
   tileCol3: RGB; // -X, -Z
   tileCol4: RGB; // +X, -Z
   tileColVariation: Vec3; // HSV variation
-  debugFloorMode: number; // 0=normal, 1=red, 2=flat
   globalBrightness: number;
   globalSaturation: number;
 }
@@ -54,7 +53,6 @@ export function createDefaultEnvironmentConfig(): EnvironmentConfig {
     tileCol3: { r: 0.3019758, g: 0.735849, b: 0.45801795 },  // Green
     tileCol4: { r: 0.8018868, g: 0.6434483, b: 0.36690104 },  // Yellow/Brown
     tileColVariation: { x: 0.33, y: 0.0, z: 0.47 },
-    debugFloorMode: 0,
     globalBrightness: 1.0,
     globalSaturation: 1.0,
   };
@@ -91,11 +89,11 @@ export function writeEnvironmentUniforms(
   buffer[i++] = env.skyColorZenith.b;
   buffer[i++] = env.sceneExposure;
 
-  // 12-15: skyColorGround, debugFloorMode
+  // 12-15: skyColorGround, pad
   buffer[i++] = env.skyColorGround.r;
   buffer[i++] = env.skyColorGround.g;
   buffer[i++] = env.skyColorGround.b;
-  buffer[i++] = env.debugFloorMode;
+  buffer[i++] = 0; // pad
 
   // 16-19: floorSize, tileScale
   buffer[i++] = env.floorSize.x;

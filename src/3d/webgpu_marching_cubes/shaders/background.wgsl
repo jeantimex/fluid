@@ -96,37 +96,22 @@ fn getShadowedEnv(origin: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
   if (hasFloorHit) {
     hitPos = origin + dir * floorT;
     
-    if (uniforms.debugFloorMode >= 0.5) {
-        // Debug modes
-        if (uniforms.debugFloorMode >= 1.5) {
-             var debugTileCol = uniforms.tileCol1;
-             if (hitPos.x >= 0.0) { debugTileCol = uniforms.tileCol2; }
-             if (hitPos.z < 0.0) {
-               if (hitPos.x < 0.0) { debugTileCol = uniforms.tileCol3; }
-               else { debugTileCol = uniforms.tileCol4; }
-             }
-             bgCol = envLinearToSrgb(debugTileCol);
-        } else {
-             bgCol = vec3<f32>(1.0, 0.0, 0.0);
-        }
-    } else {
-        let tileCol = getTileColor(hitPos, uniforms);
+    let tileCol = getTileColor(hitPos, uniforms);
 
-        // Apply Shadow
-        let shadow = sampleShadow(hitPos);
-        
-        let ambient = clamp(uniforms.floorAmbient, 0.0, 1.0);
-        let sun = max(0.0, uniforms.dirToSun.y) * uniforms.sunBrightness;
-        
-        // Lighting = Ambient + Sun * Shadow
-        let lighting = ambient + sun * shadow;
-        var finalColor = tileCol * lighting * uniforms.globalBrightness;
+    // Apply Shadow
+    let shadow = sampleShadow(hitPos);
+    
+    let ambient = clamp(uniforms.floorAmbient, 0.0, 1.0);
+    let sun = max(0.0, uniforms.dirToSun.y) * uniforms.sunBrightness;
+    
+    // Lighting = Ambient + Sun * Shadow
+    let lighting = ambient + sun * shadow;
+    var finalColor = tileCol * lighting * uniforms.globalBrightness;
 
-        let gray = dot(finalColor, vec3<f32>(0.299, 0.587, 0.114));
-        finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * uniforms.globalSaturation;
+    let gray = dot(finalColor, vec3<f32>(0.299, 0.587, 0.114));
+    finalColor = vec3<f32>(gray) + (finalColor - vec3<f32>(gray)) * uniforms.globalSaturation;
 
-        bgCol = finalColor;
-    }
+    bgCol = finalColor;
   } else {
     bgCol = getSkyColor(dir, uniforms);
   }

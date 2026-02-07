@@ -103,7 +103,7 @@ const config: ParticlesConfig = {
   densityOffset: 0,
   densityMultiplier: 0.02,
   lightStepSize: 0.1,
-  shadowSoftness: 1.0,
+  shadowSoftness: 2.5,
   sceneExposure: 1.0,
   extinctionCoefficients: { x: 2.12, y: 0.43, z: 0.3 },
   showBoundsWireframe: false,
@@ -150,6 +150,17 @@ if (particlesFolder) {
 
 const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
 if (shadowFolder) {
+  shadowFolder
+    .add(config, 'densityTextureRes', 32, 256, 1)
+    .name('Volume Res')
+    .onFinishChange(() => simulation?.reset());
+  shadowFolder.add(config, 'densityOffset', 0, 500, 1).name('Density Offset');
+  shadowFolder
+    .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
+    .name('Density Multiplier');
+  shadowFolder
+    .add(config, 'lightStepSize', 0.01, 0.5, 0.01)
+    .name('Light Step');
   shadowFolder
     .add(config, 'showParticleShadows')
     .name('Particle Shadows');

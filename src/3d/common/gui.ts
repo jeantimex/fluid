@@ -135,14 +135,6 @@ export function setupGui(
         envFolder.add(envConfig, 'shadowRadiusScale', 0.2, 3.0, 0.05).name('Shadow Radius');
       }
     }
-    
-    envFolder.add(envConfig, 'debugFloorMode', {
-      Normal: 0,
-      'Red Hit': 1,
-      'Flat Colors': 2,
-      'Shadow Debug': 3,
-      'Density Debug': 4,
-    }).name('Floor Mode');
 
     if (typeof envConfig.globalBrightness === 'number') {
       envFolder.add(envConfig, 'globalBrightness', 0.1, 4.0, 0.1).name('Brightness');
@@ -173,31 +165,10 @@ export function setupGui(
     envFolder.addColor(tileColorState, 'tileCol4').name('Tile Color 4').onChange(updateTileColor('tileCol4'));
   }
 
-  if ('densityTextureRes' in config) {
+  if ('shadowSoftness' in config) {
     const shadowFolder = gui.addFolder('Shadow');
     shadowFolder.close();
     const shadowConfig = config as any;
-    if (typeof shadowConfig.densityTextureRes === 'number') {
-      shadowFolder
-        .add(shadowConfig, 'densityTextureRes', 32, 256, 1)
-        .name('Volume Res')
-        .onFinishChange(() => callbacks.onReset());
-    }
-    if (typeof shadowConfig.densityOffset === 'number') {
-      shadowFolder
-        .add(shadowConfig, 'densityOffset', 0, 500, 1)
-        .name('Density Offset');
-    }
-    if (typeof shadowConfig.densityMultiplier === 'number') {
-      shadowFolder
-        .add(shadowConfig, 'densityMultiplier', 0.0, 0.2, 0.001)
-        .name('Density Multiplier');
-    }
-    if (typeof shadowConfig.lightStepSize === 'number') {
-      shadowFolder
-        .add(shadowConfig, 'lightStepSize', 0.01, 0.5, 0.01)
-        .name('Light Step');
-    }
     if (typeof shadowConfig.shadowSoftness === 'number') {
       shadowFolder
         .add(shadowConfig, 'shadowSoftness', 0.0, 4.0, 0.05)

@@ -167,10 +167,5 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   }
 
   let exposure = envUniforms.sceneExposure;
-  let debugMask = step(2.5, envUniforms.debugFloorMode) *
-    select(0.0, 1.0, floorHit) *
-    select(1.0, 0.0, hasFluid);
-  let debugColor = vec4<f32>(vec3<f32>(1.0), 1.0);
-  let shadedColor = vec4<f32>(color * exposure, 1.0);
-  return mix(shadedColor, debugColor, debugMask);
+  return vec4<f32>(color * exposure, 1.0);
 }
