@@ -207,9 +207,9 @@ foamFolder
   .name('Bubble Scale Speed');
 
 // ---------------------------------------------------------------------------
-// Rendering GUI Controls (screen-space demo only)
+// Screen-space GUI Controls
 // ---------------------------------------------------------------------------
-const renderingFolder = gui.addFolder('Rendering');
+const renderingFolder = gui.addFolder('Screen Space');
 renderingFolder.close();
 
 renderingFolder

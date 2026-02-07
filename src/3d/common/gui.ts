@@ -176,7 +176,7 @@ export function setupGui(
     }
   }
 
-  const particlesFolder = gui.addFolder('Particles');
+  const particlesFolder = gui.addFolder('Fluid');
   particlesFolder.close();
 
   const display = { particleCount: calculateParticleCount(config) };

@@ -132,7 +132,7 @@ export function setupGui(
   const uiState = { showStats: false };
 
   // === Particles Folder ===
-  const particlesFolder = gui.addFolder('Particles');
+  const particlesFolder = gui.addFolder('Fluid');
   particlesFolder.close();
 
   // Display object for particle count (updated dynamically)
