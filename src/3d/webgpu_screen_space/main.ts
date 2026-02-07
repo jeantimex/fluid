@@ -155,7 +155,8 @@ const { stats, gui } = setupGui(
   },
   {
     trackGPU: true, // Enable GPU timing statistics
-    title: 'WebGPU Screen Space',
+    title: 'WebGPU 3D Fluid',
+    subtitle: 'SPH Fluid • Screen-Space Rendering',
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );

@@ -140,7 +140,8 @@ const { stats, gui } = setupGui(
   },
   {
     trackGPU: true, // Enable GPU timing statistics
-    title: 'WebGPU Raymarch',
+    title: 'WebGPU 3D Fluid',
+    subtitle: 'SPH Fluid • Volumetric Raymarching',
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );

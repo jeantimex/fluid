@@ -136,7 +136,8 @@ const { stats, gui } = setupGui(
   },
   {
     trackGPU: true, // Enable GPU timing statistics
-    title: 'WebGPU Particles',
+    title: 'WebGPU 3D Fluid',
+    subtitle: 'SPH Fluid • Particle Simulation',
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );

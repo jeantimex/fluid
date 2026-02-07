@@ -21,6 +21,7 @@ export interface GuiCallbacks {
 export interface GuiOptions {
   trackGPU?: boolean;
   title?: string;
+  subtitle?: string;
   githubUrl?: string;
 }
 
@@ -53,18 +54,22 @@ export function setupGui(
     document.body.appendChild(container);
 
     if (options.title) {
+      const header = document.createElement('div');
+      header.style.cssText = `
+        background: #1a1a1a;
+        color: #fff;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        box-sizing: border-box;
+      `;
+
       const heading = document.createElement('div');
       heading.style.cssText = `
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 10px 11px;
-        background: #1a1a1a;
-        color: #fff;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        padding: 10px 11px 5px 11px;
         font-size: 16px;
         font-weight: 600;
-        box-sizing: border-box;
       `;
 
       const titleSpan = document.createElement('span');
@@ -94,7 +99,26 @@ export function setupGui(
         heading.appendChild(githubLink);
       }
 
-      container.appendChild(heading);
+      header.appendChild(heading);
+
+      if (options.subtitle) {
+        const sub = document.createElement('div');
+        sub.style.cssText = `
+          padding: 0 11px 10px 11px;
+          font-size: 11px;
+          font-weight: 400;
+          opacity: 0.6;
+          line-height: 1.4;
+          letter-spacing: 0.01em;
+          white-space: normal;
+          overflow-wrap: break-word;
+          max-width: 220px;
+        `;
+        sub.textContent = options.subtitle;
+        header.appendChild(sub);
+      }
+
+      container.appendChild(header);
     }
 
     gui = new GUI({ container, title: 'Simulation Settings' });

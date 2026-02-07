@@ -130,7 +130,8 @@ const { stats, gui } = setupGui(
   },
   {
     trackGPU: true, // Enable GPU timing statistics
-    title: 'WebGPU Marching Cubes',
+    title: 'WebGPU 3D Fluid',
+    subtitle: 'SPH Fluid • Marching Cubes Reconstruction',
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
