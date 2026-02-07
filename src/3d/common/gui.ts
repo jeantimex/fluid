@@ -504,5 +504,7 @@ export function setupGui(
       stats.dom.style.display = value ? 'block' : 'none';
     });
 
+  gui.close();
+
   return { gui, stats, uiState };
 }
