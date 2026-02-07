@@ -323,6 +323,13 @@ function updateGui(adapter: FluidAppAdapter): void {
       .add(config, 'refractionStrength', 0, 20, 0.01)
       .name('Refraction Strength');
 
+    const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
+    if (shadowFolder) {
+      shadowFolder
+        .add(config, 'showParticleShadows')
+        .name('Particle Shadows');
+    }
+
     const debugFolder = mainGui.addFolder('Debug');
     debugFolder.close();
     debugFolder

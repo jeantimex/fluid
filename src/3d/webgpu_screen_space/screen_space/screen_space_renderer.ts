@@ -230,7 +230,7 @@ export class ScreenSpaceRenderer {
     }
 
     // Shadow pass: render thickness from light's perspective, then smooth
-    if (this.config.showFluidShadow) {
+    if (this.config.showParticleShadows) {
       const shadowVP = this.shadowPass.encode(encoder, resources, frame);
       frame.shadowViewProjection = shadowVP;
       if (resources.shadowTexture && resources.shadowSmoothTexture) {

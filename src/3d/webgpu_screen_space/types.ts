@@ -29,7 +29,8 @@ export interface ScreenSpaceConfig extends SimConfig, EnvironmentConfig {
   extinctionCoeff: Vec3;
   extinctionMultiplier: number;
   refractionStrength: number;
-  showFluidShadow: boolean;
+  shadowSoftness: number;
+  showParticleShadows: boolean;
 
   // Wireframe
   showBoundsWireframe: boolean;

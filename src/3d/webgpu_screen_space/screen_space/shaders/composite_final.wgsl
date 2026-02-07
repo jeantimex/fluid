@@ -16,7 +16,7 @@ struct RenderUniforms {
   extinctionCoeff: vec3<f32>,
   extinctionMultiplier: f32,
   refractionStrength: f32,
-  showFluidShadow: f32,
+  showParticleShadows: f32,
   pad2: f32,
   pad3: f32,
   shadowVP: mat4x4<f32>,
@@ -95,7 +95,7 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
 
     // Fluid shadow from shadow texture
     let inBounds = shadowUV.x >= 0.0 && shadowUV.x <= 1.0 && shadowUV.y >= 0.0 && shadowUV.y <= 1.0;
-    if (renderUniforms.showFluidShadow > 0.5 && inBounds && shadowVal > 0.0) {
+    if (renderUniforms.showParticleShadows > 0.5 && inBounds && shadowVal > 0.0) {
       // Apply subtle shadow like raymarch demo
       // Very light shadows with high ambient floor
       let shadowAtten = exp(-shadowVal * 0.3);
