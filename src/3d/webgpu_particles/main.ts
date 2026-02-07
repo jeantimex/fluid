@@ -146,9 +146,13 @@ if (particlesFolder) {
   particlesFolder
     .add(config, 'particleRadius', 1, 5, 0.1)
     .name('Particle Radius');
-  particlesFolder
+}
+
+const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
+if (shadowFolder) {
+  shadowFolder
     .add(config, 'showParticleShadows')
-    .name('Show Shadows');
+    .name('Particle Shadows');
 }
 
 

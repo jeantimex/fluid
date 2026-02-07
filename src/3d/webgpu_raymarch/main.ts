@@ -200,12 +200,16 @@ raymarchFolder
 raymarchFolder.add(config, 'renderScale', 0.1, 1.0, 0.05).name('Render Scale');
 raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
 raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
-raymarchFolder
-  .add(config, 'shadowType', ['None', 'Volumetric'])
-  .name('Shadow Type');
-raymarchFolder
-  .add(config, 'showShadows')
-  .name('Show Shadows');
+
+const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
+if (shadowFolder) {
+  shadowFolder
+    .add(config, 'shadowType', ['None', 'Volumetric'])
+    .name('Shadow Type');
+  shadowFolder
+    .add(config, 'showShadows')
+    .name('Show Shadows');
+}
 
 const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
 extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');

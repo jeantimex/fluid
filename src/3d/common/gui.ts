@@ -174,7 +174,7 @@ export function setupGui(
   }
 
   if ('densityTextureRes' in config) {
-    const shadowFolder = gui.addFolder('Density Shadow');
+    const shadowFolder = gui.addFolder('Shadow');
     shadowFolder.close();
     const shadowConfig = config as any;
     if (typeof shadowConfig.densityTextureRes === 'number') {

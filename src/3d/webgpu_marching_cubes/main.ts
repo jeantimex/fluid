@@ -171,9 +171,12 @@ marchingFolder
     config.surfaceColor.b = rgb.b / 255;
   });
 
-marchingFolder
-  .add(config, 'showParticleShadows')
-  .name('Show Shadows');
+const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
+if (shadowFolder) {
+  shadowFolder
+    .add(config, 'showParticleShadows')
+    .name('Particle Shadows');
+}
 
 /**
  * Main Application Entry Point

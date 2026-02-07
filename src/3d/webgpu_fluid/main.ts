@@ -177,6 +177,13 @@ function updateGui(adapter: FluidAppAdapter): void {
         .add(config, 'particleRadius', 1, 5, 0.1)
         .name('Particle Radius');
     }
+
+    const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
+    if (shadowFolder) {
+      shadowFolder
+        .add(config, 'showParticleShadows')
+        .name('Particle Shadows');
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -200,6 +207,16 @@ function updateGui(adapter: FluidAppAdapter): void {
     extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');
     extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
     extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
+
+    const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
+    if (shadowFolder) {
+      shadowFolder
+        .add(config, 'shadowType', ['None', 'Volumetric'])
+        .name('Shadow Type');
+      shadowFolder
+        .add(config, 'showShadows')
+        .name('Show Shadows');
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -227,6 +244,13 @@ function updateGui(adapter: FluidAppAdapter): void {
         config.surfaceColor.g = rgb.g / 255;
         config.surfaceColor.b = rgb.b / 255;
       });
+
+    const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
+    if (shadowFolder) {
+      shadowFolder
+        .add(config, 'showParticleShadows')
+        .name('Particle Shadows');
+    }
   }
 
   // -------------------------------------------------------------------------
