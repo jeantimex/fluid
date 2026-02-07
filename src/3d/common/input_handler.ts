@@ -263,15 +263,21 @@ export function setupInputHandlers(
     input.rayDir = ray.dir;
 
     // Logic:
-    // 1. Right click inside box -> Always push
+    // 1. Right click OR Shift + Left Click inside box -> Always push
     // 2. Left click on fluid -> Pull
     // 3. Left click on background -> Orbit
-    if (hit && (e.button === 2 || input.isHoveringFluid)) {
+    const isPush = e.button === 2 || (e.button === 0 && e.shiftKey);
+    if (hit && (isPush || input.isHoveringFluid)) {
       isInteractingParticle = true;
       updateInteraction(e);
 
-      if (e.button === 0) input.pull = true;
-      if (e.button === 2) input.push = true;
+      if (isPush) {
+        input.push = true;
+        input.pull = false;
+      } else {
+        input.pull = true;
+        input.push = false;
+      }
     } else {
       isDraggingCamera = true;
       lastX = e.clientX;

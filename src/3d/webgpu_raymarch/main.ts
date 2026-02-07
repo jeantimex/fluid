@@ -142,6 +142,20 @@ const { stats, gui } = setupGui(
     trackGPU: true, // Enable GPU timing statistics
     title: 'WebGPU 3D Fluid',
     subtitle: 'SPH Fluid • Volumetric Raymarching',
+    features: [
+      'SPH Fluid Simulator (GPU)',
+      'Volumetric Density Splatting',
+      'Physically-Based Raymarching',
+      'Refraction & Reflection',
+      'Beer–Lambert Transmittance',
+      'Shadows & Ambient Occlusion'
+    ],
+    interactions: [
+      'Click & Drag (Background): Orbit Camera',
+      'Click & Drag (Fluid): Pull Particles',
+      'Shift + Click & Drag: Push Particles',
+      'Mouse Wheel: Zoom In/Out'
+    ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );

@@ -138,6 +138,20 @@ const { stats, gui } = setupGui(
     trackGPU: true, // Enable GPU timing statistics
     title: 'WebGPU 3D Fluid',
     subtitle: 'SPH Fluid • Particle Simulation',
+    features: [
+      'SPH Fluid Simulator (GPU)',
+      'Billboard Particle Rendering',
+      'Frustum Culling',
+      'Dynamic Shadow Mapping',
+      'Precise Particle Interaction',
+      'Box/Sphere Obstacles'
+    ],
+    interactions: [
+      'Click & Drag (Background): Orbit Camera',
+      'Click & Drag (Fluid): Pull Particles',
+      'Shift + Click & Drag: Push Particles',
+      'Mouse Wheel: Zoom In/Out'
+    ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );

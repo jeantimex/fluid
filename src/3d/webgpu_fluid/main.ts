@@ -88,7 +88,7 @@ heading.appendChild(githubLink);
 const subtitle = document.createElement('div');
 subtitle.id = 'gui-subtitle';
 subtitle.style.cssText = `
-  padding: 0 11px 10px 11px;
+  padding: 0 11px 5px 11px;
   font-size: 11px;
   font-weight: 400;
   opacity: 0.6;
@@ -98,11 +98,112 @@ subtitle.style.cssText = `
   overflow-wrap: break-word;
   max-width: 220px;
 `;
+
+const author = document.createElement('div');
+author.style.cssText = `
+  padding: 0 11px 10px 11px;
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 1.0;
+  letter-spacing: 0.01em;
+`;
+author.innerHTML = 'Original Author: <a href="https://github.com/SebLague" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Sebastian Lague</a>';
+
+const webgpuAuthor = document.createElement('div');
+webgpuAuthor.style.cssText = `
+  padding: 0 11px 10px 11px;
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 1.0;
+  letter-spacing: 0.01em;
+`;
+webgpuAuthor.innerHTML = 'WebGPU Author: <a href="https://github.com/jeantimex" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">jeantimex</a>';
+
+const youtube = document.createElement('div');
+youtube.style.cssText = `
+  padding: 0 11px 10px 11px;
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 1.0;
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+`;
+youtube.innerHTML = `
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="#FF0000">
+    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM9.5 16.5v-9l7 4.5-7 4.5z"/>
+  </svg>
+  <a href="https://youtu.be/kOkfC5fLfgE?si=IHlf5YZt_mAhDWKR" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Coding Adventure: Rendering Fluids</a>
+`;
+
 const subtitleMap: Record<string, string> = {
   'Particles': 'SPH Fluid • Particle Simulation',
   'Raymarch': 'SPH Fluid • Volumetric Raymarching',
   'Marching Cubes': 'SPH Fluid • Marching Cubes Reconstruction',
   'Screen Space': 'SPH Fluid • Screen-Space Rendering'
+};
+
+const featureMap: Record<string, string[]> = {
+  'Particles': [
+    'SPH Fluid Simulator (GPU)',
+    'Billboard Particle Rendering',
+    'Frustum Culling',
+    'Dynamic Shadow Mapping',
+    'Precise Particle Interaction',
+    'Box/Sphere Obstacles'
+  ],
+  'Raymarch': [
+    'SPH Fluid Simulator (GPU)',
+    'Volumetric Density Splatting',
+    'Physically-Based Raymarching',
+    'Refraction & Reflection',
+    'Beer–Lambert Transmittance',
+    'Shadows & Ambient Occlusion'
+  ],
+  'Marching Cubes': [
+    'SPH Fluid Simulator (GPU)',
+    'Marching Cubes Meshing (Compute)',
+    'Indirect Instanced Drawing',
+    'Lambertian Shading',
+    'Dynamic Shadow Mapping',
+    'Box/Sphere Obstacles'
+  ],
+  'Screen Space': [
+    'SPH Fluid Simulator (GPU)',
+    'Multi-Pass Screen-Space Renderer',
+    'Curvature-Flow Smoothing',
+    'Foam & Spray Simulation',
+    'Refraction & Beer-Lambert Law',
+    'Bilateral Depth Filtering'
+  ]
+};
+
+const interactionMap: Record<string, string[]> = {
+  'Particles': [
+    'Click & Drag (Background): Orbit Camera',
+    'Click & Drag (Fluid): Pull Particles',
+    'Shift + Click & Drag: Push Particles',
+    'Mouse Wheel: Zoom In/Out'
+  ],
+  'Raymarch': [
+    'Click & Drag (Background): Orbit Camera',
+    'Click & Drag (Fluid): Pull Particles',
+    'Shift + Click & Drag: Push Particles',
+    'Mouse Wheel: Zoom In/Out'
+  ],
+  'Marching Cubes': [
+    'Click & Drag (Background): Orbit Camera',
+    'Click & Drag (Fluid): Pull Particles',
+    'Shift + Click & Drag: Push Particles',
+    'Mouse Wheel: Zoom In/Out'
+  ],
+  'Screen Space': [
+    'Click & Drag (Background): Orbit Camera',
+    'Click & Drag (Fluid): Pull Particles',
+    'Shift + Click & Drag: Push Particles',
+    'Mouse Wheel: Zoom In/Out'
+  ]
 };
 
 const header = document.createElement('div');
@@ -114,6 +215,28 @@ header.style.cssText = `
 `;
 header.appendChild(heading);
 header.appendChild(subtitle);
+header.appendChild(author);
+header.appendChild(webgpuAuthor);
+header.appendChild(youtube);
+
+const featContainer = document.createElement('div');
+featContainer.id = 'gui-features';
+featContainer.style.cssText = `
+  padding: 5px 11px 10px 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+`;
+header.appendChild(featContainer);
+
+const intContainer = document.createElement('div');
+intContainer.id = 'gui-interactions';
+intContainer.style.cssText = `
+  padding: 5px 11px 10px 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+`;
+header.appendChild(intContainer);
+
 guiContainer.appendChild(header);
 
 const mainGui = new GUI({ container: guiContainer, title: 'Simulation Settings' });
@@ -234,6 +357,80 @@ function updateGui(adapter: FluidAppAdapter): void {
   const subtitleEl = document.getElementById('gui-subtitle');
   if (subtitleEl) {
     subtitleEl.textContent = (subtitleMap as any)[adapter.name] || '';
+  }
+
+  // Update dynamic features
+  const featEl = document.getElementById('gui-features');
+  if (featEl) {
+    featEl.innerHTML = '';
+    const features = (featureMap as any)[adapter.name];
+    if (features && features.length > 0) {
+      featEl.style.display = 'block';
+      const label = document.createElement('div');
+      label.style.cssText = `
+        font-size: 10px;
+        font-weight: 600;
+        opacity: 0.8;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      `;
+      label.textContent = 'Features:';
+      featEl.appendChild(label);
+
+      const list = document.createElement('ul');
+      list.style.cssText = `
+        margin: 0;
+        padding: 0 0 0 14px;
+        font-size: 10px;
+        opacity: 0.7;
+        line-height: 1.4;
+      `;
+      features.forEach((f: string) => {
+        const li = document.createElement('li');
+        li.textContent = f;
+        list.appendChild(li);
+      });
+      featEl.appendChild(list);
+    } else {
+      featEl.style.display = 'none';
+    }
+  }
+
+  // Update dynamic interactions
+  const intEl = document.getElementById('gui-interactions');
+  if (intEl) {
+    intEl.innerHTML = '';
+    const interactions = (interactionMap as any)[adapter.name];
+    if (interactions && interactions.length > 0) {
+      intEl.style.display = 'block';
+      const label = document.createElement('div');
+      label.style.cssText = `
+        font-size: 10px;
+        font-weight: 600;
+        opacity: 0.8;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      `;
+      label.textContent = 'Interactions:';
+      intEl.appendChild(label);
+
+      const list = document.createElement('ul');
+      list.style.cssText = `
+        margin: 0;
+        padding: 0 0 0 14px;
+        font-size: 10px;
+        opacity: 0.7;
+        line-height: 1.4;
+      `;
+      interactions.forEach((i: string) => {
+        const li = document.createElement('li');
+        li.textContent = i;
+        list.appendChild(li);
+      });
+      intEl.appendChild(list);
+    } else {
+      intEl.style.display = 'none';
+    }
   }
 
   // Clear existing folders

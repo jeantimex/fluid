@@ -132,6 +132,20 @@ const { stats, gui } = setupGui(
     trackGPU: true, // Enable GPU timing statistics
     title: 'WebGPU 3D Fluid',
     subtitle: 'SPH Fluid • Marching Cubes Reconstruction',
+    features: [
+      'SPH Fluid Simulator (GPU)',
+      'Marching Cubes Meshing (Compute)',
+      'Indirect Instanced Drawing',
+      'Lambertian Shading',
+      'Dynamic Shadow Mapping',
+      'Box/Sphere Obstacles'
+    ],
+    interactions: [
+      'Click & Drag (Background): Orbit Camera',
+      'Click & Drag (Fluid): Pull Particles',
+      'Shift + Click & Drag: Push Particles',
+      'Mouse Wheel: Zoom In/Out'
+    ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
