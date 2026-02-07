@@ -192,6 +192,7 @@ export class ScreenSpaceRenderer {
     const invViewProj = mat4Invert(viewProj);
     const dpr = window.devicePixelRatio || 1;
 
+    const showObstacle = this.config.showObstacle !== false;
     const frame: ScreenSpaceFrame = {
       ...this.config, // Spread first to provide base EnvironmentConfig
       viewProjection: viewProj,
@@ -204,12 +205,12 @@ export class ScreenSpaceRenderer {
       far,
       // Calculate derived obstacleHalfSize
       obstacleHalfSize: {
-        x: this.config.obstacleSize.x * 0.5,
-        y: this.config.obstacleSize.y * 0.5,
-        z: this.config.obstacleSize.z * 0.5,
+        x: showObstacle ? this.config.obstacleSize.x * 0.5 : 0,
+        y: showObstacle ? this.config.obstacleSize.y * 0.5 : 0,
+        z: showObstacle ? this.config.obstacleSize.z * 0.5 : 0,
       },
       obstacleColor: this.config.obstacleColor ?? { r: 1, g: 0, b: 0 },
-      obstacleAlpha: this.config.obstacleAlpha ?? 0.8,
+      obstacleAlpha: showObstacle ? (this.config.obstacleAlpha ?? 0.8) : 0,
       showBoundsWireframe: this.config.showBoundsWireframe,
       boundsWireframeColor: this.config.boundsWireframeColor,
       boundsSize: this.config.boundsSize,

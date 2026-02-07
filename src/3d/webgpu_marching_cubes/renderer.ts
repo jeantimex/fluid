@@ -875,7 +875,10 @@ export class MarchingCubesRenderer {
     this.device.queue.writeBuffer(this.shadowUniformBuffer, 0, shadowUniforms);
 
     // Build Obstacle Geometry (used in shadow and main pass)
-    const { faceCount, edgeCount } = this.buildObstacleGeometry(config);
+    const showObstacle = config.showObstacle !== false;
+    const { faceCount, edgeCount } = showObstacle
+      ? this.buildObstacleGeometry(config)
+      : { faceCount: 0, edgeCount: 0 };
     const totalFloats = faceCount * 10 + edgeCount * 7;
     if (totalFloats > 0) {
       this.device.queue.writeBuffer(

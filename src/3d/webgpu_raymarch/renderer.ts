@@ -620,21 +620,22 @@ export class RaymarchRenderer {
     this.uniformData[90] = config.floorCenter.z;
     this.uniformData[91] = 0; // pad15
 
+    const showObstacle = config.showObstacle !== false;
     // --- Obstacle box (obstacleCentre.y is the bottom, compute actual center) ---
     this.uniformData[92] = config.obstacleCentre.x;
     this.uniformData[93] = config.obstacleCentre.y + config.obstacleSize.y * 0.5;
     this.uniformData[94] = config.obstacleCentre.z;
     this.uniformData[95] = 0; // pad16
 
-    this.uniformData[96] = config.obstacleSize.x * 0.5;
-    this.uniformData[97] = config.obstacleSize.y * 0.5;
-    this.uniformData[98] = config.obstacleSize.z * 0.5;
+    this.uniformData[96] = showObstacle ? config.obstacleSize.x * 0.5 : 0;
+    this.uniformData[97] = showObstacle ? config.obstacleSize.y * 0.5 : 0;
+    this.uniformData[98] = showObstacle ? config.obstacleSize.z * 0.5 : 0;
     this.uniformData[99] = 0; // pad17
 
     this.uniformData[100] = config.obstacleRotation.x;
     this.uniformData[101] = config.obstacleRotation.y;
     this.uniformData[102] = config.obstacleRotation.z;
-    this.uniformData[103] = config.obstacleAlpha;
+    this.uniformData[103] = showObstacle ? config.obstacleAlpha : 0;
 
     this.uniformData[104] = config.obstacleColor.r;
     this.uniformData[105] = config.obstacleColor.g;

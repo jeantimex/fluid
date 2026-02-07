@@ -974,7 +974,8 @@ export class Renderer {
     // Build & Upload Obstacle Geometry (faces)
     // -------------------------------------------------------------------------
 
-    const { faceCount } = this.buildObstacleGeometry(config);
+    const showObstacle = config.showObstacle !== false;
+    const { faceCount } = showObstacle ? this.buildObstacleGeometry(config) : { faceCount: 0 };
     if (faceCount > 0) {
       this.device.queue.writeBuffer(
         this.lineVertexBuffer,

@@ -39,6 +39,8 @@ export interface SimConfig {
   nearPressureMultiplier: number;
   viscosityStrength: number;
   boundsSize: Vec3;
+  showObstacle?: boolean;
+  obstacleShape?: string;
   obstacleSize: Vec3;
   obstacleCentre: Vec3;
   obstacleRotation: Vec3;

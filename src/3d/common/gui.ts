@@ -172,9 +172,21 @@ export function setupGui(
   const obstacleFolder = gui.addFolder('Obstacle');
   obstacleFolder.close();
 
-  obstacleFolder.add(config.obstacleSize, 'x', 0, 10, 0.1).name('Size X');
-  obstacleFolder.add(config.obstacleSize, 'y', 0, 10, 0.1).name('Size Y');
-  obstacleFolder.add(config.obstacleSize, 'z', 0, 10, 0.1).name('Size Z');
+  const obstacleShapeOptions = { 'Rectangular Cuboid': 'box' };
+  if (!config.obstacleShape) {
+    config.obstacleShape = 'box';
+  }
+  const shapeController = obstacleFolder
+    .add(config, 'obstacleShape', obstacleShapeOptions)
+    .name('Shape');
+
+  if (typeof config.showObstacle === 'boolean') {
+    obstacleFolder.add(config, 'showObstacle').name('Show Obstacle');
+  }
+
+  const sizeXController = obstacleFolder.add(config.obstacleSize, 'x', 0, 10, 0.1).name('Size X');
+  const sizeYController = obstacleFolder.add(config.obstacleSize, 'y', 0, 10, 0.1).name('Size Y');
+  const sizeZController = obstacleFolder.add(config.obstacleSize, 'z', 0, 10, 0.1).name('Size Z');
 
   obstacleFolder.add(config.obstacleCentre, 'x', -10, 10, 0.1).name('Position X');
   obstacleFolder.add(config.obstacleCentre, 'y', -10, 10, 0.1).name('Bottom Y');
@@ -197,6 +209,21 @@ export function setupGui(
   if (typeof config.obstacleAlpha === 'number') {
     obstacleFolder.add(config, 'obstacleAlpha', 0, 1, 0.01).name('Alpha');
   }
+
+  const updateObstacleShapeUI = () => {
+    const isBox = config.obstacleShape === 'box';
+    if (isBox) {
+      sizeXController.show();
+      sizeYController.show();
+      sizeZController.show();
+    } else {
+      sizeXController.hide();
+      sizeYController.hide();
+      sizeZController.hide();
+    }
+  };
+  updateObstacleShapeUI();
+  shapeController.onChange(updateObstacleShapeUI);
 
   const containerFolder = gui.addFolder('Container');
   containerFolder.close();

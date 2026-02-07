@@ -281,7 +281,10 @@ export class FluidSimulation {
     // 8. Integrate
     this.integrateData[0] = timeStep;
     this.integrateData[1] = config.collisionDamping;
-    const hasObstacle = config.obstacleSize.x > 0 && config.obstacleSize.y > 0 && config.obstacleSize.z > 0;
+    const hasObstacle = (config.showObstacle !== false) &&
+      config.obstacleSize.x > 0 &&
+      config.obstacleSize.y > 0 &&
+      config.obstacleSize.z > 0;
     this.integrateData[2] = hasObstacle ? 1 : 0;
     const size = config.boundsSize;
     const hx = size.x * 0.5;

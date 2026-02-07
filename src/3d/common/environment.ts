@@ -137,6 +137,8 @@ export function writeEnvironmentUniforms(
   buffer[i++] = env.tileColVariation.z;
   buffer[i++] = 0;
 
+  const showObstacle = sim.showObstacle !== false;
+
   // 44-47: obstacleCenter, pad
   // obstacleCentre.y is the bottom of the obstacle, compute actual center
   buffer[i++] = sim.obstacleCentre.x;
@@ -145,16 +147,19 @@ export function writeEnvironmentUniforms(
   buffer[i++] = 0;
 
   // 48-51: obstacleHalfSize, pad
-  buffer[i++] = sim.obstacleSize.x * 0.5;
-  buffer[i++] = sim.obstacleSize.y * 0.5;
-  buffer[i++] = sim.obstacleSize.z * 0.5;
+  const obsHalfX = showObstacle ? sim.obstacleSize.x * 0.5 : 0;
+  const obsHalfY = showObstacle ? sim.obstacleSize.y * 0.5 : 0;
+  const obsHalfZ = showObstacle ? sim.obstacleSize.z * 0.5 : 0;
+  buffer[i++] = obsHalfX;
+  buffer[i++] = obsHalfY;
+  buffer[i++] = obsHalfZ;
   buffer[i++] = 0;
 
   // 52-55: obstacleRotation, obstacleAlpha
   buffer[i++] = sim.obstacleRotation.x;
   buffer[i++] = sim.obstacleRotation.y;
   buffer[i++] = sim.obstacleRotation.z;
-  buffer[i++] = sim.obstacleAlpha ?? 0.8;
+  buffer[i++] = showObstacle ? (sim.obstacleAlpha ?? 0.8) : 0.0;
 
   // 56-59: obstacleColor, pad
   const obsCol = sim.obstacleColor ?? { r: 1, g: 0, b: 0 };
