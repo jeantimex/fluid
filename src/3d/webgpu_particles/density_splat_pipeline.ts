@@ -205,7 +205,6 @@ export class DensitySplatPipeline {
   }
 
   private updateParams(particleCount: number, config: ParticlesConfig): void {
-    const bounds = config.boundsSize;
     const radius = config.smoothingRadius;
 
     const spikyPow2Scale = 15 / (2 * Math.PI * Math.pow(radius, 5));

@@ -209,6 +209,7 @@ export class ScreenSpaceRenderer {
       boundsWireframeColor: this.config.boundsWireframeColor,
       boundsSize: this.config.boundsSize,
       shadowViewProjection: null,
+      shadowSoftness: this.config.shadowSoftness,
     };
 
     const resources: ScreenSpaceTextures & { buffers: SimBuffers } = {

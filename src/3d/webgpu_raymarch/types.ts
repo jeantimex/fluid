@@ -10,7 +10,7 @@
  * @module types
  */
 
-import type { SimConfig, RGB } from '../common/types.ts';
+import type { SimConfig } from '../common/types.ts';
 import type { EnvironmentConfig } from '../common/environment.ts';
 
 /**
@@ -88,15 +88,26 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
    */
   numRefractions: number;
 
-    /** Multiplier applied to the "dark" tiles in the checkerboard (0–1). */
+  /** Multiplier applied to the "dark" tiles in the checkerboard (0–1). */
+  tileDarkOffset: number;
 
-    tileDarkOffset: number;
+  /** Softness of the volumetric shadows. */
+  shadowSoftness: number;
 
-    /** Softness of the volumetric shadows. */
-    shadowSoftness: number;
+  /** Whether to enable volume and scene shadows. */
+  showFluidShadows: boolean;
 
-    /** Whether to enable volume and scene shadows. */
-    showFluidShadows: boolean;
+  /** Whether to show the bounds wireframe. */
+  showBoundsWireframe: boolean;
+
+  /** Color of the bounds wireframe (linear RGB). */
+  boundsWireframeColor: { r: number; g: number; b: number };
+
+  /** Base surface color for the obstacle (linear RGB). */
+  obstacleColor: { r: number; g: number; b: number };
+
+  /** Opacity of the obstacle surface (0–1). */
+  obstacleAlpha: number;
 }
 
   

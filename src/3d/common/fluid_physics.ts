@@ -115,7 +115,7 @@ export class FluidPhysics {
       entries: [
         { binding: 0, resource: { buffer: buffers.positions } },
         { binding: 1, resource: { buffer: buffers.velocities } },
-        { binding: 2, resource: { buffer: buffers.integrate } },
+        { binding: 2, resource: { buffer: uniforms.integrate } },
       ],
     });
   }
@@ -125,7 +125,6 @@ export class FluidPhysics {
    */
   step(
     pass: GPUComputePassEncoder,
-    buffers: FluidBuffers,
     grid: SpatialGrid,
     particleCount: number,
     gridTotalCells: number,

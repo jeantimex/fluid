@@ -48,6 +48,7 @@ export interface ScreenSpaceFrame extends EnvironmentConfig {
 
   // Shadow
   shadowViewProjection: Float32Array | null;
+  shadowSoftness: number;
 }
 
 export interface DepthPassResources extends ScreenSpaceTextures {

@@ -25,6 +25,8 @@ export class ScreenSpaceAdapter implements FluidAppAdapter<ScreenSpaceConfig> {
     bubbleScale: 0.3,
     foamLifetimeMin: 10,
     foamLifetimeMax: 30,
+    waterColor: { r: 0.3, g: 0.9, b: 0.8 },
+    deepWaterColor: { r: 0.02, g: 0.15, b: 0.45 },
     foamColor: { r: 0.95, g: 0.98, b: 1.0 },
     foamOpacity: 2.5,
     sprayClassifyMaxNeighbours: 5,
@@ -38,11 +40,12 @@ export class ScreenSpaceAdapter implements FluidAppAdapter<ScreenSpaceConfig> {
     extinctionMultiplier: 2.24,
     refractionStrength: 9.15,
     shadowSoftness: 2.5,
-    shadowRadiusScale: 1.0,
     showFluidShadows: true,
 
     showBoundsWireframe: false,
     boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
+    obstacleColor: { r: 1.0, g: 1.0, b: 1.0 },
+    obstacleAlpha: 1.0,
   };
 
   private device!: GPUDevice;

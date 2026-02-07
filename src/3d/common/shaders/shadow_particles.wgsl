@@ -5,6 +5,7 @@
 
 // --- PARTICLES (Storage Buffer) ---
 @group(0) @binding(1) var<storage, read> positions: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read> visibleIndices: array<u32>;
 
 struct ParticleOutput {
   @builtin(position) position: vec4<f32>,
@@ -12,7 +13,8 @@ struct ParticleOutput {
 
 @vertex
 fn vs_particles(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) instanceIndex: u32) -> ParticleOutput {
-  let pos = positions[instanceIndex].xyz;
+  let particleIndex = visibleIndices[instanceIndex];
+  let pos = positions[particleIndex].xyz;
   let clipPos = uniforms.lightViewProjection * vec4<f32>(pos, 1.0);
 
   var quadPos = vec2<f32>(0.0, 0.0);

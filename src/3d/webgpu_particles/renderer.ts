@@ -65,7 +65,8 @@ import backgroundShader from './shaders/background.wgsl?raw';
 import wireframeShader from '../common/shaders/wireframe.wgsl?raw';
 import environmentShader from '../common/shaders/environment.wgsl?raw';
 import shadowCommonShader from '../common/shaders/shadow_common.wgsl?raw';
-import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
+import cullShader from '../common/shaders/cull.wgsl?raw';
+import { FluidBuffers } from '../common/fluid_buffers.ts';
 import type { ParticlesConfig } from './types.ts';
 import {
   mat4Perspective,
@@ -116,6 +117,9 @@ export class Renderer {
   /** Pipeline for rendering bounds wireframe. */
   private wireframePipeline: GPURenderPipeline;
 
+  /** Pipeline for GPU frustum culling. */
+  private cullPipeline: GPUComputePipeline;
+
   // ===========================================================================
   // GPU Buffers
   // ===========================================================================
@@ -145,6 +149,7 @@ export class Renderer {
   private shadowParticleBindGroup!: GPUBindGroup;
   private shadowObstacleBindGroup!: GPUBindGroup;
   private wireframeBindGroup: GPUBindGroup;
+  private cullBindGroup!: GPUBindGroup;
 
   // ===========================================================================
   // Line Rendering Resources
@@ -410,6 +415,12 @@ export class Renderer {
       },
     });
 
+    const cullModule = device.createShaderModule({ code: cullShader });
+    this.cullPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: { module: cullModule, entryPoint: 'main' },
+    });
+
     // -------------------------------------------------------------------------
     // Create Wireframe Render Pipeline
     // -------------------------------------------------------------------------
@@ -552,8 +563,9 @@ export class Renderer {
   // ===========================================================================
 
   createBindGroup(
-    buffers: SimulationBuffersLinear,
-    densityTextureView: GPUTextureView
+    buffers: FluidBuffers,
+    densityTextureView: GPUTextureView,
+    cullUniformBuffer: GPUBuffer
   ) {
     this.particleBindGroup = this.device.createBindGroup({
       layout: this.particlePipeline.getBindGroupLayout(0),
@@ -574,6 +586,17 @@ export class Renderer {
       entries: [
         { binding: 0, resource: { buffer: this.shadowUniformBuffer } },
         { binding: 1, resource: { buffer: buffers.positions } },
+        { binding: 2, resource: { buffer: buffers.visibleIndices } },
+      ],
+    });
+
+    this.cullBindGroup = this.device.createBindGroup({
+      layout: this.cullPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.positions } },
+        { binding: 1, resource: { buffer: buffers.visibleIndices } },
+        { binding: 2, resource: { buffer: buffers.indirectDraw } },
+        { binding: 3, resource: { buffer: cullUniformBuffer } },
       ],
     });
 
@@ -787,9 +810,18 @@ export class Renderer {
     encoder: GPUCommandEncoder,
     view: GPUTextureView,
     config: ParticlesConfig,
-    buffers: SimulationBuffersLinear,
+    buffers: FluidBuffers,
     viewMatrix: Float32Array
   ) {
+    // -------------------------------------------------------------------------
+    // 0. Cull Pass
+    // -------------------------------------------------------------------------
+    const cullPass = encoder.beginComputePass();
+    cullPass.setPipeline(this.cullPipeline);
+    cullPass.setBindGroup(0, this.cullBindGroup);
+    cullPass.dispatchWorkgroups(Math.ceil(buffers.particleCount / 256));
+    cullPass.end();
+
     // -------------------------------------------------------------------------
     // Update Uniforms
     // -------------------------------------------------------------------------
@@ -988,7 +1020,7 @@ export class Renderer {
     shadowPass.setPipeline(this.shadowParticlePipeline);
     shadowPass.setBindGroup(0, this.shadowParticleBindGroup);
     if (config.showFluidShadows) {
-      shadowPass.draw(6, buffers.particleCount, 0, 0);
+      shadowPass.drawIndirect(buffers.indirectDraw, 0);
     }
 
     if (faceCount > 0) {

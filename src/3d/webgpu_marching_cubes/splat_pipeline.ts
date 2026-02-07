@@ -318,7 +318,6 @@ export class SplatPipeline {
     particleCount: number,
     config: MarchingCubesConfig
   ): void {
-    const bounds = config.boundsSize;
     const radius = config.smoothingRadius;
 
     // Normalization constant for the Spiky² kernel: 15 / (2π r⁵)

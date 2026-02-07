@@ -95,8 +95,8 @@ const canvas = createCanvas(app);
 const config: ParticlesConfig = {
   ...createConfig(),
   ...createDefaultEnvironmentConfig(),
-  viscosityStrength: 0.01,
-  iterationsPerFrame: 3,
+  viscosityStrength: 0.001,
+  iterationsPerFrame: 2,
   velocityDisplayMax: 8.0,
   gradientResolution: 50,
   densityTextureRes: 150,

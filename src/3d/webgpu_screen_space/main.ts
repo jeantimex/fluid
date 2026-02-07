@@ -58,7 +58,6 @@ import {
   WebGPUInitError,
 } from '../common/webgpu_utils.ts';
 import { setupInputHandlers } from '../common/input_handler.ts';
-import { rgbToHex, hexToRgb } from '../common/color_utils.ts';
 
 /**
  * Creates and inserts a canvas element into the application container.
@@ -131,6 +130,10 @@ const config: ScreenSpaceConfig = {
   // Wireframe
   showBoundsWireframe: false,
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
+
+  // Obstacle
+  obstacleColor: { r: 1.0, g: 1.0, b: 1.0 },
+  obstacleAlpha: 1.0,
 };
 
 // Simulation instance (initialized asynchronously in main())

@@ -1,5 +1,4 @@
 import type { FluidBuffers } from './fluid_buffers.ts';
-import { preprocessShader } from './shader_preprocessor.ts';
 
 // Shader imports
 import hashShader from './shaders/hash_linear.wgsl?raw';
@@ -201,6 +200,7 @@ export class SpatialGrid {
     const numParticleBlocks = Math.ceil(particleCount / 256);
     const numGridBlocksL0 = Math.ceil((gridTotalCells + 1) / 512);
     const numGridBlocksL1 = Math.ceil(numGridBlocksL0 / 512);
+    const numGridBlocksL2 = Math.ceil(numGridBlocksL1 / 512);
 
     // 1. Hash Predicted Positions
     pass.setPipeline(this.hashPipeline);
@@ -210,7 +210,7 @@ export class SpatialGrid {
     // 2. Clear Histogram
     pass.setPipeline(this.clearOffsetsPipeline);
     pass.setBindGroup(0, this.clearBG);
-    pass.dispatchWorkgroups(numGridBlocksL0);
+    pass.dispatchWorkgroups(Math.ceil((gridTotalCells + 1) / 256));
 
     // 3. Count Particles per Cell
     pass.setPipeline(this.countOffsetsPipeline);
@@ -224,24 +224,32 @@ export class SpatialGrid {
     pass.setBindGroup(0, this.scanL0BG);
     pass.dispatchWorkgroups(numGridBlocksL0);
     
-    // L1 -> L2
-    pass.setBindGroup(0, this.scanL1BG);
-    pass.dispatchWorkgroups(numGridBlocksL1);
+    if (numGridBlocksL0 > 1) {
+      // L1 -> L2
+      pass.setBindGroup(0, this.scanL1BG);
+      pass.dispatchWorkgroups(numGridBlocksL1);
+    }
     
-    // L2 -> scratch
-    pass.setBindGroup(0, this.scanL2BG);
-    pass.dispatchWorkgroups(1);
+    if (numGridBlocksL1 > 1) {
+      // L2 -> scratch
+      pass.setBindGroup(0, this.scanL2BG);
+      pass.dispatchWorkgroups(numGridBlocksL2);
+    }
 
     // 5. Combine sums back
     pass.setPipeline(this.prefixCombinePipeline);
     
-    // L2 -> L1
-    pass.setBindGroup(0, this.combineL1BG);
-    pass.dispatchWorkgroups(numGridBlocksL1);
+    if (numGridBlocksL1 > 1) {
+      // L2 -> L1
+      pass.setBindGroup(0, this.combineL1BG);
+      pass.dispatchWorkgroups(numGridBlocksL1);
+    }
     
-    // L1 -> L0
-    pass.setBindGroup(0, this.combineL0BG);
-    pass.dispatchWorkgroups(numGridBlocksL0);
+    if (numGridBlocksL0 > 1) {
+      // L1 -> L0
+      pass.setBindGroup(0, this.combineL0BG);
+      pass.dispatchWorkgroups(numGridBlocksL0);
+    }
 
     // 6. Scatter particles to sorted positions
     pass.setPipeline(this.scatterPipeline);

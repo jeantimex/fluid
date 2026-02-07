@@ -12,7 +12,6 @@ import {
   mat4Multiply,
   mat4Ortho,
   normalize,
-  vec3Scale,
 } from '../../../common/math_utils.ts';
 
 export class ShadowPass {

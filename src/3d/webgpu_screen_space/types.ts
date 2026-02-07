@@ -35,4 +35,8 @@ export interface ScreenSpaceConfig extends SimConfig, EnvironmentConfig {
   // Wireframe
   showBoundsWireframe: boolean;
   boundsWireframeColor: RGB;
+
+  // Obstacle
+  obstacleColor: RGB;
+  obstacleAlpha: number;
 }
