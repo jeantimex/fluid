@@ -11,7 +11,6 @@ import type {
   ScreenSpaceTextures,
   SimBuffers,
 } from './screen_space_types.ts';
-import { SimulationBuffersLinear } from '../simulation_buffers_linear.ts';
 import {
   mat4Invert,
   mat4Multiply,
@@ -91,11 +90,11 @@ export class ScreenSpaceRenderer {
     this.normalPass.createBindGroup(resources);
     this.shadowPass.createBindGroup(buffers);
 
-    if (buffers instanceof SimulationBuffersLinear) {
+    if (buffers.foamPositions && buffers.foamVelocities && buffers.maxFoamParticles > 0) {
       this.foamPass.createBindGroup(
         buffers.foamPositions,
         buffers.foamVelocities,
-        SimulationBuffersLinear.MAX_FOAM_PARTICLES
+        buffers.maxFoamParticles
       );
     }
   }

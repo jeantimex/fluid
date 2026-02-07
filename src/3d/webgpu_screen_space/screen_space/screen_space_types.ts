@@ -1,8 +1,8 @@
-import type { SimulationBuffersLinear } from '../simulation_buffers_linear.ts';
+import type { FluidBuffers } from '../../common/fluid_buffers.ts';
 import type { RGB, Vec3 } from '../../common/types.ts';
 import type { EnvironmentConfig } from '../../common/environment.ts';
 
-export type SimBuffers = SimulationBuffersLinear;
+export type SimBuffers = FluidBuffers;
 
 export interface ScreenSpaceTextures {
   depthTexture: GPUTexture | null;

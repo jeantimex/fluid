@@ -17,6 +17,7 @@ export interface FluidBuffersOptions {
  * Supports both standard Spatial Hashing and Linear Grid modes.
  */
 export class FluidBuffers {
+  static readonly DEFAULT_MAX_FOAM_PARTICLES = 1_280_000;
   // --- Core Particle Data (SoA) ---
   positions: GPUBuffer;
   predicted: GPUBuffer;
@@ -52,6 +53,7 @@ export class FluidBuffers {
   foamPositions: GPUBuffer | null = null;
   foamVelocities: GPUBuffer | null = null;
   foamCounter: GPUBuffer | null = null;
+  readonly maxFoamParticles: number;
 
   // --- Readback (Debug) ---
   velocityReadback: GPUBuffer;
@@ -64,7 +66,7 @@ export class FluidBuffers {
     this.device = device;
     this.particleCount = spawn.count;
 
-    const { gridTotalCells, includeFoam, maxFoamParticles = 1_280_000 } = options;
+    const { gridTotalCells, includeFoam, maxFoamParticles = FluidBuffers.DEFAULT_MAX_FOAM_PARTICLES } = options;
 
     // 1. Core Particle Data
     this.positions = this.createBufferFromArray(spawn.positions, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
@@ -112,6 +114,9 @@ export class FluidBuffers {
       this.foamPositions = this.createEmptyBuffer(maxFoamParticles * 16, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
       this.foamVelocities = this.createEmptyBuffer(maxFoamParticles * 16, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
       this.foamCounter = this.createEmptyBuffer(4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+      this.maxFoamParticles = maxFoamParticles;
+    } else {
+      this.maxFoamParticles = 0;
     }
 
     // 6. Readback
