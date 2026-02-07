@@ -12,11 +12,7 @@ struct Uniforms {
   sunBrightness: f32,
 };
 
-struct ShadowUniforms {
-  lightViewProjection: mat4x4<f32>,
-  shadowSoftness: f32,
-  pad0: vec3<f32>,
-};
+#include "../../common/shaders/shadow_common.wgsl"
 
 @group(0) @binding(0) var<storage, read> vertices: array<Vertex>;
 @group(0) @binding(1) var<uniform> uniforms: Uniforms;

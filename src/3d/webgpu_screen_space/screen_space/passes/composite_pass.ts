@@ -5,8 +5,9 @@
 import debugShader from '../shaders/debug_composite.wgsl?raw';
 import debugColorShader from '../shaders/debug_composite_color.wgsl?raw';
 import compositeShader from '../shaders/composite_final.wgsl?raw';
-import wireframeShader from '../shaders/wireframe.wgsl?raw';
+import wireframeShader from '../../../common/shaders/wireframe.wgsl?raw';
 import environmentShader from '../../../common/shaders/environment.wgsl?raw';
+import shadowCommonShader from '../../../common/shaders/shadow_common.wgsl?raw';
 import type {
   CompositePassResources,
   ScreenSpaceFrame,
@@ -42,7 +43,7 @@ export class CompositePass {
     });
     // Render uniforms:
     // inverseVP (64) + waterColor (16) + deepColor (16) + foamColor (16) +
-    // extinction (16) + refraction + 3 pad (16) + shadowVP (64) = 208 bytes
+    // extinction (16) + refraction + shadow toggle + 2 pad (16) + ShadowUniforms (80) = 224 bytes
     this.uniformBuffer = device.createBuffer({
       size: 224,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -136,6 +137,7 @@ export class CompositePass {
 
     const compositeCode = preprocessShader(compositeShader, {
       '../../../common/shaders/environment.wgsl': environmentShader,
+      '../../../common/shaders/shadow_common.wgsl': shadowCommonShader,
     });
     const compositeModule = device.createShaderModule({
       code: compositeCode,
@@ -334,8 +336,8 @@ export class CompositePass {
       if (!this.compositeBindGroup) {
         return;
       }
-      // Render uniforms (inverse view-projection + colors + params + shadowVP)
-      const uniforms = new Float32Array(52);
+      // Render uniforms (inverse view-projection + colors + params + ShadowUniforms)
+      const uniforms = new Float32Array(56);
       uniforms.set(frame.inverseViewProjection, 0); // 0-15
       uniforms[16] = frame.waterColor.r;
       uniforms[17] = frame.waterColor.g;
@@ -357,9 +359,13 @@ export class CompositePass {
       uniforms[33] = frame.showFluidShadows ? 1.0 : 0.0;
       uniforms[34] = 0; // pad3
       uniforms[35] = 0; // pad4
-      // shadowVP at offset 36 (byte offset 144, 16-byte aligned for mat4x4)
+      // shadowParams at offset 36 (byte offset 144, 16-byte aligned for mat4x4)
       if (frame.shadowViewProjection) {
-        uniforms.set(frame.shadowViewProjection, 36);
+        uniforms.set(frame.shadowViewProjection, 36); // 36-51: lightViewProjection
+        uniforms[52] = frame.shadowSoftness;
+        uniforms[53] = 0; // particleShadowRadius (not used in screen space depth)
+        uniforms[54] = 0; // pad0
+        uniforms[55] = 0; // pad1
       }
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 

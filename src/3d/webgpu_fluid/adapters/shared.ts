@@ -1,4 +1,4 @@
-import { configureContext } from '../../webgpu_particles/webgpu_utils.ts';
+import { configureContext } from '../../common/webgpu_utils.ts';
 
 export function resizeCanvasToDisplaySize(
   canvas: HTMLCanvasElement,

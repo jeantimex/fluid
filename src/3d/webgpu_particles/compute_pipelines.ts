@@ -60,18 +60,18 @@
 import type { SimulationBuffers } from './simulation_buffers.ts';
 
 // Import shader source code as raw strings (Vite feature)
-import externalForcesShader from './shaders/external_forces.wgsl?raw';
-import hashShader from './shaders/hash.wgsl?raw';
-import sortShader from './shaders/sort.wgsl?raw';
-import scatterShader from './shaders/scatter.wgsl?raw';
-import spatialOffsetsShader from './shaders/spatial_offsets.wgsl?raw';
-import densityShader from './shaders/density.wgsl?raw';
-import pressureShader from './shaders/pressure.wgsl?raw';
-import viscosityShader from './shaders/viscosity.wgsl?raw';
+import externalForcesShader from '../common/shaders/external_forces.wgsl?raw';
+import hashShader from '../common/shaders/hash.wgsl?raw';
+import sortShader from '../common/shaders/sort.wgsl?raw';
+import scatterShader from '../common/shaders/scatter.wgsl?raw';
+import spatialOffsetsShader from '../common/shaders/spatial_offsets.wgsl?raw';
+import densityShader from '../common/shaders/density.wgsl?raw';
+import pressureShader from '../common/shaders/pressure.wgsl?raw';
+import viscosityShader from '../common/shaders/viscosity.wgsl?raw';
 import integrateShader from './shaders/integrate.wgsl?raw';
-import prefixSumShader from './shaders/prefix_sum.wgsl?raw';
-import reorderShader from './shaders/reorder.wgsl?raw';
-import cullShader from './shaders/cull.wgsl?raw';
+import prefixSumShader from '../common/shaders/prefix_sum.wgsl?raw';
+import reorderShader from '../common/shaders/reorder.wgsl?raw';
+import cullShader from '../common/shaders/cull.wgsl?raw';
 
 /**
  * Collection of uniform buffers for passing parameters to compute shaders.

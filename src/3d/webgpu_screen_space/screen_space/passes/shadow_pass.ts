@@ -13,7 +13,7 @@ import {
   mat4Ortho,
   normalize,
   vec3Scale,
-} from '../../../webgpu_particles/math_utils.ts';
+} from '../../../common/math_utils.ts';
 
 export class ShadowPass {
   private device: GPUDevice;

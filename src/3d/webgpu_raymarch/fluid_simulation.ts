@@ -82,7 +82,7 @@ import type { SimState } from '../common/types.ts';
 import { createSpawnData } from '../common/spawn.ts';
 import { SimulationBuffersLinear } from '../webgpu_particles/simulation_buffers_linear.ts';
 import { ComputePipelinesLinear } from '../webgpu_particles/compute_pipelines_linear.ts';
-import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
+import { OrbitCamera } from '../common/orbit_camera.ts';
 import { RaymarchRenderer } from './renderer.ts';
 import { SplatPipeline } from './splat_pipeline.ts';
 import type { RaymarchConfig } from './types.ts';

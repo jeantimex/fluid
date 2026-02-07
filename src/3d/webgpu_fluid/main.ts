@@ -1,13 +1,13 @@
 import './style.css';
 import type { SimConfig } from '../common/types.ts';
 import { setupGui } from '../common/gui.ts';
-import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
-import { setupInputHandlers } from '../webgpu_particles/input_handler.ts';
+import { OrbitCamera } from '../common/orbit_camera.ts';
+import { setupInputHandlers } from '../common/input_handler.ts';
 import {
   initWebGPU,
   configureContext,
   WebGPUInitError,
-} from '../webgpu_particles/webgpu_utils.ts';
+} from '../common/webgpu_utils.ts';
 import { adapterRegistry } from './adapters/registry.ts';
 import type { FluidAppAdapter } from './types.ts';
 import GUI from 'lil-gui';

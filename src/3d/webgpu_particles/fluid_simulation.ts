@@ -18,7 +18,7 @@ import { createSpawnData } from '../common/spawn.ts';
 import { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import { ComputePipelinesLinear } from './compute_pipelines_linear.ts';
 import { Renderer } from './renderer.ts';
-import { mat4Perspective, mat4Multiply } from './math_utils.ts';
+import { mat4Perspective, mat4Multiply } from '../common/math_utils.ts';
 import { DensitySplatPipeline } from './density_splat_pipeline.ts';
 
 /**

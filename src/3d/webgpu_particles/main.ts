@@ -51,13 +51,13 @@ import { createDefaultEnvironmentConfig } from '../common/environment.ts';
 import { setupGui } from '../common/gui.ts';
 import { FluidSimulation } from './fluid_simulation.ts';
 import type { ParticlesConfig } from './types.ts';
-import { OrbitCamera } from './orbit_camera.ts';
+import { OrbitCamera } from '../common/orbit_camera.ts';
 import {
   initWebGPU,
   configureContext,
   WebGPUInitError,
-} from './webgpu_utils.ts';
-import { setupInputHandlers } from './input_handler.ts';
+} from '../common/webgpu_utils.ts';
+import { setupInputHandlers } from '../common/input_handler.ts';
 
 /**
  * Creates and inserts a canvas element into the application container.

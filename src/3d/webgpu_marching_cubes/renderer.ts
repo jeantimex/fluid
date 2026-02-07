@@ -16,9 +16,10 @@ import renderArgsShader from './shaders/render_args.wgsl?raw';
 import drawShader from './shaders/marching_cubes_draw.wgsl?raw';
 import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
 import backgroundShader from './shaders/background.wgsl?raw';
-import shadowShader from './shaders/shadow.wgsl?raw';
-import wireframeShader from './shaders/wireframe.wgsl?raw';
+import shadowShader from '../common/shaders/shadow_mesh.wgsl?raw';
+import wireframeShader from '../common/shaders/wireframe.wgsl?raw';
 import environmentShader from '../common/shaders/environment.wgsl?raw';
+import shadowCommonShader from '../common/shaders/shadow_common.wgsl?raw';
 import {
   marchingCubesEdgeA,
   marchingCubesEdgeB,
@@ -26,13 +27,13 @@ import {
   marchingCubesLut,
   marchingCubesOffsets,
 } from './marching_cubes_tables.ts';
-import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
+import type { OrbitCamera } from '../common/orbit_camera.ts';
 import {
   mat4Multiply,
   mat4Perspective,
   mat4LookAt,
   mat4Ortho,
-} from '../webgpu_particles/math_utils.ts';
+} from '../common/math_utils.ts';
 import type { MarchingCubesConfig } from './types.ts';
 import type { SimConfig } from '../common/types.ts';
 import { writeEnvironmentUniforms } from '../common/environment.ts';
@@ -129,7 +130,10 @@ export class MarchingCubesRenderer {
       compute: { module: renderArgsModule, entryPoint: 'main' },
     });
 
-    const drawModule = device.createShaderModule({ code: drawShader });
+    const drawCode = preprocessShader(drawShader, {
+      '../../common/shaders/shadow_common.wgsl': shadowCommonShader,
+    });
+    const drawModule = device.createShaderModule({ code: drawCode });
     this.drawPipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: drawModule, entryPoint: 'vs_main' },
@@ -200,6 +204,7 @@ export class MarchingCubesRenderer {
     // -------------------------------------------------------------------------
     const bgCode = preprocessShader(backgroundShader, {
       '../../common/shaders/environment.wgsl': environmentShader,
+      '../../common/shaders/shadow_common.wgsl': shadowCommonShader,
     });
     const bgModule = device.createShaderModule({ code: bgCode });
     this.backgroundPipeline = device.createRenderPipeline({
@@ -221,7 +226,10 @@ export class MarchingCubesRenderer {
     // -------------------------------------------------------------------------
     // Create Shadow Render Pipelines
     // -------------------------------------------------------------------------
-    const shadowModule = device.createShaderModule({ code: shadowShader });
+    const shadowCode = preprocessShader(shadowShader, {
+      'shadow_common.wgsl': shadowCommonShader,
+    });
+    const shadowModule = device.createShaderModule({ code: shadowCode });
     
     // Mesh Shadow Pipeline
     this.shadowMeshPipeline = device.createRenderPipeline({
@@ -847,7 +855,9 @@ export class MarchingCubesRenderer {
     const shadowUniforms = new Float32Array(20);
     shadowUniforms.set(lightViewProj); // 0-15
     shadowUniforms[16] = config.shadowSoftness ?? 1.0;
-    // pad
+    shadowUniforms[17] = 0; // particleShadowRadius (not used in mesh)
+    shadowUniforms[18] = 0; // pad0
+    shadowUniforms[19] = 0; // pad1
     this.device.queue.writeBuffer(this.shadowUniformBuffer, 0, shadowUniforms);
 
     // Build Obstacle Geometry (used in shadow and main pass)

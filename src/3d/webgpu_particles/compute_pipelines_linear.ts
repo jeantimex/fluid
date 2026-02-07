@@ -40,17 +40,17 @@
 import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 
 // Import shader source code as raw strings
-import externalForcesShader from './shaders/external_forces.wgsl?raw';
-import hashShader from './shaders/hash_linear.wgsl?raw';
-import sortShader from './shaders/sort_linear.wgsl?raw';
-import scatterShader from './shaders/scatter_linear.wgsl?raw';
-import densityShader from './shaders/density_linear.wgsl?raw';
-import pressureShader from './shaders/pressure_linear.wgsl?raw';
-import viscosityShader from './shaders/viscosity_linear.wgsl?raw';
-import integrateShader from './shaders/integrate.wgsl?raw';
-import prefixSumShader from './shaders/prefix_sum.wgsl?raw';
-import reorderShader from './shaders/reorder.wgsl?raw';
-import cullShader from './shaders/cull.wgsl?raw';
+import externalForcesShader from '../common/shaders/external_forces.wgsl?raw';
+import hashShader from '../common/shaders/hash_linear.wgsl?raw';
+import sortShader from '../common/shaders/sort_linear.wgsl?raw';
+import scatterShader from '../common/shaders/scatter_linear.wgsl?raw';
+import densityShader from '../common/shaders/density_linear.wgsl?raw';
+import pressureShader from '../common/shaders/pressure_linear.wgsl?raw';
+import viscosityShader from '../common/shaders/viscosity_linear.wgsl?raw';
+import integrateShader from '../common/shaders/integrate.wgsl?raw';
+import prefixSumShader from '../common/shaders/prefix_sum.wgsl?raw';
+import reorderShader from '../common/shaders/reorder.wgsl?raw';
+import cullShader from '../common/shaders/cull.wgsl?raw';
 
 /**
  * Collection of GPU uniform buffers used to upload per-frame parameters

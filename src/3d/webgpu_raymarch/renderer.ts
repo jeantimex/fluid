@@ -79,8 +79,10 @@
 
 import raymarchShader from './shaders/raymarch.wgsl?raw';
 import blitShader from './shaders/blit.wgsl?raw';
-import wireframeShader from './shaders/wireframe.wgsl?raw';
-import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
+import wireframeShader from '../common/shaders/wireframe.wgsl?raw';
+import shadowCommonShader from '../common/shaders/shadow_common.wgsl?raw';
+import { preprocessShader } from '../common/shader_preprocessor.ts';
+import type { OrbitCamera } from '../common/orbit_camera.ts';
 import type { RaymarchConfig } from './types.ts';
 
 /**
@@ -182,7 +184,10 @@ export class RaymarchRenderer {
     // Raymarch Pipeline
     // -------------------------------------------------------------------------
 
-    const module = device.createShaderModule({ code: raymarchShader });
+    const raymarchCode = preprocessShader(raymarchShader, {
+      '../../common/shaders/shadow_common.wgsl': shadowCommonShader,
+    });
+    const module = device.createShaderModule({ code: raymarchCode });
 
     this.pipeline = device.createRenderPipeline({
       layout: 'auto',

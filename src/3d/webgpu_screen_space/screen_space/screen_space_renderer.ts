@@ -16,7 +16,7 @@ import {
   mat4Invert,
   mat4Multiply,
   mat4Perspective,
-} from '../../webgpu_particles/math_utils.ts';
+} from '../../common/math_utils.ts';
 import { DepthPass } from './passes/depth_pass.ts';
 import { FoamPass } from './passes/foam_pass.ts';
 import { ThicknessPass } from './passes/thickness_pass.ts';

@@ -4,6 +4,7 @@ struct FullscreenOut {
 };
 
 #include "../../../common/shaders/environment.wgsl"
+#include "../../../common/shaders/shadow_common.wgsl"
 
 struct RenderUniforms {
   inverseViewProjection: mat4x4<f32>,
@@ -18,8 +19,7 @@ struct RenderUniforms {
   refractionStrength: f32,
   showFluidShadows: f32,
   pad2: f32,
-  pad3: f32,
-  shadowVP: mat4x4<f32>,
+  shadowParams: ShadowUniforms,
 };
 
 @vertex
@@ -83,7 +83,7 @@ fn fs_main(in: FullscreenOut) -> @location(0) vec4<f32> {
   // Apply fluid shadow to floor
   let floorT = max(boxHit.x, 0.0);
   let floorHitPos = worldNear.xyz + rayDir * floorT;
-  let shadowClip = renderUniforms.shadowVP * vec4<f32>(floorHitPos, 1.0);
+  let shadowClip = renderUniforms.shadowParams.lightViewProjection * vec4<f32>(floorHitPos, 1.0);
   let shadowNdc = shadowClip.xy / shadowClip.w;
   let shadowUV = vec2<f32>(shadowNdc.x * 0.5 + 0.5, 1.0 - (shadowNdc.y * 0.5 + 0.5));
   let shadowVal = textureSample(shadowTex, samp, shadowUV).r;

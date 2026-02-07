@@ -2,7 +2,7 @@ import { createConfig } from '../../common/config.ts';
 import { createDefaultEnvironmentConfig } from '../../common/environment.ts';
 import { FluidSimulation } from '../../webgpu_particles/fluid_simulation.ts';
 import type { ParticlesConfig } from '../../webgpu_particles/types.ts';
-import type { OrbitCamera } from '../../webgpu_particles/orbit_camera.ts';
+import type { OrbitCamera } from '../../common/orbit_camera.ts';
 import type { InputState } from '../../common/types.ts';
 import type { AdapterInitOptions, FluidAppAdapter } from '../types.ts';
 import { resizeCanvasToDisplaySize } from './shared.ts';

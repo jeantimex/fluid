@@ -52,13 +52,13 @@ import { setupGui } from '../common/gui.ts';
 
 import { rgbToHex, hexToRgb } from '../common/color_utils.ts';
 import { FluidSimulation } from './fluid_simulation.ts';
-import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
+import { OrbitCamera } from '../common/orbit_camera.ts';
 import {
   initWebGPU,
   configureContext,
   WebGPUInitError,
-} from '../webgpu_particles/webgpu_utils.ts';
-import { setupInputHandlers } from '../webgpu_particles/input_handler.ts';
+} from '../common/webgpu_utils.ts';
+import { setupInputHandlers } from '../common/input_handler.ts';
 import type { MarchingCubesConfig } from './types.ts';
 
 /**

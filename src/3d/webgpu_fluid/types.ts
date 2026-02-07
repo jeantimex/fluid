@@ -1,5 +1,5 @@
 import type { InputState, SimConfig } from '../common/types.ts';
-import type { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
+import type { OrbitCamera } from '../common/orbit_camera.ts';
 
 export interface AdapterInitOptions {
   device: GPUDevice;

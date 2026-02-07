@@ -120,6 +120,8 @@ struct RaymarchParams {
 /// Trilinear sampler with clamp-to-edge addressing.
 @group(0) @binding(1) var densitySampler: sampler;
 
+#include "../../common/shaders/shadow_common.wgsl"
+
 /// Uniform parameter buffer.
 @group(0) @binding(2) var<uniform> params: RaymarchParams;
 

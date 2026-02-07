@@ -138,12 +138,7 @@ struct Uniforms {
 @group(0) @binding(5) var shadowTex: texture_depth_2d;
 @group(0) @binding(6) var shadowSampler: sampler_comparison;
 
-struct ShadowUniforms {
-  lightViewProjection: mat4x4<f32>,
-  shadowSoftness: f32,
-  particleShadowRadius: f32,
-  pad0: vec2<f32>,
-};
+#include "../../common/shaders/shadow_common.wgsl"
 
 @group(0) @binding(7) var<uniform> shadowUniforms: ShadowUniforms;
 

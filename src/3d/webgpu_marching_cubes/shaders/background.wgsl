@@ -4,12 +4,7 @@
 // Renders the shared environment (Sky + Floor) using a fullscreen triangle.
 
 #include "../../common/shaders/environment.wgsl"
-
-struct ShadowUniforms {
-  lightViewProjection: mat4x4<f32>,
-  shadowSoftness: f32,
-  pad0: vec3<f32>,
-};
+#include "../../common/shaders/shadow_common.wgsl"
 
 @group(0) @binding(0) var<uniform> uniforms: EnvironmentUniforms;
 @group(0) @binding(2) var shadowTex: texture_depth_2d;

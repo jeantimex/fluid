@@ -59,11 +59,12 @@
  */
 
 import particleShader from './shaders/particle3d.wgsl?raw';
-import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
-import shadowShader from './shaders/shadow.wgsl?raw';
+import obstacleFaceShader from '../common/shaders/obstacle_face.wgsl?raw';
+import shadowShader from '../common/shaders/shadow_particles.wgsl?raw';
 import backgroundShader from './shaders/background.wgsl?raw';
-import wireframeShader from './shaders/wireframe.wgsl?raw';
+import wireframeShader from '../common/shaders/wireframe.wgsl?raw';
 import environmentShader from '../common/shaders/environment.wgsl?raw';
+import shadowCommonShader from '../common/shaders/shadow_common.wgsl?raw';
 import type { SimulationBuffersLinear } from './simulation_buffers_linear.ts';
 import type { ParticlesConfig } from './types.ts';
 import {
@@ -71,7 +72,7 @@ import {
   mat4Multiply,
   mat4LookAt,
   mat4Ortho,
-} from './math_utils.ts';
+} from '../common/math_utils.ts';
 import { buildGradientLut } from '../common/kernels.ts';
 import { writeEnvironmentUniforms } from '../common/environment.ts';
 import { preprocessShader } from '../common/shader_preprocessor.ts';
@@ -261,7 +262,10 @@ export class Renderer {
     // Create Particle Render Pipeline
     // -------------------------------------------------------------------------
 
-    const particleModule = device.createShaderModule({ code: particleShader });
+    const particleCode = preprocessShader(particleShader, {
+      '../../common/shaders/shadow_common.wgsl': shadowCommonShader,
+    });
+    const particleModule = device.createShaderModule({ code: particleCode });
 
     this.particlePipeline = device.createRenderPipeline({
       layout: 'auto',
@@ -288,7 +292,10 @@ export class Renderer {
     // Create Face Render Pipeline
     // -------------------------------------------------------------------------
 
-    const faceModule = device.createShaderModule({ code: obstacleFaceShader });
+    const faceCode = preprocessShader(obstacleFaceShader, {
+      '../../common/shaders/shadow_common.wgsl': shadowCommonShader,
+    });
+    const faceModule = device.createShaderModule({ code: faceCode });
     this.facePipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: {
@@ -340,6 +347,7 @@ export class Renderer {
 
     const bgCode = preprocessShader(backgroundShader, {
       '../../common/shaders/environment.wgsl': environmentShader,
+      '../../common/shaders/shadow_common.wgsl': shadowCommonShader,
     });
     const bgModule = device.createShaderModule({ code: bgCode });
 
@@ -366,7 +374,10 @@ export class Renderer {
     // Create Shadow Render Pipelines
     // -------------------------------------------------------------------------
 
-    const shadowModule = device.createShaderModule({ code: shadowShader });
+    const shadowCode = preprocessShader(shadowShader, {
+      'shadow_common.wgsl': shadowCommonShader,
+    });
+    const shadowModule = device.createShaderModule({ code: shadowCode });
 
     this.shadowParticlePipeline = device.createRenderPipeline({
       layout: 'auto',
@@ -917,6 +928,8 @@ export class Renderer {
     shadowUniforms.set(lightViewProj);
     shadowUniforms[16] = config.shadowSoftness ?? 1.0;
     shadowUniforms[17] = shadowParticleRadiusNdc;
+    shadowUniforms[18] = 0; // pad0
+    shadowUniforms[19] = 0; // pad1
     this.device.queue.writeBuffer(this.shadowUniformBuffer, 0, shadowUniforms);
 
     // -------------------------------------------------------------------------
