@@ -236,13 +236,20 @@ if (shadowFolder) {
 renderingFolder.addColor(config, 'waterColor').name('Water Color');
 renderingFolder.addColor(config, 'deepWaterColor').name('Deep Water Color');
 
+let pauseController: any;
 const guiState = {
   paused: false,
+  togglePause: () => {
+    guiState.paused = !guiState.paused;
+    if (pauseController) {
+      pauseController.name(guiState.paused ? 'Resume' : 'Pause');
+    }
+  },
   reset: () => simulation?.reset(),
 };
 
 // Add Pause and Reset Buttons at the end
-gui.add(guiState, 'paused').name('Paused');
+pauseController = gui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
 gui.add(guiState, 'reset').name('Reset Simulation');
 
 // Debug GUI removed (screen-space demo only)

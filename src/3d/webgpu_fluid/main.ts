@@ -43,9 +43,16 @@ document.body.appendChild(mainStats.dom);
 const guiState = {
   renderer: adapterRegistry[0].name,
   paused: false,
+  togglePause: () => {
+    guiState.paused = !guiState.paused;
+    if (pauseController) {
+      pauseController.name(guiState.paused ? 'Resume' : 'Pause');
+    }
+  },
   reset: () => activeAdapter?.reset(),
 };
 
+let pauseController: any;
 let activeAdapter: FluidAppAdapter | null = null;
 let device: GPUDevice;
 let context: GPUCanvasContext;
@@ -353,7 +360,7 @@ function updateGui(adapter: FluidAppAdapter): void {
   }
 
   // Add Pause and Reset Buttons at the end
-  mainGui.add(guiState, 'paused').name('Paused');
+  pauseController = mainGui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
   mainGui.add(guiState, 'reset').name('Reset Simulation');
 }
 

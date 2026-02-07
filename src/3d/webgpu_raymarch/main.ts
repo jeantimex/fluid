@@ -178,13 +178,20 @@ extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red')
 extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
 extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
 
+let pauseController: any;
 const guiState = {
   paused: false,
+  togglePause: () => {
+    guiState.paused = !guiState.paused;
+    if (pauseController) {
+      pauseController.name(guiState.paused ? 'Resume' : 'Pause');
+    }
+  },
   reset: () => simulation?.reset(),
 };
 
 // Add Pause and Reset Buttons at the end
-gui.add(guiState, 'paused').name('Paused');
+pauseController = gui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
 gui.add(guiState, 'reset').name('Reset Simulation');
 
 /**
