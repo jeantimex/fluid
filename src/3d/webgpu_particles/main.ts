@@ -21,8 +21,9 @@
  * main.ts (this file)
  *    │
  *    ├─► FluidSimulation    (simulation orchestrator)
- *    │      ├─► SimulationBuffers   (GPU memory management)
- *    │      ├─► ComputePipelines    (compute shader pipelines)
+ *    │      ├─► FluidBuffers        (GPU memory management)
+ *    │      ├─► SpatialGrid         (linear grid sorting)
+ *    │      ├─► FluidPhysics        (SPH compute pipelines)
  *    │      └─► Renderer            (particle visualization)
  *    │
  *    ├─► OrbitCamera        (3D camera controls)
