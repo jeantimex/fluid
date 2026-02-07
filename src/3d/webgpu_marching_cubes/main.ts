@@ -106,7 +106,7 @@ const config: MarchingCubesConfig = {
   isoLevel: 75,
   surfaceColor: { r: 15 / 255, g: 91 / 255, b: 234 / 255 },
   shadowSoftness: 2.5,
-  showParticleShadows: true,
+  showFluidShadows: true,
   showBoundsWireframe: false,
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
 };
@@ -174,8 +174,8 @@ marchingFolder
 const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
 if (shadowFolder) {
   shadowFolder
-    .add(config, 'showParticleShadows')
-    .name('Particle Shadows');
+    .add(config, 'showFluidShadows')
+    .name('Fluid Shadows');
 }
 
 /**

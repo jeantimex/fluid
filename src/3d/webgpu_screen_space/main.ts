@@ -126,7 +126,7 @@ const config: ScreenSpaceConfig = {
   extinctionMultiplier: 2.24,
   refractionStrength: 9.15,
   shadowSoftness: 2.5,
-  showParticleShadows: true,
+  showFluidShadows: true,
 
   // Wireframe
   showBoundsWireframe: false,
@@ -226,7 +226,7 @@ renderingFolder
 
 const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
 if (shadowFolder) {
-  shadowFolder.add(config, 'showParticleShadows').name('Particle Shadows');
+  shadowFolder.add(config, 'showFluidShadows').name('Fluid Shadows');
 }
 
 renderingFolder.addColor(config, 'waterColor').name('Water Color');

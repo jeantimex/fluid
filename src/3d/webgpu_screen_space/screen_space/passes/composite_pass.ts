@@ -354,7 +354,7 @@ export class CompositePass {
       uniforms[30] = frame.extinctionCoeff.z;
       uniforms[31] = frame.extinctionMultiplier;
       uniforms[32] = frame.refractionStrength;
-      uniforms[33] = frame.showParticleShadows ? 1.0 : 0.0;
+      uniforms[33] = frame.showFluidShadows ? 1.0 : 0.0;
       uniforms[34] = 0; // pad3
       uniforms[35] = 0; // pad4
       // shadowVP at offset 36 (byte offset 144, 16-byte aligned for mat4x4)

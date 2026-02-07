@@ -34,7 +34,7 @@ export interface MarchingCubesConfig extends SimConfig, EnvironmentConfig {
   shadowSoftness: number;
 
   /** Whether to show particle shadows. */
-  showParticleShadows: boolean;
+  showFluidShadows: boolean;
 
   /** Whether to show the bounds wireframe. */
   showBoundsWireframe: boolean;

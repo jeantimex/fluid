@@ -39,7 +39,7 @@ export class ScreenSpaceAdapter implements FluidAppAdapter<ScreenSpaceConfig> {
     refractionStrength: 9.15,
     shadowSoftness: 2.5,
     shadowRadiusScale: 1.0,
-    showParticleShadows: true,
+    showFluidShadows: true,
 
     showBoundsWireframe: false,
     boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },

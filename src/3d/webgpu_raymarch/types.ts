@@ -96,7 +96,7 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
     shadowSoftness: number;
 
     /** Whether to enable volume and scene shadows. */
-    showParticleShadows: boolean;
+    showFluidShadows: boolean;
 }
 
   

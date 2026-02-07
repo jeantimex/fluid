@@ -108,7 +108,7 @@ const config: ParticlesConfig = {
   extinctionCoefficients: { x: 2.12, y: 0.43, z: 0.3 },
   showBoundsWireframe: false,
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
-  showParticleShadows: true,
+  showFluidShadows: true,
   colorKeys: [
     { t: 4064 / 65535, r: 0.13363299, g: 0.34235913, b: 0.7264151 }, // Slow: blue
     { t: 33191 / 65535, r: 0.2980392, g: 1, b: 0.56327766 }, // Medium: cyan-green
@@ -162,8 +162,8 @@ if (shadowFolder) {
     .add(config, 'lightStepSize', 0.01, 0.5, 0.01)
     .name('Light Step');
   shadowFolder
-    .add(config, 'showParticleShadows')
-    .name('Particle Shadows');
+    .add(config, 'showFluidShadows')
+    .name('Fluid Shadows');
 }
 
 

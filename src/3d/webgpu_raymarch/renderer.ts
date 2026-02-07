@@ -631,7 +631,7 @@ export class RaymarchRenderer {
     this.uniformData[106] = config.obstacleColor.b;
     this.uniformData[107] = config.shadowSoftness; // shadowSoftness
 
-    this.uniformData[108] = config.showParticleShadows ? 1.0 : 0.0;
+    this.uniformData[108] = config.showFluidShadows ? 1.0 : 0.0;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

@@ -888,7 +888,7 @@ export class MarchingCubesRenderer {
     });
 
     // Only render shadows if enabled
-    if (config.showParticleShadows) {
+    if (config.showFluidShadows) {
       // Mesh shadows
       shadowPass.setPipeline(this.shadowMeshPipeline);
       shadowPass.setBindGroup(0, this.shadowMeshBindGroup);

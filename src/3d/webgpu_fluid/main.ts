@@ -191,8 +191,8 @@ function updateGui(adapter: FluidAppAdapter): void {
         .add(config, 'lightStepSize', 0.01, 0.5, 0.01)
         .name('Light Step');
       shadowFolder
-        .add(config, 'showParticleShadows')
-        .name('Particle Shadows');
+        .add(config, 'showFluidShadows')
+        .name('Fluid Shadows');
     }
   }
 
@@ -221,8 +221,8 @@ function updateGui(adapter: FluidAppAdapter): void {
     const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
     if (shadowFolder) {
       shadowFolder
-        .add(config, 'showParticleShadows')
-        .name('Particle Shadows');
+        .add(config, 'showFluidShadows')
+        .name('Fluid Shadows');
     }
   }
 
@@ -255,8 +255,8 @@ function updateGui(adapter: FluidAppAdapter): void {
     const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
     if (shadowFolder) {
       shadowFolder
-        .add(config, 'showParticleShadows')
-        .name('Particle Shadows');
+        .add(config, 'showFluidShadows')
+        .name('Fluid Shadows');
     }
   }
 
@@ -326,8 +326,8 @@ function updateGui(adapter: FluidAppAdapter): void {
     const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
     if (shadowFolder) {
       shadowFolder
-        .add(config, 'showParticleShadows')
-        .name('Particle Shadows');
+        .add(config, 'showFluidShadows')
+        .name('Fluid Shadows');
     }
 
     const debugFolder = mainGui.addFolder('Debug');
