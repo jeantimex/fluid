@@ -40,6 +40,8 @@ export interface ScreenSpaceFrame extends EnvironmentConfig {
   obstacleRotation: Vec3;
   obstacleColor: RGB;
   obstacleAlpha: number;
+  obstacleShape?: string;
+  obstacleRadius?: number;
 
   // Wireframe fields
   showBoundsWireframe: boolean;

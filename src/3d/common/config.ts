@@ -16,6 +16,7 @@ export function createConfig(): SimConfig {
     boundsSize: { x: 24, y: 10, z: 15 },
     showObstacle: true,
     obstacleShape: 'box',
+    obstacleRadius: 0,
     obstacleSize: { x: 0, y: 0, z: 0 },
     obstacleCentre: { x: 0, y: -5, z: 0 }, // y is the bottom of the obstacle (floor level)
     obstacleRotation: { x: 0, y: 0, z: 0 },

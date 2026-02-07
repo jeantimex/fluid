@@ -293,11 +293,17 @@ export class FluidSimulation {
     // 8) Integration + boundary collision params
     this.integrateData[0] = timeStep;
     this.integrateData[1] = config.collisionDamping;
+    const obstacleShape = config.obstacleShape ?? 'box';
+    const obstacleIsSphere = obstacleShape === 'sphere';
+    const obstacleRadius = config.obstacleRadius ?? 0;
     const hasObstacle = (config.showObstacle !== false) &&
-      config.obstacleSize.x > 0 &&
-      config.obstacleSize.y > 0 &&
-      config.obstacleSize.z > 0;
+      (obstacleIsSphere
+        ? obstacleRadius > 0
+        : (config.obstacleSize.x > 0 &&
+          config.obstacleSize.y > 0 &&
+          config.obstacleSize.z > 0));
     this.integrateData[2] = hasObstacle ? 1 : 0;
+    this.integrateData[3] = obstacleIsSphere ? 1 : 0;
     const size = config.boundsSize;
     const hx = size.x * 0.5;
     const hz = size.z * 0.5;
@@ -309,11 +315,16 @@ export class FluidSimulation {
     this.integrateData[9] = minY + size.y;
     this.integrateData[10] = hz;
     this.integrateData[12] = config.obstacleCentre.x;
-    this.integrateData[13] = config.obstacleCentre.y + config.obstacleSize.y * 0.5;
+    this.integrateData[13] = obstacleIsSphere
+      ? config.obstacleCentre.y
+      : config.obstacleCentre.y + config.obstacleSize.y * 0.5;
     this.integrateData[14] = config.obstacleCentre.z;
-    this.integrateData[16] = config.obstacleSize.x * 0.5;
-    this.integrateData[17] = config.obstacleSize.y * 0.5;
-    this.integrateData[18] = config.obstacleSize.z * 0.5;
+    const obsHalfX = obstacleIsSphere ? obstacleRadius : config.obstacleSize.x * 0.5;
+    const obsHalfY = obstacleIsSphere ? obstacleRadius : config.obstacleSize.y * 0.5;
+    const obsHalfZ = obstacleIsSphere ? obstacleRadius : config.obstacleSize.z * 0.5;
+    this.integrateData[16] = obsHalfX;
+    this.integrateData[17] = obsHalfY;
+    this.integrateData[18] = obsHalfZ;
     this.integrateData[20] = config.obstacleRotation.x;
     this.integrateData[21] = config.obstacleRotation.y;
     this.integrateData[22] = config.obstacleRotation.z;

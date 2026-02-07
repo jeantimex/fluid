@@ -621,15 +621,26 @@ export class RaymarchRenderer {
     this.uniformData[91] = 0; // pad15
 
     const showObstacle = config.showObstacle !== false;
-    // --- Obstacle box (obstacleCentre.y is the bottom, compute actual center) ---
+    const obstacleShape = config.obstacleShape ?? 'box';
+    const obstacleIsSphere = obstacleShape === 'sphere';
+    const obstacleRadius = config.obstacleRadius ?? 0;
+    // --- Obstacle box/sphere (box uses bottom Y, sphere uses center) ---
     this.uniformData[92] = config.obstacleCentre.x;
-    this.uniformData[93] = config.obstacleCentre.y + config.obstacleSize.y * 0.5;
+    this.uniformData[93] = obstacleIsSphere
+      ? config.obstacleCentre.y
+      : config.obstacleCentre.y + config.obstacleSize.y * 0.5;
     this.uniformData[94] = config.obstacleCentre.z;
     this.uniformData[95] = 0; // pad16
 
-    this.uniformData[96] = showObstacle ? config.obstacleSize.x * 0.5 : 0;
-    this.uniformData[97] = showObstacle ? config.obstacleSize.y * 0.5 : 0;
-    this.uniformData[98] = showObstacle ? config.obstacleSize.z * 0.5 : 0;
+    this.uniformData[96] = showObstacle
+      ? (obstacleIsSphere ? obstacleRadius : config.obstacleSize.x * 0.5)
+      : 0;
+    this.uniformData[97] = showObstacle
+      ? (obstacleIsSphere ? obstacleRadius : config.obstacleSize.y * 0.5)
+      : 0;
+    this.uniformData[98] = showObstacle
+      ? (obstacleIsSphere ? obstacleRadius : config.obstacleSize.z * 0.5)
+      : 0;
     this.uniformData[99] = 0; // pad17
 
     this.uniformData[100] = config.obstacleRotation.x;
@@ -643,6 +654,7 @@ export class RaymarchRenderer {
     this.uniformData[107] = config.shadowSoftness; // shadowSoftness
 
     this.uniformData[108] = config.showFluidShadows ? 1.0 : 0.0;
+    this.uniformData[109] = obstacleIsSphere ? 1.0 : 0.0;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

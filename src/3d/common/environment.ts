@@ -139,17 +139,29 @@ export function writeEnvironmentUniforms(
 
   const showObstacle = sim.showObstacle !== false;
 
+  const obstacleShape = sim.obstacleShape ?? 'box';
+  const obstacleIsSphere = obstacleShape === 'sphere';
+
   // 44-47: obstacleCenter, pad
-  // obstacleCentre.y is the bottom of the obstacle, compute actual center
+  // obstacleCentre.y is the bottom for boxes, but it's the center for spheres.
   buffer[i++] = sim.obstacleCentre.x;
-  buffer[i++] = sim.obstacleCentre.y + sim.obstacleSize.y * 0.5;
+  buffer[i++] = obstacleIsSphere
+    ? sim.obstacleCentre.y
+    : sim.obstacleCentre.y + sim.obstacleSize.y * 0.5;
   buffer[i++] = sim.obstacleCentre.z;
   buffer[i++] = 0;
 
   // 48-51: obstacleHalfSize, pad
-  const obsHalfX = showObstacle ? sim.obstacleSize.x * 0.5 : 0;
-  const obsHalfY = showObstacle ? sim.obstacleSize.y * 0.5 : 0;
-  const obsHalfZ = showObstacle ? sim.obstacleSize.z * 0.5 : 0;
+  const sphereRadius = sim.obstacleRadius ?? 0;
+  const obsHalfX = showObstacle
+    ? (obstacleIsSphere ? sphereRadius : sim.obstacleSize.x * 0.5)
+    : 0;
+  const obsHalfY = showObstacle
+    ? (obstacleIsSphere ? sphereRadius : sim.obstacleSize.y * 0.5)
+    : 0;
+  const obsHalfZ = showObstacle
+    ? (obstacleIsSphere ? sphereRadius : sim.obstacleSize.z * 0.5)
+    : 0;
   buffer[i++] = obsHalfX;
   buffer[i++] = obsHalfY;
   buffer[i++] = obsHalfZ;
@@ -161,10 +173,10 @@ export function writeEnvironmentUniforms(
   buffer[i++] = sim.obstacleRotation.z;
   buffer[i++] = showObstacle ? (sim.obstacleAlpha ?? 0.8) : 0.0;
 
-  // 56-59: obstacleColor, pad
+  // 56-59: obstacleColor, obstacleShape
   const obsCol = sim.obstacleColor ?? { r: 1, g: 0, b: 0 };
   buffer[i++] = obsCol.r;
   buffer[i++] = obsCol.g;
   buffer[i++] = obsCol.b;
-  buffer[i++] = 0;
+  buffer[i++] = obstacleIsSphere ? 1 : 0;
 }

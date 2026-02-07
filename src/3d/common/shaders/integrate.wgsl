@@ -70,7 +70,7 @@
  *   0      4    dt               - Timestep for position integration
  *   4      4    collisionDamping - Velocity multiplier on collision [0, 1]
  *   8      4    hasObstacle      - Flag for dynamic obstacle (unused currently)
- *  12      4    pad0             - Padding
+ *  12      4    obstacleShape    - 0 = box, 1 = sphere
  *  16     12    minBounds        - Minimum corner of simulation box (x, y, z)
  *  28      4    pad1             - Padding
  *  32     12    maxBounds        - Maximum corner of simulation box (x, y, z)
@@ -90,7 +90,7 @@ struct IntegrateParams {
   dt: f32,
   collisionDamping: f32,
   hasObstacle: f32,
-  pad0: f32,
+  obstacleShape: f32,
   minBounds: vec3<f32>,
   pad1: f32,
   maxBounds: vec3<f32>,
@@ -208,8 +208,23 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   // If so, push it out to the nearest face and reflect velocity.
 
   if (params.hasObstacle > 0.5) {
-      let obsCenter = params.obstacleCenter;
-      let obsHalf = params.obstacleHalf;
+    let obsCenter = params.obstacleCenter;
+    let obsHalf = params.obstacleHalf;
+    let isSphere = params.obstacleShape > 0.5;
+
+    if (isSphere) {
+      let radius = obsHalf.x;
+      let delta = pos - obsCenter;
+      let dist = length(delta);
+      if (dist < radius && radius > 0.0) {
+        let normal = delta / max(dist, 1e-5);
+        pos = obsCenter + normal * radius;
+        let vn = dot(vel, normal);
+        if (vn < 0.0) {
+          vel = vel - (1.0 + params.collisionDamping) * vn * normal;
+        }
+      }
+    } else {
       let rot = toRadians(params.obstacleRotation);
 
       // Calculate position relative to obstacle center
@@ -258,6 +273,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
               }
           }
       }
+    }
   }
 
   // ========================================================================

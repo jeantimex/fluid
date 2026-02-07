@@ -172,7 +172,7 @@ export function setupGui(
   const obstacleFolder = gui.addFolder('Obstacle');
   obstacleFolder.close();
 
-  const obstacleShapeOptions = { 'Rectangular Cuboid': 'box' };
+  const obstacleShapeOptions = { 'Rectangular Cuboid': 'box', Sphere: 'sphere' };
   if (!config.obstacleShape) {
     config.obstacleShape = 'box';
   }
@@ -184,21 +184,40 @@ export function setupGui(
     obstacleFolder.add(config, 'showObstacle').name('Show Obstacle');
   }
 
-  const sizeXController = obstacleFolder.add(config.obstacleSize, 'x', 0, 10, 0.1).name('Size X');
-  const sizeYController = obstacleFolder.add(config.obstacleSize, 'y', 0, 10, 0.1).name('Size Y');
-  const sizeZController = obstacleFolder.add(config.obstacleSize, 'z', 0, 10, 0.1).name('Size Z');
+  const sizeXController = obstacleFolder
+    .add(config.obstacleSize, 'x', 0, 10, 0.1)
+    .name('Size X');
+  const sizeYController = obstacleFolder
+    .add(config.obstacleSize, 'y', 0, 10, 0.1)
+    .name('Size Y');
+  const sizeZController = obstacleFolder
+    .add(config.obstacleSize, 'z', 0, 10, 0.1)
+    .name('Size Z');
 
-  obstacleFolder.add(config.obstacleCentre, 'x', -10, 10, 0.1).name('Position X');
-  obstacleFolder.add(config.obstacleCentre, 'y', -10, 10, 0.1).name('Bottom Y');
-  obstacleFolder.add(config.obstacleCentre, 'z', -10, 10, 0.1).name('Position Z');
+  if (typeof config.obstacleRadius !== 'number') {
+    config.obstacleRadius = 0;
+  }
+  const radiusController = obstacleFolder
+    .add(config, 'obstacleRadius', 0, 10, 0.1)
+    .name('Radius');
 
-  obstacleFolder
+  const positionXController = obstacleFolder
+    .add(config.obstacleCentre, 'x', -10, 10, 0.1)
+    .name('Position X');
+  const positionYController = obstacleFolder
+    .add(config.obstacleCentre, 'y', -10, 10, 0.1)
+    .name('Bottom Y');
+  const positionZController = obstacleFolder
+    .add(config.obstacleCentre, 'z', -10, 10, 0.1)
+    .name('Position Z');
+
+  const rotationXController = obstacleFolder
     .add(config.obstacleRotation, 'x', -180, 180, 1)
     .name('Rotation X');
-  obstacleFolder
+  const rotationYController = obstacleFolder
     .add(config.obstacleRotation, 'y', -180, 180, 1)
     .name('Rotation Y');
-  obstacleFolder
+  const rotationZController = obstacleFolder
     .add(config.obstacleRotation, 'z', -180, 180, 1)
     .name('Rotation Z');
 
@@ -216,10 +235,20 @@ export function setupGui(
       sizeXController.show();
       sizeYController.show();
       sizeZController.show();
+      radiusController.hide();
+      rotationXController.show();
+      rotationYController.show();
+      rotationZController.show();
+      positionYController.name('Bottom Y');
     } else {
       sizeXController.hide();
       sizeYController.hide();
       sizeZController.hide();
+      radiusController.show();
+      rotationXController.hide();
+      rotationYController.hide();
+      rotationZController.hide();
+      positionYController.name('Center Y');
     }
   };
   updateObstacleShapeUI();

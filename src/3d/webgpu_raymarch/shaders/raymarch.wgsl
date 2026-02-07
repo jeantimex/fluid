@@ -104,7 +104,7 @@ struct RaymarchParams {
   obstacleColor: vec3<f32>,          // 104-106
   shadowSoftness: f32,               // 107
   showFluidShadows: f32,             // 108
-  pad18: f32,                        // 109
+  obstacleShape: f32,                // 109
   pad19: f32,                        // 110
   pad20: f32,                        // 111
   pad21: vec4<f32>,                  // 112-115
@@ -227,6 +227,18 @@ fn obstacleFaceNormal(localPos: vec3<f32>) -> vec3<f32> {
   return vec3<f32>(0.0, 0.0, sign(localPos.z));
 }
 
+fn raySphereIntersection(origin: vec3<f32>, dir: vec3<f32>, center: vec3<f32>, radius: f32) -> vec2<f32> {
+  let oc = origin - center;
+  let b = dot(oc, dir);
+  let c = dot(oc, oc) - radius * radius;
+  let h = b * b - c;
+  if (h < 0.0) {
+    return vec2<f32>(1e9, -1e9);
+  }
+  let s = sqrt(h);
+  return vec2<f32>(-b - s, -b + s);
+}
+
 /// Returns obstacle hit info for the OBB, or hit=false if no hit.
 fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> ObstacleHit {
   var res: ObstacleHit;
@@ -235,6 +247,21 @@ fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> ObstacleHit {
   res.tExit = -1.0;
   res.normal = vec3<f32>(0.0);
   if (any(params.obstacleHalfSize <= vec3<f32>(0.0))) { return res; }
+
+  if (params.obstacleShape > 0.5) {
+    let radius = params.obstacleHalfSize.x;
+    if (radius <= 0.0) { return res; }
+    let hit = raySphereIntersection(origin, dir, params.obstacleCenter, radius);
+    if (hit.y < max(hit.x, 0.0)) { return res; }
+    let tEntry = select(hit.x, 0.0, hit.x < 0.0);
+    let hitPos = origin + dir * tEntry;
+    res.tEntry = tEntry;
+    res.tExit = hit.y;
+    res.normal = normalize(hitPos - params.obstacleCenter);
+    res.hit = true;
+    return res;
+  }
+
   let rot = toRadians(params.obstacleRotation);
   let localOrigin = rotateWorldToLocal(origin - params.obstacleCenter, rot);
   let localDir = rotateWorldToLocal(dir, rot);

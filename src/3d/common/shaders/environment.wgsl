@@ -40,7 +40,7 @@ struct EnvironmentUniforms {
   obstacleRotation: vec3<f32>,
   obstacleAlpha: f32,
   obstacleColor: vec3<f32>,
-  pad7: f32,
+  obstacleShape: f32,
 };
 
 // =============================================================================
@@ -54,6 +54,18 @@ fn envRayBoxIntersection(origin: vec3<f32>, dir: vec3<f32>, boundsMin: vec3<f32>
   let tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
   let tmax = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
   return vec2<f32>(tmin, tmax);
+}
+
+fn envRaySphereIntersection(origin: vec3<f32>, dir: vec3<f32>, center: vec3<f32>, radius: f32) -> vec2<f32> {
+  let oc = origin - center;
+  let b = dot(oc, dir);
+  let c = dot(oc, oc) - radius * radius;
+  let h = b * b - c;
+  if (h < 0.0) {
+    return vec2<f32>(1e9, -1e9);
+  }
+  let s = sqrt(h);
+  return vec2<f32>(-b - s, -b + s);
 }
 
 fn envRotateX(v: vec3<f32>, angle: f32) -> vec3<f32> {
@@ -215,6 +227,17 @@ fn getObstacleHit(origin: vec3<f32>, dir: vec3<f32>, params: EnvironmentUniforms
   // t < 0 if no hit
   
   if (any(params.obstacleHalfSize <= vec3<f32>(0.0))) { return vec4<f32>(-1.0, 0.0, 0.0, 0.0); }
+
+  if (params.obstacleShape > 0.5) {
+    let radius = params.obstacleHalfSize.x;
+    if (radius <= 0.0) { return vec4<f32>(-1.0, 0.0, 0.0, 0.0); }
+    let hit = envRaySphereIntersection(origin, dir, params.obstacleCenter, radius);
+    if (hit.y < max(hit.x, 0.0)) { return vec4<f32>(-1.0, 0.0, 0.0, 0.0); }
+    let tEntry = select(hit.x, 0.0, hit.x < 0.0);
+    let hitPos = origin + dir * tEntry;
+    let normal = normalize(hitPos - params.obstacleCenter);
+    return vec4<f32>(tEntry, normal.x, normal.y, normal.z);
+  }
   
   let localOrigin = envRotateWorldToLocal(origin - params.obstacleCenter, params.obstacleRotation);
   let localDir = envRotateWorldToLocal(dir, params.obstacleRotation);

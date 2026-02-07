@@ -41,6 +41,7 @@ export interface SimConfig {
   boundsSize: Vec3;
   showObstacle?: boolean;
   obstacleShape?: string;
+  obstacleRadius?: number;
   obstacleSize: Vec3;
   obstacleCentre: Vec3;
   obstacleRotation: Vec3;

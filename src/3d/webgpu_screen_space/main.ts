@@ -133,7 +133,7 @@ const config: ScreenSpaceConfig = {
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
 
   // Obstacle
-  obstacleColor: { r: 1.0, g: 1.0, b: 1.0 },
+  obstacleColor: { r: 1.0, g: 0.0, b: 0.0 },
   obstacleAlpha: 1.0,
 };
 

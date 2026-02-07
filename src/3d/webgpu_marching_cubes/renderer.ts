@@ -275,11 +275,14 @@ export class MarchingCubesRenderer {
       },
     });
 
-    // Allocate for face vertices (36 × 10 floats) + edge vertices (24 × 7 floats) + headroom
-    this.lineVertexData = new Float32Array(720); // 36×10 + 24×7 = 528, with headroom
+    // Allocate for face vertices (box or sphere) + edge vertices (box) + headroom
+    const sphereVertexCount = 16 * 24 * 6; // latSegments * lonSegments * 6
+    const maxFaceFloats = Math.max(36, sphereVertexCount) * 10;
+    const maxEdgeFloats = 24 * 7;
+    this.lineVertexData = new Float32Array(maxFaceFloats + maxEdgeFloats + 64);
 
     this.lineVertexBuffer = device.createBuffer({
-      size: 720 * 4, // 2880 bytes
+      size: this.lineVertexData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
 
@@ -563,6 +566,90 @@ export class MarchingCubesRenderer {
     faceCount: number;
     edgeCount: number;
   } {
+    const obstacleShape = config.obstacleShape ?? 'box';
+    const color = config.obstacleColor ?? { r: 1, g: 0, b: 0 };
+    const alpha = config.obstacleAlpha ?? 0.8;
+
+    if (obstacleShape === 'sphere') {
+      const radius = config.obstacleRadius ?? 0;
+      if (radius <= 0) {
+        return { faceCount: 0, edgeCount: 0 };
+      }
+
+      const cx = config.obstacleCentre.x;
+      const cy = config.obstacleCentre.y;
+      const cz = config.obstacleCentre.z;
+
+      let offset = 0;
+
+      const faceVert = (
+        p: [number, number, number],
+        n: [number, number, number]
+      ) => {
+        this.lineVertexData[offset++] = p[0];
+        this.lineVertexData[offset++] = p[1];
+        this.lineVertexData[offset++] = p[2];
+        this.lineVertexData[offset++] = n[0];
+        this.lineVertexData[offset++] = n[1];
+        this.lineVertexData[offset++] = n[2];
+        this.lineVertexData[offset++] = color.r;
+        this.lineVertexData[offset++] = color.g;
+        this.lineVertexData[offset++] = color.b;
+        this.lineVertexData[offset++] = alpha;
+      };
+
+      const latSegments = 16;
+      const lonSegments = 24;
+      for (let lat = 0; lat < latSegments; lat++) {
+        const v0 = lat / latSegments;
+        const v1 = (lat + 1) / latSegments;
+        const theta0 = v0 * Math.PI;
+        const theta1 = v1 * Math.PI;
+        for (let lon = 0; lon < lonSegments; lon++) {
+          const u0 = lon / lonSegments;
+          const u1 = (lon + 1) / lonSegments;
+          const phi0 = u0 * Math.PI * 2;
+          const phi1 = u1 * Math.PI * 2;
+
+          const p00 = [
+            Math.sin(theta0) * Math.cos(phi0),
+            Math.cos(theta0),
+            Math.sin(theta0) * Math.sin(phi0),
+          ] as [number, number, number];
+          const p01 = [
+            Math.sin(theta0) * Math.cos(phi1),
+            Math.cos(theta0),
+            Math.sin(theta0) * Math.sin(phi1),
+          ] as [number, number, number];
+          const p10 = [
+            Math.sin(theta1) * Math.cos(phi0),
+            Math.cos(theta1),
+            Math.sin(theta1) * Math.sin(phi0),
+          ] as [number, number, number];
+          const p11 = [
+            Math.sin(theta1) * Math.cos(phi1),
+            Math.cos(theta1),
+            Math.sin(theta1) * Math.sin(phi1),
+          ] as [number, number, number];
+
+          const add = (p: [number, number, number]) => {
+            const n = p;
+            faceVert(
+              [p[0] * radius + cx, p[1] * radius + cy, p[2] * radius + cz],
+              n
+            );
+          };
+
+          // Winding: ensure outward-facing triangles for backface culling.
+          add(p00); add(p11); add(p10);
+          add(p00); add(p01); add(p11);
+        }
+      }
+
+      const faceCount = latSegments * lonSegments * 6;
+      return { faceCount, edgeCount: 0 };
+    }
+
     const hx = config.obstacleSize.x * 0.5;
     const hy = config.obstacleSize.y * 0.5;
     const hz = config.obstacleSize.z * 0.5;
@@ -575,9 +662,6 @@ export class MarchingCubesRenderer {
     const cx = config.obstacleCentre.x;
     const cy = config.obstacleCentre.y + config.obstacleSize.y * 0.5;
     const cz = config.obstacleCentre.z;
-
-    const color = config.obstacleColor ?? { r: 1, g: 0, b: 0 };
-    const alpha = config.obstacleAlpha ?? 0.8;
 
     // Rotation (degrees → radians)
     const degToRad = Math.PI / 180;
