@@ -178,8 +178,14 @@ extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red')
 extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
 extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
 
-// Add Reset Button at the end
-gui.add({ reset: () => simulation?.reset() }, 'reset').name('Reset Simulation');
+const guiState = {
+  paused: false,
+  reset: () => simulation?.reset(),
+};
+
+// Add Pause and Reset Buttons at the end
+gui.add(guiState, 'paused').name('Paused');
+gui.add(guiState, 'reset').name('Reset Simulation');
 
 /**
  * Main Application Entry Point
@@ -288,8 +294,10 @@ async function main() {
     updateInertia();
 
     if (simulation) {
-      // Run physics simulation step(s)
-      await simulation.step(dt);
+      if (!guiState.paused) {
+        // Run physics simulation step(s)
+        await simulation.step(dt);
+      }
 
       // Render the current state with the camera transform
       simulation.render(camera);

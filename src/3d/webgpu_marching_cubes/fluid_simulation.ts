@@ -136,6 +136,11 @@ export class FluidSimulation {
       this.splatPipeline.textureSize
     );
     this.pickingSystem.createBindGroup(this.buffers.positions);
+
+    // Initial splat to ensure density texture is populated for rendering
+    const encoder = this.device.createCommandEncoder();
+    this.splatPipeline.dispatch(encoder, this.buffers.particleCount, this.config);
+    this.device.queue.submit([encoder.finish()]);
   }
 
   private createStateFromSpawn(spawn: {

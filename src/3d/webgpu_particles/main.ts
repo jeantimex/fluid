@@ -167,8 +167,14 @@ if (shadowFolder) {
     .name('Fluid Shadows');
 }
 
-// Add Reset Button at the end
-gui.add({ reset: () => simulation?.reset() }, 'reset').name('Reset Simulation');
+const guiState = {
+  paused: false,
+  reset: () => simulation?.reset(),
+};
+
+// Add Pause and Reset Buttons at the end
+gui.add(guiState, 'paused').name('Paused');
+gui.add(guiState, 'reset').name('Reset Simulation');
 
 
 /**
@@ -279,8 +285,10 @@ async function main() {
     updateInertia();
 
     if (simulation) {
-      // Run physics simulation step(s)
-      await simulation.step(dt);
+      if (!guiState.paused) {
+        // Run physics simulation step(s)
+        await simulation.step(dt);
+      }
 
       // Render the current state with the camera's view matrix
       simulation.render(camera.viewMatrix);

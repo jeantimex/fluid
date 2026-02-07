@@ -42,6 +42,7 @@ document.body.appendChild(mainStats.dom);
 // Renderer Selection State
 const guiState = {
   renderer: adapterRegistry[0].name,
+  paused: false,
   reset: () => activeAdapter?.reset(),
 };
 
@@ -351,7 +352,8 @@ function updateGui(adapter: FluidAppAdapter): void {
       .name('Screen-Space View');
   }
 
-  // Add Reset Button at the end
+  // Add Pause and Reset Buttons at the end
+  mainGui.add(guiState, 'paused').name('Paused');
   mainGui.add(guiState, 'reset').name('Reset Simulation');
 }
 
@@ -428,7 +430,9 @@ async function main() {
     updateInertia?.();
 
     if (activeAdapter && !isSwitching) {
-      await activeAdapter.step(dt);
+      if (!guiState.paused) {
+        await activeAdapter.step(dt);
+      }
       activeAdapter.render(camera);
     }
 

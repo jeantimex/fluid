@@ -144,6 +144,11 @@ export class FluidSimulation {
     
     // Update renderer with new buffers and the cull uniform buffer we manage here
     this.renderer.createBindGroup(this.buffers, this.splatPipeline.textureView, this.cullUniformBuffer);
+
+    // Initial splat to ensure density texture is populated for background shadows
+    const encoder = this.device.createCommandEncoder();
+    this.splatPipeline.dispatch(encoder, this.buffers.particleCount, this.config);
+    this.device.queue.submit([encoder.finish()]);
   }
 
   private createStateFromSpawn(spawn: { positions: Float32Array; velocities: Float32Array; count: number }): SimState {
