@@ -98,9 +98,9 @@ function installInputHandlers(
   inputState: InputState
 ): void {
   /**
-   * Updates world-space cursor position from a mouse event.
+   * Updates world-space cursor position from a pointer event.
    */
-  const updatePointer = (event: MouseEvent): void => {
+  const updatePointer = (event: PointerEvent): void => {
     // Get canvas-relative pixel coordinates
     const rect = canvas.getBoundingClientRect();
     const px = event.clientX - rect.left;
@@ -112,24 +112,24 @@ function installInputHandlers(
     inputState.worldY = world.y;
   };
 
-  // Track mouse movement
-  canvas.addEventListener('mousemove', updatePointer);
+  // Track pointer movement
+  canvas.addEventListener('pointermove', updatePointer);
 
-  // Handle mouse button press
-  canvas.addEventListener('mousedown', (event) => {
+  // Handle pointer button press
+  canvas.addEventListener('pointerdown', (event) => {
     updatePointer(event);
     if (event.button === 0) inputState.pull = true; // Left click = pull
     if (event.button === 2) inputState.push = true; // Right click = push
   });
 
-  // Handle mouse button release
-  canvas.addEventListener('mouseup', (event) => {
+  // Handle pointer button release
+  canvas.addEventListener('pointerup', (event) => {
     if (event.button === 0) inputState.pull = false;
     if (event.button === 2) inputState.push = false;
   });
 
-  // Cancel interaction when mouse leaves canvas
-  canvas.addEventListener('mouseleave', () => {
+  // Cancel interaction when pointer leaves canvas
+  canvas.addEventListener('pointerleave', () => {
     inputState.pull = false;
     inputState.push = false;
   });

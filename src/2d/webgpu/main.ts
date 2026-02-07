@@ -97,13 +97,13 @@ function canvasToWorld(
 }
 
 /**
- * Sets up mouse input handlers for particle interaction.
+ * Sets up pointer input handlers for particle interaction.
  *
  * Handles:
- * - mousemove: Update cursor position in world coordinates
- * - mousedown: Start pull (left button) or push (right button)
- * - mouseup: Stop pull/push
- * - mouseleave: Stop all interaction when cursor leaves canvas
+ * - pointermove: Update cursor position in world coordinates
+ * - pointerdown: Start pull (left button) or push (right button)
+ * - pointerup: Stop pull/push
+ * - pointerleave: Stop all interaction when cursor leaves canvas
  * - contextmenu: Prevent right-click menu
  *
  * @param canvas - The canvas element to attach handlers to
@@ -116,13 +116,13 @@ function setupInputHandlers(
   getScale: () => number
 ): void {
   /**
-   * Updates the input state with the current mouse position in world coordinates.
+   * Updates the input state with the current pointer position in world coordinates.
    */
-  const updatePointer = (event: MouseEvent): void => {
+  const updatePointer = (event: PointerEvent): void => {
     const input = getInput();
     if (!input) return;
 
-    // Convert mouse position to world coordinates
+    // Convert pointer position to world coordinates
     const world = canvasToWorld(
       canvas,
       event.clientX,
@@ -133,11 +133,11 @@ function setupInputHandlers(
     input.worldY = world.y;
   };
 
-  // Track mouse position as it moves
-  canvas.addEventListener('mousemove', updatePointer);
+  // Track pointer position as it moves
+  canvas.addEventListener('pointermove', updatePointer);
 
-  // Handle mouse button press
-  canvas.addEventListener('mousedown', (event) => {
+  // Handle pointer button press
+  canvas.addEventListener('pointerdown', (event) => {
     const input = getInput();
     if (!input) return;
 
@@ -150,8 +150,8 @@ function setupInputHandlers(
     if (event.button === 2) input.push = true;
   });
 
-  // Handle mouse button release
-  canvas.addEventListener('mouseup', (event) => {
+  // Handle pointer button release
+  canvas.addEventListener('pointerup', (event) => {
     const input = getInput();
     if (!input) return;
 
@@ -159,8 +159,8 @@ function setupInputHandlers(
     if (event.button === 2) input.push = false;
   });
 
-  // Stop interaction when mouse leaves canvas
-  canvas.addEventListener('mouseleave', () => {
+  // Stop interaction when pointer leaves canvas
+  canvas.addEventListener('pointerleave', () => {
     const input = getInput();
     if (!input) return;
 

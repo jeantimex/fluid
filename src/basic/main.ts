@@ -190,13 +190,13 @@ async function main() {
   let lastX = 0;
   let lastY = 0;
 
-  canvas.addEventListener('mousedown', (e) => {
+  canvas.addEventListener('pointerdown', (e) => {
     isDragging = true;
     lastX = e.clientX;
     lastY = e.clientY;
   });
 
-  canvas.addEventListener('mousemove', (e) => {
+  canvas.addEventListener('pointermove', (e) => {
     if (!isDragging) return;
 
     const dx = e.clientX - lastX;
@@ -207,11 +207,11 @@ async function main() {
     camera.rotate(dx * 0.005, dy * 0.005);
   });
 
-  canvas.addEventListener('mouseup', () => {
+  canvas.addEventListener('pointerup', () => {
     isDragging = false;
   });
 
-  canvas.addEventListener('mouseleave', () => {
+  canvas.addEventListener('pointerleave', () => {
     isDragging = false;
   });
 

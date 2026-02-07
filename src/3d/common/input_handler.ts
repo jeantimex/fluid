@@ -210,9 +210,9 @@ export function setupInputHandlers(
    * Updates the interaction point in world coordinates based on current mouse position.
    * Called during particle interaction drag.
    *
-   * @param event - Mouse event containing current cursor position
+   * @param event - Pointer event containing current cursor position
    */
-  const updateInteraction = (event: MouseEvent) => {
+  const updateInteraction = (event: PointerEvent) => {
     const input = getInput();
     if (!input) return;
 
@@ -234,12 +234,12 @@ export function setupInputHandlers(
   // ==========================================================================
 
   /**
-   * Mouse Down Handler
+   * Pointer Down Handler
    *
    * Determines whether to start camera rotation or particle interaction
    * based on whether the click is inside the simulation bounds.
    */
-  canvas.addEventListener('mousedown', (e) => {
+  canvas.addEventListener('pointerdown', (e) => {
     const input = getInput();
     if (!input) return;
 
@@ -258,7 +258,7 @@ export function setupInputHandlers(
       boxMax
     );
 
-    // Update ray immediately on mousedown
+    // Update ray immediately on pointerdown
     input.rayOrigin = ray.origin;
     input.rayDir = ray.dir;
 
@@ -286,11 +286,11 @@ export function setupInputHandlers(
   });
 
   /**
-   * Mouse Move Handler
+   * Pointer Move Handler
    *
    * Updates either camera rotation or interaction point based on current mode.
    */
-  canvas.addEventListener('mousemove', (e) => {
+  canvas.addEventListener('pointermove', (e) => {
     const input = getInput();
     if (!input) return;
 
@@ -303,7 +303,7 @@ export function setupInputHandlers(
       // Update the 3D position for particle forces
       updateInteraction(e);
     } else if (isDraggingCamera) {
-      // Calculate mouse movement delta
+      // Calculate pointer movement delta
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
       lastX = e.clientX;
@@ -318,11 +318,11 @@ export function setupInputHandlers(
   });
 
   /**
-   * Mouse Up Handler
+   * Pointer Up Handler
    *
    * Ends the current interaction mode.
    */
-  canvas.addEventListener('mouseup', () => {
+  canvas.addEventListener('pointerup', () => {
     const input = getInput();
     if (!input) return;
 
@@ -335,12 +335,12 @@ export function setupInputHandlers(
   });
 
   /**
-   * Mouse Leave Handler
+   * Pointer Leave Handler
    *
    * Cancels all interactions when cursor leaves the canvas.
-   * This prevents "stuck" states where the mouse up event is missed.
+   * This prevents "stuck" states where the pointer up event is missed.
    */
-  canvas.addEventListener('mouseleave', () => {
+  canvas.addEventListener('pointerleave', () => {
     const input = getInput();
     if (!input) return;
     input.pull = false;

@@ -37,4 +37,7 @@ export interface ScreenSpaceConfig extends SimConfig, EnvironmentConfig {
   // Obstacle
   obstacleColor: RGB;
   obstacleAlpha: number;
+
+  // Debug
+  screenSpaceDebugMode?: number;
 }
