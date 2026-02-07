@@ -153,7 +153,10 @@ export class MarchingCubesRenderer {
     // -------------------------------------------------------------------------
     // Create Face Render Pipeline (Obstacle)
     // -------------------------------------------------------------------------
-    const faceModule = device.createShaderModule({ code: obstacleFaceShader });
+    const faceCode = preprocessShader(obstacleFaceShader, {
+      '../../common/shaders/shadow_common.wgsl': shadowCommonShader,
+    });
+    const faceModule = device.createShaderModule({ code: faceCode });
     this.facePipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: {
@@ -397,11 +400,6 @@ export class MarchingCubesRenderer {
     });
     this.device.queue.writeBuffer(this.edgeBBuffer, 0, marchingCubesEdgeB);
 
-    this.faceBindGroup = device.createBindGroup({
-      layout: this.facePipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: this.renderUniformBuffer } }],
-    });
-
     this.shadowObstacleBindGroup = device.createBindGroup({
       layout: this.shadowObstaclePipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.shadowUniformBuffer } }],
@@ -518,6 +516,16 @@ export class MarchingCubesRenderer {
         { binding: 2, resource: this.shadowTexture.createView() },
         { binding: 3, resource: this.shadowSampler },
         { binding: 4, resource: { buffer: this.shadowUniformBuffer } },
+      ],
+    });
+
+    this.faceBindGroup = this.device.createBindGroup({
+      layout: this.facePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.renderUniformBuffer } },
+        { binding: 1, resource: this.shadowTexture.createView() },
+        { binding: 2, resource: this.shadowSampler },
+        { binding: 3, resource: { buffer: this.shadowUniformBuffer } },
       ],
     });
 
