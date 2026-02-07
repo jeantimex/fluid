@@ -236,6 +236,9 @@ if (shadowFolder) {
 renderingFolder.addColor(config, 'waterColor').name('Water Color');
 renderingFolder.addColor(config, 'deepWaterColor').name('Deep Water Color');
 
+// Add Reset Button at the end
+gui.add({ reset: () => simulation?.reset() }, 'reset').name('Reset Simulation');
+
 // Debug GUI removed (screen-space demo only)
 
 /**

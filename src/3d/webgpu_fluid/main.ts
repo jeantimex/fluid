@@ -57,9 +57,6 @@ mainGui.add(guiState, 'renderer', adapterRegistry.map(a => a.name))
   .name('Renderer')
   .onChange((name: string) => switchAdapter(name));
 
-// Add Reset Button to GUI
-mainGui.add(guiState, 'reset').name('Reset Simulation');
-
 function syncInputConfig(config: SimConfig): void {
   inputConfig.boundsSize.x = config.boundsSize.x;
   inputConfig.boundsSize.y = config.boundsSize.y;
@@ -150,6 +147,14 @@ function updateGui(adapter: FluidAppAdapter): void {
     folder.destroy();
   }
 
+  // Clear existing controllers EXCEPT 'Renderer'
+  const controllers = [...mainGui.controllers];
+  for (const controller of controllers) {
+    if (controller._name !== 'Renderer') {
+      controller.destroy();
+    }
+  }
+
   // Populate GUI with new adapter's config
   setupGui(
     adapter.config,
@@ -165,6 +170,9 @@ function updateGui(adapter: FluidAppAdapter): void {
   );
 
   const config = adapter.config as any;
+
+  // ... (adapter specific controls) ...
+
 
   // -------------------------------------------------------------------------
   // Particles Adapter Controls
@@ -342,6 +350,9 @@ function updateGui(adapter: FluidAppAdapter): void {
       })
       .name('Screen-Space View');
   }
+
+  // Add Reset Button at the end
+  mainGui.add(guiState, 'reset').name('Reset Simulation');
 }
 
 async function switchAdapter(name: string): Promise<void> {

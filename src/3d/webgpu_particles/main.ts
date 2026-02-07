@@ -167,6 +167,9 @@ if (shadowFolder) {
     .name('Fluid Shadows');
 }
 
+// Add Reset Button at the end
+gui.add({ reset: () => simulation?.reset() }, 'reset').name('Reset Simulation');
+
 
 /**
  * Main Application Entry Point
