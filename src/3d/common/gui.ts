@@ -113,6 +113,116 @@ export function setupGui(
 
   const uiState = { showStats: true };
 
+  // Folder order: Fluid, Obstacle, Container, Environment, Shadow, Interaction, Performance
+  const particlesFolder = gui.addFolder('Fluid');
+  particlesFolder.close();
+
+  const display = { particleCount: calculateParticleCount(config) };
+
+  const updateParticleCount = (): void => {
+    display.particleCount = calculateParticleCount(config);
+    particleCountController.updateDisplay();
+  };
+
+  particlesFolder
+    .add(config, 'spawnDensity', 100, 2000, 10)
+    .name('Spawn Density')
+    .onFinishChange(() => {
+      updateParticleCount();
+      callbacks.onReset();
+    });
+
+  const particleCountController: Controller = particlesFolder
+    .add(display, 'particleCount')
+    .name('Particle Count')
+    .disable();
+
+  particlesFolder.add(config, 'gravity', -30, 30, 1).name('Gravity');
+
+  particlesFolder
+    .add(config, 'collisionDamping', 0, 1, 0.01)
+    .name('Collision Damping');
+
+  particlesFolder
+    .add(config, 'smoothingRadius', 0.05, 1.0, 0.01)
+    .name('Smoothing Radius')
+    .onChange(() => callbacks.onSmoothingRadiusChange());
+
+  particlesFolder
+    .add(config, 'targetDensity', 0, 3000, 10)
+    .name('Target Density');
+
+  particlesFolder
+    .add(config, 'pressureMultiplier', 0, 2000, 10)
+    .name('Pressure Multiplier');
+
+  particlesFolder
+    .add(config, 'nearPressureMultiplier', 0, 40, 0.1)
+    .name('Near Pressure Multiplier');
+
+  particlesFolder
+    .add(config, 'viscosityStrength', 0, 0.5, 0.001)
+    .name('Viscosity Strength');
+
+  particlesFolder
+    .add(config, 'jitterStr', 0, 0.1, 0.001)
+    .name('Jitter Strength')
+    .onFinishChange(() => callbacks.onReset());
+
+  const obstacleFolder = gui.addFolder('Obstacle');
+  obstacleFolder.close();
+
+  obstacleFolder.add(config.obstacleSize, 'x', 0, 10, 0.1).name('Size X');
+  obstacleFolder.add(config.obstacleSize, 'y', 0, 10, 0.1).name('Size Y');
+  obstacleFolder.add(config.obstacleSize, 'z', 0, 10, 0.1).name('Size Z');
+
+  obstacleFolder.add(config.obstacleCentre, 'x', -10, 10, 0.1).name('Position X');
+  obstacleFolder.add(config.obstacleCentre, 'y', -10, 10, 0.1).name('Bottom Y');
+  obstacleFolder.add(config.obstacleCentre, 'z', -10, 10, 0.1).name('Position Z');
+
+  obstacleFolder
+    .add(config.obstacleRotation, 'x', -180, 180, 1)
+    .name('Rotation X');
+  obstacleFolder
+    .add(config.obstacleRotation, 'y', -180, 180, 1)
+    .name('Rotation Y');
+  obstacleFolder
+    .add(config.obstacleRotation, 'z', -180, 180, 1)
+    .name('Rotation Z');
+
+  if (config.obstacleColor) {
+    obstacleFolder.addColor(config, 'obstacleColor').name('Color');
+  }
+
+  if (typeof config.obstacleAlpha === 'number') {
+    obstacleFolder.add(config, 'obstacleAlpha', 0, 1, 0.01).name('Alpha');
+  }
+
+  const containerFolder = gui.addFolder('Container');
+  containerFolder.close();
+
+  containerFolder.add(config.boundsSize, 'x', 1, 50, 0.1).name('Size X');
+
+  containerFolder.add(config.boundsSize, 'y', 1, 50, 0.1).name('Size Y');
+
+  containerFolder.add(config.boundsSize, 'z', 1, 50, 0.1).name('Size Z');
+
+  // Wireframe toggle (only for ParticlesConfig which has this property)
+  if ('showBoundsWireframe' in config) {
+    const wireframeConfig = config as any;
+    containerFolder.add(wireframeConfig, 'showBoundsWireframe').name('Show Wireframe');
+
+    if (wireframeConfig.boundsWireframeColor) {
+      const wireframeColorState = { color: rgbToHex(wireframeConfig.boundsWireframeColor) };
+      containerFolder.addColor(wireframeColorState, 'color').name('Wireframe Color').onChange((value: string) => {
+        const rgb = hexToRgb(value);
+        wireframeConfig.boundsWireframeColor.r = rgb.r / 255;
+        wireframeConfig.boundsWireframeColor.g = rgb.g / 255;
+        wireframeConfig.boundsWireframeColor.b = rgb.b / 255;
+      });
+    }
+  }
+
   // Environment Controls
   const envFolder = gui.addFolder('Environment');
   envFolder.close();
@@ -174,115 +284,6 @@ export function setupGui(
         .add(shadowConfig, 'shadowSoftness', 0.0, 4.0, 0.05)
         .name('Softness');
     }
-  }
-
-  const particlesFolder = gui.addFolder('Fluid');
-  particlesFolder.close();
-
-  const display = { particleCount: calculateParticleCount(config) };
-
-  const updateParticleCount = (): void => {
-    display.particleCount = calculateParticleCount(config);
-    particleCountController.updateDisplay();
-  };
-
-  particlesFolder
-    .add(config, 'spawnDensity', 100, 2000, 10)
-    .name('Spawn Density')
-    .onFinishChange(() => {
-      updateParticleCount();
-      callbacks.onReset();
-    });
-
-  const particleCountController: Controller = particlesFolder
-    .add(display, 'particleCount')
-    .name('Particle Count')
-    .disable();
-
-  particlesFolder.add(config, 'gravity', -30, 30, 1).name('Gravity');
-
-  particlesFolder
-    .add(config, 'collisionDamping', 0, 1, 0.01)
-    .name('Collision Damping');
-
-  particlesFolder
-    .add(config, 'smoothingRadius', 0.05, 1.0, 0.01)
-    .name('Smoothing Radius')
-    .onChange(() => callbacks.onSmoothingRadiusChange());
-
-  particlesFolder
-    .add(config, 'targetDensity', 0, 3000, 10)
-    .name('Target Density');
-
-  particlesFolder
-    .add(config, 'pressureMultiplier', 0, 2000, 10)
-    .name('Pressure Multiplier');
-
-  particlesFolder
-    .add(config, 'nearPressureMultiplier', 0, 40, 0.1)
-    .name('Near Pressure Multiplier');
-
-  particlesFolder
-    .add(config, 'viscosityStrength', 0, 0.5, 0.001)
-    .name('Viscosity Strength');
-
-  particlesFolder
-    .add(config, 'jitterStr', 0, 0.1, 0.001)
-    .name('Jitter Strength')
-    .onFinishChange(() => callbacks.onReset());
-
-  const containerFolder = gui.addFolder('Container');
-  containerFolder.close();
-
-  containerFolder.add(config.boundsSize, 'x', 1, 50, 0.1).name('Size X');
-
-  containerFolder.add(config.boundsSize, 'y', 1, 50, 0.1).name('Size Y');
-
-  containerFolder.add(config.boundsSize, 'z', 1, 50, 0.1).name('Size Z');
-
-  // Wireframe toggle (only for ParticlesConfig which has this property)
-  if ('showBoundsWireframe' in config) {
-    const wireframeConfig = config as any;
-    containerFolder.add(wireframeConfig, 'showBoundsWireframe').name('Show Wireframe');
-
-    if (wireframeConfig.boundsWireframeColor) {
-      const wireframeColorState = { color: rgbToHex(wireframeConfig.boundsWireframeColor) };
-      containerFolder.addColor(wireframeColorState, 'color').name('Wireframe Color').onChange((value: string) => {
-        const rgb = hexToRgb(value);
-        wireframeConfig.boundsWireframeColor.r = rgb.r / 255;
-        wireframeConfig.boundsWireframeColor.g = rgb.g / 255;
-        wireframeConfig.boundsWireframeColor.b = rgb.b / 255;
-      });
-    }
-  }
-
-  const obstacleFolder = gui.addFolder('Obstacle');
-  obstacleFolder.close();
-
-  obstacleFolder.add(config.obstacleSize, 'x', 0, 10, 0.1).name('Size X');
-  obstacleFolder.add(config.obstacleSize, 'y', 0, 10, 0.1).name('Size Y');
-  obstacleFolder.add(config.obstacleSize, 'z', 0, 10, 0.1).name('Size Z');
-
-  obstacleFolder.add(config.obstacleCentre, 'x', -10, 10, 0.1).name('Position X');
-  obstacleFolder.add(config.obstacleCentre, 'y', -10, 10, 0.1).name('Bottom Y');
-  obstacleFolder.add(config.obstacleCentre, 'z', -10, 10, 0.1).name('Position Z');
-
-  obstacleFolder
-    .add(config.obstacleRotation, 'x', -180, 180, 1)
-    .name('Rotation X');
-  obstacleFolder
-    .add(config.obstacleRotation, 'y', -180, 180, 1)
-    .name('Rotation Y');
-  obstacleFolder
-    .add(config.obstacleRotation, 'z', -180, 180, 1)
-    .name('Rotation Z');
-
-  if (config.obstacleColor) {
-    obstacleFolder.addColor(config, 'obstacleColor').name('Color');
-  }
-
-  if (typeof config.obstacleAlpha === 'number') {
-    obstacleFolder.add(config, 'obstacleAlpha', 0, 1, 0.01).name('Alpha');
   }
 
   const interactionFolder = gui.addFolder('Interaction');
