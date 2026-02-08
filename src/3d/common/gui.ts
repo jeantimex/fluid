@@ -43,6 +43,14 @@ export function setupGui(
   let gui: GUI;
   let stats: Stats;
 
+  // Ensure Material Icons are loaded
+  if (!document.querySelector('link[href*="Material+Icons"]')) {
+    const link = document.createElement('link');
+    link.href = 'https://fonts.googleapis.com/icon?family=Material+Icons';
+    link.rel = 'stylesheet';
+    document.head.appendChild(link);
+  }
+
   if (parentGui) {
     gui = parentGui;
   } else {
@@ -103,10 +111,69 @@ export function setupGui(
 
       header.appendChild(heading);
 
+      // --- Custom Collapsible About Section ---
+      const aboutSection = document.createElement('div');
+      aboutSection.className = 'custom-gui-folder';
+      aboutSection.style.cssText = `
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.02);
+      `;
+
+      const aboutHeader = document.createElement('div');
+      aboutHeader.className = 'custom-gui-folder-header';
+      aboutHeader.style.cssText = `
+        display: flex;
+        align-items: center;
+        padding: 1px;
+        cursor: pointer;
+        user-select: none;
+        font-size: 11px;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.9);
+      `;
+      aboutHeader.innerHTML = `
+        <span class="material-icons folder-arrow" style="
+          font-family: 'Material Icons';
+          font-size: 16px;
+          transition: transform 0.2s;
+          transform: rotate(90deg);
+          text-transform: none;
+        ">chevron_right</span>
+        About
+      `;
+
+      const aboutContent = document.createElement('div');
+      aboutContent.className = 'custom-gui-folder-content';
+      aboutContent.style.cssText = `
+        overflow: hidden;
+        max-height: none;
+        transition: max-height 0.3s ease-out;
+      `;
+
+      let isAboutOpen = true;
+      aboutHeader.onclick = () => {
+        // If it's the first time we're closing it from the 'none' state,
+        // we need to set an explicit height to allow the transition to work.
+        if (aboutContent.style.maxHeight === 'none') {
+          aboutContent.style.maxHeight = aboutContent.scrollHeight + 'px';
+          aboutContent.offsetHeight; // force reflow
+        }
+
+        isAboutOpen = !isAboutOpen;
+        const arrow = aboutHeader.querySelector('.folder-arrow') as HTMLElement;
+        if (isAboutOpen) {
+          arrow.style.transform = 'rotate(90deg)';
+          aboutContent.style.maxHeight = aboutContent.scrollHeight + 'px';
+        } else {
+          arrow.style.transform = 'rotate(0deg)';
+          aboutContent.style.maxHeight = '0';
+        }
+      };
+
       if (options.subtitle) {
         const sub = document.createElement('div');
         sub.style.cssText = `
-          padding: 0 11px 5px 11px;
+          padding: 5px 11px 5px 11px;
           font-size: 11px;
           font-weight: 400;
           opacity: 0.6;
@@ -117,7 +184,7 @@ export function setupGui(
           max-width: 220px;
         `;
         sub.textContent = options.subtitle;
-        header.appendChild(sub);
+        aboutContent.appendChild(sub);
       }
 
       const author = document.createElement('div');
@@ -129,7 +196,7 @@ export function setupGui(
         letter-spacing: 0.01em;
       `;
       author.innerHTML = 'Original Author: <a href="https://github.com/SebLague" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Sebastian Lague</a>';
-      header.appendChild(author);
+      aboutContent.appendChild(author);
 
       const webgpuAuthor = document.createElement('div');
       webgpuAuthor.style.cssText = `
@@ -140,7 +207,7 @@ export function setupGui(
         letter-spacing: 0.01em;
       `;
       webgpuAuthor.innerHTML = 'WebGPU Author: <a href="https://github.com/jeantimex" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">jeantimex</a>';
-      header.appendChild(webgpuAuthor);
+      aboutContent.appendChild(webgpuAuthor);
 
       const youtube = document.createElement('div');
       youtube.style.cssText = `
@@ -159,14 +226,13 @@ export function setupGui(
         </svg>
         <a href="https://youtu.be/kOkfC5fLfgE?si=IHlf5YZt_mAhDWKR" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Coding Adventure: Rendering Fluids</a>
       `;
-      header.appendChild(youtube);
+      aboutContent.appendChild(youtube);
 
       if (options.features && options.features.length > 0) {
         const featContainer = document.createElement('div');
         featContainer.style.cssText = `
           padding: 5px 11px 10px 11px;
           border-top: 1px solid rgba(255, 255, 255, 0.1);
-          background: rgba(255, 255, 255, 0.02);
         `;
         
         const featLabel = document.createElement('div');
@@ -194,7 +260,7 @@ export function setupGui(
           list.appendChild(li);
         });
         featContainer.appendChild(list);
-        header.appendChild(featContainer);
+        aboutContent.appendChild(featContainer);
       }
 
       if (options.interactions && options.interactions.length > 0) {
@@ -202,7 +268,6 @@ export function setupGui(
         intContainer.style.cssText = `
           padding: 5px 11px 10px 11px;
           border-top: 1px solid rgba(255, 255, 255, 0.1);
-          background: rgba(255, 255, 255, 0.02);
         `;
         
         const intLabel = document.createElement('div');
@@ -230,8 +295,12 @@ export function setupGui(
           list.appendChild(li);
         });
         intContainer.appendChild(list);
-        header.appendChild(intContainer);
+        aboutContent.appendChild(intContainer);
       }
+
+      aboutSection.appendChild(aboutHeader);
+      aboutSection.appendChild(aboutContent);
+      header.appendChild(aboutSection);
 
       container.appendChild(header);
     }
