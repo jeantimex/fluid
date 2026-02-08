@@ -38,7 +38,7 @@ export function createDefaultEnvironmentConfig(): EnvironmentConfig {
     // Sky
     skyColorHorizon: { r: 1.0, g: 1.0, b: 1.0 },
     skyColorZenith: { r: 0.08, g: 0.37, b: 0.73 },
-    skyColorGround: { r: 0.55, g: 0.50, b: 0.55 },
+    skyColorGround: { r: 0.55, g: 0.5, b: 0.55 },
     sunPower: 500.0,
 
     // Floor
@@ -46,12 +46,12 @@ export function createDefaultEnvironmentConfig(): EnvironmentConfig {
     floorCenter: { x: 0, y: -5.5, z: 0 },
     tileScale: 1.0,
     tileDarkFactor: -0.35, // HSV Value shift for checker pattern
-    
+
     // Unity Fluid Raymarch scene colors
-    tileCol1: { r: 0.20392157, g: 0.5176471, b: 0.7764706 },   // Light Blue
-    tileCol2: { r: 0.6081319, g: 0.36850303, b: 0.8584906 },    // Purple
-    tileCol3: { r: 0.3019758, g: 0.735849, b: 0.45801795 },  // Green
-    tileCol4: { r: 0.8018868, g: 0.6434483, b: 0.36690104 },  // Yellow/Brown
+    tileCol1: { r: 0.20392157, g: 0.5176471, b: 0.7764706 }, // Light Blue
+    tileCol2: { r: 0.6081319, g: 0.36850303, b: 0.8584906 }, // Purple
+    tileCol3: { r: 0.3019758, g: 0.735849, b: 0.45801795 }, // Green
+    tileCol4: { r: 0.8018868, g: 0.6434483, b: 0.36690104 }, // Yellow/Brown
     tileColVariation: { x: 0.33, y: 0.0, z: 0.47 },
     globalBrightness: 1.0,
     globalSaturation: 1.0,
@@ -64,9 +64,9 @@ export function createDefaultEnvironmentConfig(): EnvironmentConfig {
  * Total size: 60 floats (240 bytes).
  */
 export function writeEnvironmentUniforms(
-  buffer: Float32Array, 
-  offset: number, 
-  env: EnvironmentConfig, 
+  buffer: Float32Array,
+  offset: number,
+  env: EnvironmentConfig,
   sim: SimConfig
 ): void {
   let i = offset;
@@ -154,13 +154,19 @@ export function writeEnvironmentUniforms(
   // 48-51: obstacleHalfSize, pad
   const sphereRadius = sim.obstacleRadius ?? 0;
   const obsHalfX = showObstacle
-    ? (obstacleIsSphere ? sphereRadius : sim.obstacleSize.x * 0.5)
+    ? obstacleIsSphere
+      ? sphereRadius
+      : sim.obstacleSize.x * 0.5
     : 0;
   const obsHalfY = showObstacle
-    ? (obstacleIsSphere ? sphereRadius : sim.obstacleSize.y * 0.5)
+    ? obstacleIsSphere
+      ? sphereRadius
+      : sim.obstacleSize.y * 0.5
     : 0;
   const obsHalfZ = showObstacle
-    ? (obstacleIsSphere ? sphereRadius : sim.obstacleSize.z * 0.5)
+    ? obstacleIsSphere
+      ? sphereRadius
+      : sim.obstacleSize.z * 0.5
     : 0;
   buffer[i++] = obsHalfX;
   buffer[i++] = obsHalfY;

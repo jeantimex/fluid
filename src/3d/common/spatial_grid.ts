@@ -16,7 +16,7 @@ export interface SpatialGridUniforms {
 }
 
 /**
- * Encapsulates the 7-pass (or more, including hierarchical scan) Linear Grid 
+ * Encapsulates the 7-pass (or more, including hierarchical scan) Linear Grid
  * spatial hashing and sorting pipeline.
  */
 export class SpatialGrid {
@@ -26,7 +26,7 @@ export class SpatialGrid {
    * Think of it as a GPU-side spatial index.
    */
   private device: GPUDevice;
-  
+
   // Pipelines
   private hashPipeline: GPUComputePipeline;
   private clearOffsetsPipeline: GPUComputePipeline;
@@ -58,7 +58,10 @@ export class SpatialGrid {
     this.clearOffsetsPipeline = this.createPipeline(sortShader, 'clearOffsets');
     this.countOffsetsPipeline = this.createPipeline(sortShader, 'countOffsets');
     this.prefixScanPipeline = this.createPipeline(prefixSumShader, 'blockScan');
-    this.prefixCombinePipeline = this.createPipeline(prefixSumShader, 'blockCombine');
+    this.prefixCombinePipeline = this.createPipeline(
+      prefixSumShader,
+      'blockCombine'
+    );
     this.scatterPipeline = this.createPipeline(scatterShader, 'scatter');
     this.reorderPipeline = this.createPipeline(reorderShader, 'reorder');
     this.copyBackPipeline = this.createPipeline(reorderShader, 'copyBack');
@@ -79,7 +82,9 @@ export class SpatialGrid {
    */
   createBindGroups(buffers: FluidBuffers, uniforms: SpatialGridUniforms) {
     if (!buffers.particleCellOffsets) {
-      throw new Error('SpatialGrid requires FluidBuffers allocated with gridTotalCells (Linear Grid mode).');
+      throw new Error(
+        'SpatialGrid requires FluidBuffers allocated with gridTotalCells (Linear Grid mode).'
+      );
     }
 
     this.hashBG = this.device.createBindGroup({
@@ -224,17 +229,17 @@ export class SpatialGrid {
 
     // 4. Hierarchical Prefix Sum (Scan sortOffsets)
     pass.setPipeline(this.prefixScanPipeline);
-    
+
     // L0 -> L1
     pass.setBindGroup(0, this.scanL0BG);
     pass.dispatchWorkgroups(numGridBlocksL0);
-    
+
     if (numGridBlocksL0 > 1) {
       // L1 -> L2
       pass.setBindGroup(0, this.scanL1BG);
       pass.dispatchWorkgroups(numGridBlocksL1);
     }
-    
+
     if (numGridBlocksL1 > 1) {
       // L2 -> scratch
       pass.setBindGroup(0, this.scanL2BG);
@@ -243,13 +248,13 @@ export class SpatialGrid {
 
     // 5. Combine sums back
     pass.setPipeline(this.prefixCombinePipeline);
-    
+
     if (numGridBlocksL1 > 1) {
       // L2 -> L1
       pass.setBindGroup(0, this.combineL1BG);
       pass.dispatchWorkgroups(numGridBlocksL1);
     }
-    
+
     if (numGridBlocksL0 > 1) {
       // L1 -> L0
       pass.setBindGroup(0, this.combineL0BG);

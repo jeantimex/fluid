@@ -33,7 +33,7 @@ export interface ScreenSpaceFrame extends EnvironmentConfig {
   refractionStrength: number;
   showFluidShadows: boolean;
   // Overlapping fields removed as they are in EnvironmentConfig: dirToSun
-  
+
   // Obstacle fields (from SimConfig)
   obstacleCentre: Vec3;
   obstacleHalfSize: Vec3; // Derived from size

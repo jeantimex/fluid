@@ -109,5 +109,3 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
   /** Opacity of the obstacle surface (0–1). */
   obstacleAlpha: number;
 }
-
-  

@@ -196,6 +196,16 @@ export class Renderer {
   private densityUniformBuffer: GPUBuffer;
 
   // ===========================================================================
+  // Caching State
+  // ===========================================================================
+
+  private lastObstacleParams: string = '';
+  private lastWireframeParams: string = '';
+  private lastEnvParams: string = '';
+  private lastFaceCount: number = 0;
+  private lastWireframeVertexCount: number = 0;
+
+  // ===========================================================================
   // Constructor
   // ===========================================================================
 
@@ -430,7 +440,9 @@ export class Renderer {
     // Create Wireframe Render Pipeline (debug bounds)
     // -------------------------------------------------------------------------
 
-    const wireframeModule = device.createShaderModule({ code: wireframeShader });
+    const wireframeModule = device.createShaderModule({
+      code: wireframeShader,
+    });
 
     this.wireframePipeline = device.createRenderPipeline({
       layout: 'auto',
@@ -493,7 +505,8 @@ export class Renderer {
     this.shadowTexture = this.device.createTexture({
       size: [this.shadowMapSize, this.shadowMapSize],
       format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
     this.shadowSampler = this.device.createSampler({
@@ -645,7 +658,10 @@ export class Renderer {
       const cz = config.obstacleCentre.z;
 
       let offset = 0;
-      const faceVert = (p: [number, number, number], n: [number, number, number]) => {
+      const faceVert = (
+        p: [number, number, number],
+        n: [number, number, number]
+      ) => {
         this.lineVertexData[offset++] = p[0];
         this.lineVertexData[offset++] = p[1];
         this.lineVertexData[offset++] = p[2];
@@ -701,8 +717,12 @@ export class Renderer {
           };
 
           // Winding: ensure outward-facing triangles for backface culling.
-          add(p00); add(p11); add(p10);
-          add(p00); add(p01); add(p11);
+          add(p00);
+          add(p11);
+          add(p10);
+          add(p00);
+          add(p01);
+          add(p11);
         }
       }
 
@@ -727,9 +747,12 @@ export class Renderer {
     const rx = config.obstacleRotation.x * degToRad;
     const ry = config.obstacleRotation.y * degToRad;
     const rz = config.obstacleRotation.z * degToRad;
-    const cosX = Math.cos(rx), sinX = Math.sin(rx);
-    const cosY = Math.cos(ry), sinY = Math.sin(ry);
-    const cosZ = Math.cos(rz), sinZ = Math.sin(rz);
+    const cosX = Math.cos(rx),
+      sinX = Math.sin(rx);
+    const cosY = Math.cos(ry),
+      sinY = Math.sin(ry);
+    const cosZ = Math.cos(rz),
+      sinZ = Math.sin(rz);
 
     const rotate = (
       lx: number,
@@ -851,11 +874,20 @@ export class Renderer {
     // 12 edges of the box (pairs of corner indices)
     const edges = [
       // Bottom face edges
-      [0, 1], [1, 5], [5, 4], [4, 0],
+      [0, 1],
+      [1, 5],
+      [5, 4],
+      [4, 0],
       // Top face edges
-      [3, 2], [2, 6], [6, 7], [7, 3],
+      [3, 2],
+      [2, 6],
+      [6, 7],
+      [7, 3],
       // Vertical edges
-      [0, 3], [1, 2], [5, 6], [4, 7],
+      [0, 3],
+      [1, 2],
+      [5, 6],
+      [4, 7],
     ];
 
     let offset = 0;
@@ -898,6 +930,9 @@ export class Renderer {
     buffers: FluidBuffers,
     viewMatrix: Float32Array
   ) {
+    const obsCol = config.obstacleColor ?? { r: 1, g: 0, b: 0 };
+    const obsAlpha = config.obstacleAlpha ?? 0.8;
+
     // -------------------------------------------------------------------------
     // 0. Cull Pass
     // -------------------------------------------------------------------------
@@ -938,35 +973,51 @@ export class Renderer {
 
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
-    // Update Environment Uniforms
-    const envData = new Float32Array(60);
-    writeEnvironmentUniforms(envData, 0, config, config);
-    this.device.queue.writeBuffer(this.envUniformBuffer, 0, envData);
+    // Update Environment Uniforms (cached)
+    const envParamKey = `${config.globalBrightness}-${config.globalSaturation}-${config.floorAmbient}-${config.sunBrightness}-${config.dirToSun.x}-${config.dirToSun.y}-${config.dirToSun.z}-${obsCol.r}-${obsCol.g}-${obsCol.b}-${obsAlpha}`;
+    if (envParamKey !== this.lastEnvParams) {
+      const envData = new Float32Array(60);
+      writeEnvironmentUniforms(envData, 0, config, config);
+      this.device.queue.writeBuffer(this.envUniformBuffer, 0, envData);
+      this.lastEnvParams = envParamKey;
+    }
 
     // Update Camera Uniforms for Background
     const camRight = { x: viewMatrix[0], y: viewMatrix[4], z: viewMatrix[8] };
-    const camUp    = { x: viewMatrix[1], y: viewMatrix[5], z: viewMatrix[9] };
-    const camBack  = { x: viewMatrix[2], y: viewMatrix[6], z: viewMatrix[10] };
-    const camFwd   = { x: -camBack.x, y: -camBack.y, z: -camBack.z };
-    
+    const camUp = { x: viewMatrix[1], y: viewMatrix[5], z: viewMatrix[9] };
+    const camBack = { x: viewMatrix[2], y: viewMatrix[6], z: viewMatrix[10] };
+    const camFwd = { x: -camBack.x, y: -camBack.y, z: -camBack.z };
+
     // Extract camera position from view matrix translation
     const tx = viewMatrix[12];
     const ty = viewMatrix[13];
     const tz = viewMatrix[14];
-    
+
     const eyeX = -(camRight.x * tx + camUp.x * ty + camBack.x * tz);
     const eyeY = -(camRight.y * tx + camUp.y * ty + camBack.y * tz);
     const eyeZ = -(camRight.z * tx + camUp.z * ty + camBack.z * tz);
 
     const camFullData = new Float32Array(20);
     // cameraPos (0-2)
-    camFullData[0] = eyeX; camFullData[1] = eyeY; camFullData[2] = eyeZ; camFullData[3] = 0;
+    camFullData[0] = eyeX;
+    camFullData[1] = eyeY;
+    camFullData[2] = eyeZ;
+    camFullData[3] = 0;
     // cameraForward (4-6)
-    camFullData[4] = camFwd.x; camFullData[5] = camFwd.y; camFullData[6] = camFwd.z; camFullData[7] = 0;
+    camFullData[4] = camFwd.x;
+    camFullData[5] = camFwd.y;
+    camFullData[6] = camFwd.z;
+    camFullData[7] = 0;
     // cameraRight (8-10)
-    camFullData[8] = camRight.x; camFullData[9] = camRight.y; camFullData[10] = camRight.z; camFullData[11] = 0;
+    camFullData[8] = camRight.x;
+    camFullData[9] = camRight.y;
+    camFullData[10] = camRight.z;
+    camFullData[11] = 0;
     // cameraUp (12-14)
-    camFullData[12] = camUp.x; camFullData[13] = camUp.y; camFullData[14] = camUp.z; camFullData[15] = 0;
+    camFullData[12] = camUp.x;
+    camFullData[13] = camUp.y;
+    camFullData[14] = camUp.z;
+    camFullData[15] = 0;
     // fovY, aspect
     camFullData[16] = Math.PI / 3;
     camFullData[17] = aspect;
@@ -1002,7 +1053,11 @@ export class Renderer {
     densityUniforms[13] = config.extinctionCoefficients.y;
     densityUniforms[14] = config.extinctionCoefficients.z;
     densityUniforms[15] = 0.0;
-    this.device.queue.writeBuffer(this.densityUniformBuffer, 0, densityUniforms);
+    this.device.queue.writeBuffer(
+      this.densityUniformBuffer,
+      0,
+      densityUniforms
+    );
 
     // -------------------------------------------------------------------------
     // Shadow Pass Calculations
@@ -1050,36 +1105,55 @@ export class Renderer {
     this.device.queue.writeBuffer(this.shadowUniformBuffer, 0, shadowUniforms);
 
     // -------------------------------------------------------------------------
-    // Build & Upload Obstacle Geometry (faces)
+    // Build & Upload Obstacle Geometry (cached)
     // -------------------------------------------------------------------------
 
     const showObstacle = config.showObstacle !== false;
-    const { faceCount } = showObstacle ? this.buildObstacleGeometry(config) : { faceCount: 0 };
-    if (faceCount > 0) {
-      this.device.queue.writeBuffer(
-        this.lineVertexBuffer,
-        0,
-        this.lineVertexData.buffer,
-        this.lineVertexData.byteOffset,
-        faceCount * 10 * 4
-      );
+    const obsParamKey = `${showObstacle}-${config.obstacleShape}-${config.obstacleSize.x}-${config.obstacleSize.y}-${config.obstacleSize.z}-${config.obstacleCentre.x}-${config.obstacleCentre.y}-${config.obstacleCentre.z}-${config.obstacleRotation.x}-${config.obstacleRotation.y}-${config.obstacleRotation.z}-${config.obstacleRadius}-${obsCol.r}-${obsCol.g}-${obsCol.b}-${obsAlpha}`;
+
+    if (obsParamKey !== this.lastObstacleParams) {
+      const { faceCount } = showObstacle
+        ? this.buildObstacleGeometry(config)
+        : { faceCount: 0 };
+      this.lastFaceCount = faceCount;
+      if (faceCount > 0) {
+        this.device.queue.writeBuffer(
+          this.lineVertexBuffer,
+          0,
+          this.lineVertexData.buffer,
+          this.lineVertexData.byteOffset,
+          faceCount * 10 * 4
+        );
+      }
+      this.lastObstacleParams = obsParamKey;
     }
+    const faceCount = this.lastFaceCount;
 
     // -------------------------------------------------------------------------
-    // Build & Upload Bounds Wireframe Geometry
+    // Build & Upload Bounds Wireframe Geometry (cached)
     // -------------------------------------------------------------------------
 
-    let wireframeVertexCount = 0;
-    if (config.showBoundsWireframe) {
-      wireframeVertexCount = this.buildBoundsWireframe(config);
-      this.device.queue.writeBuffer(
-        this.wireframeVertexBuffer,
-        0,
-        this.wireframeVertexData.buffer,
-        this.wireframeVertexData.byteOffset,
-        wireframeVertexCount * 7 * 4
-      );
-      // Update wireframe uniform buffer with viewProjection
+    const wireframeParamKey = `${config.showBoundsWireframe}-${config.boundsSize.x}-${config.boundsSize.y}-${config.boundsSize.z}-${config.boundsWireframeColor.r}-${config.boundsWireframeColor.g}-${config.boundsWireframeColor.b}`;
+
+    if (wireframeParamKey !== this.lastWireframeParams) {
+      let wireframeVertexCount = 0;
+      if (config.showBoundsWireframe) {
+        wireframeVertexCount = this.buildBoundsWireframe(config);
+        this.device.queue.writeBuffer(
+          this.wireframeVertexBuffer,
+          0,
+          this.wireframeVertexData.buffer,
+          this.wireframeVertexData.byteOffset,
+          wireframeVertexCount * 7 * 4
+        );
+      }
+      this.lastWireframeVertexCount = wireframeVertexCount;
+      this.lastWireframeParams = wireframeParamKey;
+    }
+    const wireframeVertexCount = this.lastWireframeVertexCount;
+
+    if (config.showBoundsWireframe && wireframeVertexCount > 0) {
+      // Update wireframe uniform buffer with viewProjection (always updated as viewProj changes)
       this.device.queue.writeBuffer(
         this.wireframeUniformBuffer,
         0,

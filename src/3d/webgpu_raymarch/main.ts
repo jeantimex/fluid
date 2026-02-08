@@ -94,14 +94,14 @@ if (!app) throw new Error('Missing #app container');
 const canvas = createCanvas(app);
 
 // Initialize simulation configuration with default values.
-// Spreads the base SPH config (particle count, bounds, gravity, etc.), 
+// Spreads the base SPH config (particle count, bounds, gravity, etc.),
 // the shared environment config (colors, brightness, etc.), then
 // adds raymarch-specific parameters.
 const config: RaymarchConfig = {
   ...createConfig(),
   ...createDefaultEnvironmentConfig(),
-  viscosityStrength: 0.001,
-  iterationsPerFrame: 3,
+  viscosityStrength: 0.01,
+  iterationsPerFrame: 2,
   nearPressureMultiplier: 2.25,
   densityTextureRes: 150,
   densityOffset: 200,
@@ -148,13 +148,13 @@ const { stats, gui } = setupGui(
       'Physically-Based Raymarching',
       'Refraction & Reflection',
       'Beer–Lambert Transmittance',
-      'Shadows & Ambient Occlusion'
+      'Shadows & Ambient Occlusion',
     ],
     interactions: [
       'Click & Drag (Background): Orbit Camera',
       'Click & Drag (Fluid): Pull Particles',
       'Shift + Click & Drag: Push Particles',
-      'Mouse Wheel: Zoom In/Out'
+      'Mouse Wheel: Zoom In/Out',
     ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
@@ -183,15 +183,19 @@ raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
 
 const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
 if (shadowFolder) {
-  shadowFolder
-    .add(config, 'showFluidShadows')
-    .name('Fluid Shadows');
+  shadowFolder.add(config, 'showFluidShadows').name('Fluid Shadows');
 }
 
 const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
-extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');
-extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
-extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
+extinctionFolder
+  .add(config.extinctionCoefficients, 'x', 0, 50, 0.1)
+  .name('Red');
+extinctionFolder
+  .add(config.extinctionCoefficients, 'y', 0, 50, 0.1)
+  .name('Green');
+extinctionFolder
+  .add(config.extinctionCoefficients, 'z', 0, 50, 0.1)
+  .name('Blue');
 
 let pauseController: any;
 const guiState = {
@@ -206,7 +210,9 @@ const guiState = {
 };
 
 // Add Pause and Reset Buttons at the end
-pauseController = gui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
+pauseController = gui
+  .add(guiState, 'togglePause')
+  .name(guiState.paused ? 'Resume' : 'Pause');
 gui.add(guiState, 'reset').name('Reset Simulation');
 
 /**

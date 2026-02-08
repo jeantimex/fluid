@@ -12,8 +12,8 @@ export class ParticlesAdapter implements FluidAppAdapter<ParticlesConfig> {
   readonly config: ParticlesConfig = {
     ...createConfig(),
     ...createDefaultEnvironmentConfig(),
-    viscosityStrength: 0.001,
-    iterationsPerFrame: 3,
+    viscosityStrength: 0.01,
+    iterationsPerFrame: 2,
     velocityDisplayMax: 6.5,
     gradientResolution: 64,
     densityTextureRes: 150,

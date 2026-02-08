@@ -110,7 +110,9 @@ export class CompositePass {
     });
 
     // Wireframe pipeline with depth testing
-    const wireframeModule = device.createShaderModule({ code: wireframeShader });
+    const wireframeModule = device.createShaderModule({
+      code: wireframeShader,
+    });
     this.wireframePipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: {
@@ -193,11 +195,20 @@ export class CompositePass {
     // 12 edges of the box (pairs of corner indices)
     const edges = [
       // Bottom face edges
-      [0, 1], [1, 5], [5, 4], [4, 0],
+      [0, 1],
+      [1, 5],
+      [5, 4],
+      [4, 0],
       // Top face edges
-      [3, 2], [2, 6], [6, 7], [7, 3],
+      [3, 2],
+      [2, 6],
+      [6, 7],
+      [7, 3],
       // Vertical edges
-      [0, 3], [1, 2], [5, 6], [4, 7],
+      [0, 3],
+      [1, 2],
+      [5, 6],
+      [4, 7],
     ];
 
     let offset = 0;
@@ -299,10 +310,10 @@ export class CompositePass {
       ...frame,
       obstacleCentre: frame.obstacleCentre,
       obstacleSize: {
-          x: frame.obstacleHalfSize.x * 2,
-          y: frame.obstacleHalfSize.y * 2,
-          z: frame.obstacleHalfSize.z * 2
-      }
+        x: frame.obstacleHalfSize.x * 2,
+        y: frame.obstacleHalfSize.y * 2,
+        z: frame.obstacleHalfSize.z * 2,
+      },
     } as any);
     this.device.queue.writeBuffer(this.envUniformBuffer, 0, envData);
 

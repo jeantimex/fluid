@@ -38,7 +38,7 @@ export function createConfig(): SimConfig {
     targetDensity: 55, // Rest density (ρ₀) - what the fluid "wants" to be
     pressureMultiplier: 500, // Stiffness (k) - resistance to compression
     nearPressureMultiplier: 5, // Surface tension approximation
-    viscosityStrength: 0.03, // Internal friction (μ)
+    viscosityStrength: 0.01, // Internal friction (μ)
 
     // === Simulation Bounds ===
     boundsSize: { x: 17.1, y: 9.3 }, // World size (updated on canvas resize)

@@ -12,7 +12,7 @@ export class ScreenSpaceAdapter implements FluidAppAdapter<ScreenSpaceConfig> {
   readonly config: ScreenSpaceConfig = {
     ...createConfig(),
     ...createDefaultEnvironmentConfig(),
-    viscosityStrength: 0.001,
+    viscosityStrength: 0.01,
     iterationsPerFrame: 2,
     screenSpaceDebugMode: 4,
 

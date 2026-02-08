@@ -44,8 +44,14 @@ export class FoamPipeline {
   }
 
   createBindGroups(buffers: FluidBuffers, uniforms: FoamUniforms): void {
-    if (!buffers.foamPositions || !buffers.foamVelocities || !buffers.foamCounter) {
-      throw new Error('FoamPipeline requires FluidBuffers created with includeFoam.');
+    if (
+      !buffers.foamPositions ||
+      !buffers.foamVelocities ||
+      !buffers.foamCounter
+    ) {
+      throw new Error(
+        'FoamPipeline requires FluidBuffers created with includeFoam.'
+      );
     }
 
     this.foamClearCounterBindGroup = this.device.createBindGroup({

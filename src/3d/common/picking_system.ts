@@ -12,34 +12,34 @@ export class PickingSystem {
   private pipeline: GPUComputePipeline;
   private clearPipeline: GPUComputePipeline;
   private bindGroupLayout: GPUBindGroupLayout;
-  
+
   private uniformsBuffer: GPUBuffer;
   private resultBuffer: GPUBuffer;
   private readbackBuffer: GPUBuffer;
-  
+
   private bindGroup!: GPUBindGroup;
 
   constructor(device: GPUDevice) {
     this.device = device;
 
     const module = device.createShaderModule({ code: pickingShader });
-    
+
     this.bindGroupLayout = device.createBindGroupLayout({
       entries: [
-        { 
-          binding: 0, 
-          visibility: GPUShaderStage.COMPUTE, 
-          buffer: { type: 'read-only-storage' } 
+        {
+          binding: 0,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'read-only-storage' },
         },
-        { 
-          binding: 1, 
-          visibility: GPUShaderStage.COMPUTE, 
-          buffer: { type: 'uniform' } 
+        {
+          binding: 1,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
         },
-        { 
-          binding: 2, 
-          visibility: GPUShaderStage.COMPUTE, 
-          buffer: { type: 'storage' } 
+        {
+          binding: 2,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'storage' },
         },
       ],
     });
@@ -65,7 +65,10 @@ export class PickingSystem {
 
     this.resultBuffer = device.createBuffer({
       size: 32, // hitPos(12) + hitDist(4) + index(4) + hit(4) + padding(8)
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+      usage:
+        GPUBufferUsage.STORAGE |
+        GPUBufferUsage.COPY_SRC |
+        GPUBufferUsage.COPY_DST,
     });
 
     this.readbackBuffer = device.createBuffer({
@@ -104,7 +107,7 @@ export class PickingSystem {
     // pad1
     uniformsData[8] = particleRadius;
     new Uint32Array(uniformsData.buffer)[9] = particleCount;
-    
+
     this.device.queue.writeBuffer(this.uniformsBuffer, 0, uniformsData);
 
     // 2. Clear result
@@ -122,17 +125,23 @@ export class PickingSystem {
     pickingPass.end();
 
     // 4. Copy to readback buffer
-    encoder.copyBufferToBuffer(this.resultBuffer, 0, this.readbackBuffer, 0, 32);
+    encoder.copyBufferToBuffer(
+      this.resultBuffer,
+      0,
+      this.readbackBuffer,
+      0,
+      32
+    );
   }
 
   async getResult(): Promise<PickingResult | null> {
     await this.readbackBuffer.mapAsync(GPUMapMode.READ);
     const data = new Float32Array(this.readbackBuffer.getMappedRange());
-    
+
     // hit is at offset 20 (index 5 in 4-byte units)
     const hit = new Uint32Array(data.buffer)[5] === 1;
     let result: PickingResult | null = null;
-    
+
     if (hit) {
       result = {
         hitPos: { x: data[0], y: data[1], z: data[2] },
@@ -141,7 +150,7 @@ export class PickingSystem {
         hit: true,
       };
     }
-    
+
     this.readbackBuffer.unmap();
     return result;
   }

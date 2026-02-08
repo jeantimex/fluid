@@ -96,7 +96,11 @@ export class ScreenSpaceRenderer {
     this.normalPass.createBindGroup(resources);
     this.shadowPass.createBindGroup(buffers);
 
-    if (buffers.foamPositions && buffers.foamVelocities && buffers.maxFoamParticles > 0) {
+    if (
+      buffers.foamPositions &&
+      buffers.foamVelocities &&
+      buffers.maxFoamParticles > 0
+    ) {
       this.foamPass.createBindGroup(
         buffers.foamPositions,
         buffers.foamVelocities,
@@ -209,13 +213,19 @@ export class ScreenSpaceRenderer {
       // Calculate derived obstacleHalfSize
       obstacleHalfSize: {
         x: showObstacle
-          ? (obstacleIsSphere ? obstacleRadius : this.config.obstacleSize.x * 0.5)
+          ? obstacleIsSphere
+            ? obstacleRadius
+            : this.config.obstacleSize.x * 0.5
           : 0,
         y: showObstacle
-          ? (obstacleIsSphere ? obstacleRadius : this.config.obstacleSize.y * 0.5)
+          ? obstacleIsSphere
+            ? obstacleRadius
+            : this.config.obstacleSize.y * 0.5
           : 0,
         z: showObstacle
-          ? (obstacleIsSphere ? obstacleRadius : this.config.obstacleSize.z * 0.5)
+          ? obstacleIsSphere
+            ? obstacleRadius
+            : this.config.obstacleSize.z * 0.5
           : 0,
       },
       obstacleColor: this.config.obstacleColor ?? { r: 1, g: 0, b: 0 },
@@ -312,11 +322,6 @@ export class ScreenSpaceRenderer {
     }
     this.normalPass.encode(encoder, resources, frame);
 
-    this.compositePass.encode(
-      encoder,
-      resources,
-      frame,
-      swapchainView
-    );
+    this.compositePass.encode(encoder, resources, frame, swapchainView);
   }
 }

@@ -4,14 +4,14 @@ export function createConfig(): SimConfig {
   return {
     timeScale: 2,
     maxTimestepFPS: 60,
-    iterationsPerFrame: 3,
+    iterationsPerFrame: 2,
     gravity: -10,
     collisionDamping: 0.95,
     smoothingRadius: 0.2,
     targetDensity: 630,
     pressureMultiplier: 288,
     nearPressureMultiplier: 2.16,
-    viscosityStrength: 0.001,
+    viscosityStrength: 0.01,
 
     boundsSize: { x: 24, y: 10, z: 15 },
     showObstacle: true,

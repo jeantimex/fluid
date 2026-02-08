@@ -6,8 +6,12 @@ export class Obstacle {
   readonly vertexCount: number = 36;
   private pipeline: GPURenderPipeline;
 
-  constructor(device: GPUDevice, format: GPUTextureFormat, envBindGroupLayout: GPUBindGroupLayout, faceShaderCode: string) {
-
+  constructor(
+    device: GPUDevice,
+    format: GPUTextureFormat,
+    envBindGroupLayout: GPUBindGroupLayout,
+    faceShaderCode: string
+  ) {
     // 1. Create Vertex Buffer
     const vertexData = this.generateBoxVertices();
     this.vertexBuffer = device.createBuffer({
@@ -44,8 +48,16 @@ export class Obstacle {
           {
             format,
             blend: {
-              color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+              color: {
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
+              alpha: {
+                srcFactor: 'one',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
             },
           },
         ],
@@ -71,28 +83,47 @@ export class Obstacle {
     const data = new Float32Array(360);
     let i = 0;
 
-    const addFace = (p1: number[], p2: number[], p3: number[], p4: number[], n: number[]) => {
+    const addFace = (
+      p1: number[],
+      p2: number[],
+      p3: number[],
+      p4: number[],
+      n: number[]
+    ) => {
       const color = [1, 1, 1, 1];
       const verts = [p1, p2, p3, p3, p4, p1];
       for (const p of verts) {
-        data[i++] = p[0]; data[i++] = p[1]; data[i++] = p[2];
-        data[i++] = n[0]; data[i++] = n[1]; data[i++] = n[2];
-        data[i++] = color[0]; data[i++] = color[1]; data[i++] = color[2]; data[i++] = color[3];
+        data[i++] = p[0];
+        data[i++] = p[1];
+        data[i++] = p[2];
+        data[i++] = n[0];
+        data[i++] = n[1];
+        data[i++] = n[2];
+        data[i++] = color[0];
+        data[i++] = color[1];
+        data[i++] = color[2];
+        data[i++] = color[3];
       }
     };
 
     // Unit box [-0.5, 0.5]
     const p = [
-      [-0.5, -0.5,  0.5], [ 0.5, -0.5,  0.5], [ 0.5,  0.5,  0.5], [-0.5,  0.5,  0.5],
-      [-0.5, -0.5, -0.5], [ 0.5, -0.5, -0.5], [ 0.5,  0.5, -0.5], [-0.5,  0.5, -0.5]
+      [-0.5, -0.5, 0.5],
+      [0.5, -0.5, 0.5],
+      [0.5, 0.5, 0.5],
+      [-0.5, 0.5, 0.5],
+      [-0.5, -0.5, -0.5],
+      [0.5, -0.5, -0.5],
+      [0.5, 0.5, -0.5],
+      [-0.5, 0.5, -0.5],
     ];
 
-    addFace(p[0], p[1], p[2], p[3], [ 0,  0,  1]); // Front
-    addFace(p[5], p[4], p[7], p[6], [ 0,  0, -1]); // Back
-    addFace(p[4], p[0], p[3], p[7], [-1,  0,  0]); // Left
-    addFace(p[1], p[5], p[6], p[2], [ 1,  0,  0]); // Right
-    addFace(p[3], p[2], p[6], p[7], [ 0,  1,  0]); // Top
-    addFace(p[1], p[0], p[4], p[5], [ 0, -1,  0]); // Bottom
+    addFace(p[0], p[1], p[2], p[3], [0, 0, 1]); // Front
+    addFace(p[5], p[4], p[7], p[6], [0, 0, -1]); // Back
+    addFace(p[4], p[0], p[3], p[7], [-1, 0, 0]); // Left
+    addFace(p[1], p[5], p[6], p[2], [1, 0, 0]); // Right
+    addFace(p[3], p[2], p[6], p[7], [0, 1, 0]); // Top
+    addFace(p[1], p[0], p[4], p[5], [0, -1, 0]); // Bottom
 
     return data;
   }

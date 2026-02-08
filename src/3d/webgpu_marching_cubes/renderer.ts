@@ -107,7 +107,7 @@ export class MarchingCubesRenderer {
   private depthTexture!: GPUTexture;
   private depthWidth = 0;
   private depthHeight = 0;
-  
+
   private shadowTexture!: GPUTexture;
   private shadowMapSize = 2048;
 
@@ -239,7 +239,7 @@ export class MarchingCubesRenderer {
       'shadow_common.wgsl': shadowCommonShader,
     });
     const shadowModule = device.createShaderModule({ code: shadowCode });
-    
+
     // Mesh Shadow Pipeline
     this.shadowMeshPipeline = device.createRenderPipeline({
       layout: 'auto',
@@ -255,8 +255,8 @@ export class MarchingCubesRenderer {
     // Obstacle Shadow Pipeline
     this.shadowObstaclePipeline = device.createRenderPipeline({
       layout: 'auto',
-      vertex: { 
-        module: shadowModule, 
+      vertex: {
+        module: shadowModule,
         entryPoint: 'vs_obstacle',
         buffers: [
           {
@@ -289,7 +289,9 @@ export class MarchingCubesRenderer {
     // -------------------------------------------------------------------------
     // Create Wireframe Render Pipeline (for bounds visualization)
     // -------------------------------------------------------------------------
-    const wireframeModule = device.createShaderModule({ code: wireframeShader });
+    const wireframeModule = device.createShaderModule({
+      code: wireframeShader,
+    });
 
     this.wireframePipeline = device.createRenderPipeline({
       layout: 'auto',
@@ -488,7 +490,8 @@ export class MarchingCubesRenderer {
     this.shadowTexture = this.device.createTexture({
       size: [this.shadowMapSize, this.shadowMapSize],
       format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
     this.computeBindGroup = this.device.createBindGroup({
@@ -641,8 +644,12 @@ export class MarchingCubesRenderer {
           };
 
           // Winding: ensure outward-facing triangles for backface culling.
-          add(p00); add(p11); add(p10);
-          add(p00); add(p01); add(p11);
+          add(p00);
+          add(p11);
+          add(p10);
+          add(p00);
+          add(p01);
+          add(p11);
         }
       }
 
@@ -827,11 +834,20 @@ export class MarchingCubesRenderer {
     // 12 edges of the box (pairs of corner indices)
     const edges = [
       // Bottom face edges
-      [0, 1], [1, 5], [5, 4], [4, 0],
+      [0, 1],
+      [1, 5],
+      [5, 4],
+      [4, 0],
       // Top face edges
-      [3, 2], [2, 6], [6, 7], [7, 3],
+      [3, 2],
+      [2, 6],
+      [6, 7],
+      [7, 3],
       // Vertical edges
-      [0, 3], [1, 2], [5, 6], [4, 7],
+      [0, 3],
+      [1, 2],
+      [5, 6],
+      [4, 7],
     ];
 
     let offset = 0;
@@ -917,28 +933,28 @@ export class MarchingCubesRenderer {
     // -----------------------------------------------------------------------
     // Shadow Pass Calculations & Rendering
     // -----------------------------------------------------------------------
-    
+
     // Calculate Shadow View-Projection
     const bounds = config.boundsSize;
     const floor = config.floorSize; // from EnvironmentConfig (config extends SimConfig, EnvironmentConfig)
     const sunDir = config.dirToSun;
-    
+
     // Ortho bounds covering scene
     const lightDistance = Math.max(bounds.x + bounds.z, floor.x + floor.z);
     const orthoSize = lightDistance * 0.6;
-    
+
     const lightPos = {
       x: sunDir.x * lightDistance,
       y: sunDir.y * lightDistance,
       z: sunDir.z * lightDistance,
     };
-    
+
     const lightView = mat4LookAt(
       lightPos,
       { x: 0, y: 0, z: 0 },
       { x: 0, y: 1, z: 0 }
     );
-    
+
     const lightProj = mat4Ortho(
       -orthoSize,
       orthoSize,
@@ -1027,24 +1043,36 @@ export class MarchingCubesRenderer {
     // Update Camera Uniforms for Background
     const viewMatrix = camera.viewMatrix;
     const camRight = { x: viewMatrix[0], y: viewMatrix[4], z: viewMatrix[8] };
-    const camUp    = { x: viewMatrix[1], y: viewMatrix[5], z: viewMatrix[9] };
-    const camBack  = { x: viewMatrix[2], y: viewMatrix[6], z: viewMatrix[10] };
-    const camFwd   = { x: -camBack.x, y: -camBack.y, z: -camBack.z };
-    
+    const camUp = { x: viewMatrix[1], y: viewMatrix[5], z: viewMatrix[9] };
+    const camBack = { x: viewMatrix[2], y: viewMatrix[6], z: viewMatrix[10] };
+    const camFwd = { x: -camBack.x, y: -camBack.y, z: -camBack.z };
+
     const tx = viewMatrix[12];
     const ty = viewMatrix[13];
     const tz = viewMatrix[14];
-    
+
     const eyeX = -(camRight.x * tx + camUp.x * ty + camBack.x * tz);
     const eyeY = -(camRight.y * tx + camUp.y * ty + camBack.y * tz);
     const eyeZ = -(camRight.z * tx + camUp.z * ty + camBack.z * tz);
 
     const aspect = this.canvas.width / this.canvas.height;
     const camFullData = new Float32Array(20);
-    camFullData[0] = eyeX; camFullData[1] = eyeY; camFullData[2] = eyeZ; camFullData[3] = 0;
-    camFullData[4] = camFwd.x; camFullData[5] = camFwd.y; camFullData[6] = camFwd.z; camFullData[7] = 0;
-    camFullData[8] = camRight.x; camFullData[9] = camRight.y; camFullData[10] = camRight.z; camFullData[11] = 0;
-    camFullData[12] = camUp.x; camFullData[13] = camUp.y; camFullData[14] = camUp.z; camFullData[15] = 0;
+    camFullData[0] = eyeX;
+    camFullData[1] = eyeY;
+    camFullData[2] = eyeZ;
+    camFullData[3] = 0;
+    camFullData[4] = camFwd.x;
+    camFullData[5] = camFwd.y;
+    camFullData[6] = camFwd.z;
+    camFullData[7] = 0;
+    camFullData[8] = camRight.x;
+    camFullData[9] = camRight.y;
+    camFullData[10] = camRight.z;
+    camFullData[11] = 0;
+    camFullData[12] = camUp.x;
+    camFullData[13] = camUp.y;
+    camFullData[14] = camUp.z;
+    camFullData[15] = 0;
     camFullData[16] = Math.PI / 3;
     camFullData[17] = aspect;
     this.device.queue.writeBuffer(this.camUniformBuffer, 0, camFullData);

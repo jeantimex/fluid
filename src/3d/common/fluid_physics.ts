@@ -53,7 +53,10 @@ export class FluidPhysics {
     this.device = device;
 
     // Create Pipelines
-    this.externalForcesPipeline = this.createPipeline(externalForcesShader, 'main');
+    this.externalForcesPipeline = this.createPipeline(
+      externalForcesShader,
+      'main'
+    );
     this.densityPipeline = this.createPipeline(densityShader, 'main');
     this.pressurePipeline = this.createPipeline(pressureShader, 'main');
     this.viscosityPipeline = this.createPipeline(viscosityShader, 'main');
@@ -133,7 +136,8 @@ export class FluidPhysics {
     grid: SpatialGrid,
     particleCount: number,
     gridTotalCells: number,
-    includeViscosity: boolean = true
+    includeViscosity: boolean = true,
+    rebuildGrid: boolean = true
   ) {
     const numBlocks = Math.ceil(particleCount / 256);
 
@@ -143,7 +147,9 @@ export class FluidPhysics {
     pass.dispatchWorkgroups(numBlocks);
 
     // 2. Spatial Grid Pass (Hash, Sort, Reorder, CopyBack)
-    grid.dispatch(pass, particleCount, gridTotalCells);
+    if (rebuildGrid) {
+      grid.dispatch(pass, particleCount, gridTotalCells);
+    }
 
     // 3. Density Pass
     pass.setPipeline(this.densityPipeline);

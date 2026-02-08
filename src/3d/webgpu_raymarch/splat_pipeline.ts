@@ -338,7 +338,7 @@ export class SplatPipeline {
     this.particlesParamsF32[1] = spikyPow2Scale;
     this.particlesParamsU32[2] = particleCount;
     this.particlesParamsF32[3] = fixedPointScale;
-    
+
     // minBounds
     this.particlesParamsF32[4] = -hx;
     this.particlesParamsF32[5] = minY;

@@ -97,7 +97,7 @@ const config: ParticlesConfig = {
   ...createConfig(),
   ...createDefaultEnvironmentConfig(),
   viscosityStrength: 0.01,
-  iterationsPerFrame: 3,
+  iterationsPerFrame: 2,
   velocityDisplayMax: 8.0,
   gradientResolution: 50,
   densityTextureRes: 150,
@@ -144,13 +144,13 @@ const { stats, gui } = setupGui(
       'Frustum Culling',
       'Dynamic Shadow Mapping',
       'Precise Particle Interaction',
-      'Box/Sphere Obstacles'
+      'Box/Sphere Obstacles',
     ],
     interactions: [
       'Click & Drag (Background): Orbit Camera',
       'Click & Drag (Fluid): Pull Particles',
       'Shift + Click & Drag: Push Particles',
-      'Mouse Wheel: Zoom In/Out'
+      'Mouse Wheel: Zoom In/Out',
     ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
@@ -174,12 +174,8 @@ if (shadowFolder) {
   shadowFolder
     .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
     .name('Density Multiplier');
-  shadowFolder
-    .add(config, 'lightStepSize', 0.01, 0.5, 0.01)
-    .name('Light Step');
-  shadowFolder
-    .add(config, 'showFluidShadows')
-    .name('Fluid Shadows');
+  shadowFolder.add(config, 'lightStepSize', 0.01, 0.5, 0.01).name('Light Step');
+  shadowFolder.add(config, 'showFluidShadows').name('Fluid Shadows');
 }
 
 let pauseController: any;
@@ -195,9 +191,10 @@ const guiState = {
 };
 
 // Add Pause and Reset Buttons at the end
-pauseController = gui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
+pauseController = gui
+  .add(guiState, 'togglePause')
+  .name(guiState.paused ? 'Resume' : 'Pause');
 gui.add(guiState, 'reset').name('Reset Simulation');
-
 
 /**
  * Main Application Entry Point

@@ -199,7 +199,11 @@ export function setupInputHandlers(
 
     // Use the point along the ray closest to the box center, clamped to the hit segment.
     const center = { x: 0, y: minY + size.y * 0.5, z: 0 };
-    const oc = { x: ray.origin.x - center.x, y: ray.origin.y - center.y, z: ray.origin.z - center.z };
+    const oc = {
+      x: ray.origin.x - center.x,
+      y: ray.origin.y - center.y,
+      z: ray.origin.z - center.z,
+    };
     const tCenter = -(oc.x * ray.dir.x + oc.y * ray.dir.y + oc.z * ray.dir.z);
     const t = Math.max(hit.tmin, Math.min(hit.tmax, tCenter));
     if (t < 0) return null;
@@ -251,12 +255,7 @@ export function setupInputHandlers(
     const boxMax = { x: hx, y: minY + size.y, z: hz };
 
     const ray = getRay(e.clientX, e.clientY);
-    const hit = rayBoxIntersection(
-      ray.origin,
-      ray.dir,
-      boxMin,
-      boxMax
-    );
+    const hit = rayBoxIntersection(ray.origin, ray.dir, boxMin, boxMax);
 
     // Update ray immediately on pointerdown
     input.rayOrigin = ray.origin;

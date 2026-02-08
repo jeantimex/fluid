@@ -220,6 +220,10 @@ export class DensitySplatPipeline {
     const hz = size.z * 0.5;
     const minY = -5.0; // Fixed bottom
 
+    // worldToVoxel is config.densityTextureRes / max(boundsSize)
+    const voxelsPerUnit =
+      config.densityTextureRes / Math.max(size.x, size.y, size.z);
+
     // Clear params: totalVoxels (u32) + 3x padding
     const clearData = new Uint32Array(4);
     clearData[0] = totalVoxels;
@@ -230,12 +234,12 @@ export class DensitySplatPipeline {
     this.particlesParamsF32[1] = spikyPow2Scale;
     this.particlesParamsU32[2] = particleCount;
     this.particlesParamsF32[3] = fixedPointScale;
-    
+
     // minBounds
     this.particlesParamsF32[4] = -hx;
     this.particlesParamsF32[5] = minY;
     this.particlesParamsF32[6] = -hz;
-    this.particlesParamsF32[7] = 0;
+    this.particlesParamsF32[7] = voxelsPerUnit;
 
     // maxBounds
     this.particlesParamsF32[8] = hx;

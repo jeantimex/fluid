@@ -100,8 +100,8 @@ const canvas = createCanvas(app);
 const config: MarchingCubesConfig = {
   ...createConfig(),
   ...createDefaultEnvironmentConfig(),
-  viscosityStrength: 0.001,
-  iterationsPerFrame: 3,
+  viscosityStrength: 0.01,
+  iterationsPerFrame: 2,
   nearPressureMultiplier: 2.25,
   densityTextureRes: 150,
   isoLevel: 75,
@@ -138,20 +138,22 @@ const { stats, gui } = setupGui(
       'Indirect Instanced Drawing',
       'Lambertian Shading',
       'Dynamic Shadow Mapping',
-      'Box/Sphere Obstacles'
+      'Box/Sphere Obstacles',
     ],
     interactions: [
       'Click & Drag (Background): Orbit Camera',
       'Click & Drag (Fluid): Pull Particles',
       'Shift + Click & Drag: Push Particles',
-      'Mouse Wheel: Zoom In/Out'
+      'Mouse Wheel: Zoom In/Out',
     ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
 
 // Add Unity-style time scale toggle (normal/slow)
-const performanceFolder = gui.folders.find((folder) => (folder as any)._title === 'Performance');
+const performanceFolder = gui.folders.find(
+  (folder) => (folder as any)._title === 'Performance'
+);
 if (performanceFolder) {
   const timeMode = { mode: 'Normal' };
   performanceFolder
@@ -189,9 +191,7 @@ marchingFolder
 
 const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
 if (shadowFolder) {
-  shadowFolder
-    .add(config, 'showFluidShadows')
-    .name('Fluid Shadows');
+  shadowFolder.add(config, 'showFluidShadows').name('Fluid Shadows');
 }
 
 let pauseController: any;
@@ -207,7 +207,9 @@ const guiState = {
 };
 
 // Add Pause and Reset Buttons at the end
-pauseController = gui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
+pauseController = gui
+  .add(guiState, 'togglePause')
+  .name(guiState.paused ? 'Resume' : 'Pause');
 gui.add(guiState, 'reset').name('Reset Simulation');
 
 /**

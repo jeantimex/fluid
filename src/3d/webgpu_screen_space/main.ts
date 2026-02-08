@@ -98,7 +98,7 @@ const config: ScreenSpaceConfig = {
   ...createConfig(),
   ...createDefaultEnvironmentConfig(),
   viscosityStrength: 0.01,
-  iterationsPerFrame: 3,
+  iterationsPerFrame: 2,
 
   // Foam Settings (matching Unity exact values)
   foamSpawnRate: 70,
@@ -163,13 +163,13 @@ const { stats, gui } = setupGui(
       'Curvature-Flow Smoothing',
       'Foam & Spray Simulation',
       'Refraction & Beer-Lambert Law',
-      'Bilateral Depth Filtering'
+      'Bilateral Depth Filtering',
     ],
     interactions: [
       'Click & Drag (Background): Orbit Camera',
       'Click & Drag (Fluid): Pull Particles',
       'Shift + Click & Drag: Push Particles',
-      'Mouse Wheel: Zoom In/Out'
+      'Mouse Wheel: Zoom In/Out',
     ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
@@ -264,7 +264,9 @@ const guiState = {
 };
 
 // Add Pause and Reset Buttons at the end
-pauseController = gui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
+pauseController = gui
+  .add(guiState, 'togglePause')
+  .name(guiState.paused ? 'Resume' : 'Pause');
 gui.add(guiState, 'reset').name('Reset Simulation');
 
 // Debug GUI removed (screen-space demo only)

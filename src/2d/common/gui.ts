@@ -308,7 +308,7 @@ export function setupGui(
     aboutHeader.onclick = () => {
       if (aboutContent.style.maxHeight === 'none') {
         aboutContent.style.maxHeight = aboutContent.scrollHeight + 'px';
-        aboutContent.offsetHeight; 
+        aboutContent.offsetHeight;
       }
 
       isAboutOpen = !isAboutOpen;
@@ -347,7 +347,8 @@ export function setupGui(
       opacity: 1.0;
       letter-spacing: 0.01em;
     `;
-    author.innerHTML = 'Original Author: <a href="https://github.com/SebLague" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Sebastian Lague</a>';
+    author.innerHTML =
+      'Original Author: <a href="https://github.com/SebLague" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Sebastian Lague</a>';
     aboutContent.appendChild(author);
 
     const webgpuAuthor = document.createElement('div');
@@ -358,7 +359,8 @@ export function setupGui(
       opacity: 1.0;
       letter-spacing: 0.01em;
     `;
-    webgpuAuthor.innerHTML = 'WebGPU Author: <a href="https://github.com/jeantimex" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">jeantimex</a>';
+    webgpuAuthor.innerHTML =
+      'WebGPU Author: <a href="https://github.com/jeantimex" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">jeantimex</a>';
     aboutContent.appendChild(webgpuAuthor);
 
     const youtube = document.createElement('div');
@@ -372,12 +374,13 @@ export function setupGui(
       align-items: center;
       gap: 4px;
     `;
-          youtube.innerHTML = `
+    youtube.innerHTML = `
             <svg width="14" height="14" viewBox="0 0 24 24" fill="#FF0000">
               <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM9.5 16.5v-9l7 4.5-7 4.5z"/>
             </svg>
             <a href="https://youtu.be/rSKMYc1CQHE?si=oe9BznpAUnMWUslT" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Coding Adventure: Simulating Fluids</a>
-          `;    aboutContent.appendChild(youtube);
+          `;
+    aboutContent.appendChild(youtube);
 
     if (options.features && options.features.length > 0) {
       const featContainer = document.createElement('div');
@@ -385,7 +388,7 @@ export function setupGui(
         padding: 5px 11px 10px 11px;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
       `;
-      
+
       const featLabel = document.createElement('div');
       featLabel.style.cssText = `
         font-size: 10px;
@@ -405,7 +408,7 @@ export function setupGui(
         opacity: 0.7;
         line-height: 1.4;
       `;
-      options.features.forEach(f => {
+      options.features.forEach((f) => {
         const li = document.createElement('li');
         li.textContent = f;
         list.appendChild(li);
@@ -420,7 +423,7 @@ export function setupGui(
         padding: 5px 11px 10px 11px;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
       `;
-      
+
       const intLabel = document.createElement('div');
       intLabel.style.cssText = `
         font-size: 10px;
@@ -440,7 +443,7 @@ export function setupGui(
         opacity: 0.7;
         line-height: 1.4;
       `;
-      options.interactions.forEach(i => {
+      options.interactions.forEach((i) => {
         const li = document.createElement('li');
         li.textContent = i;
         list.appendChild(li);
@@ -456,7 +459,10 @@ export function setupGui(
   }
 
   // Create GUI and append to container
-  const gui = new GUI({ container: contentWrapper, title: 'Simulation Settings' });
+  const gui = new GUI({
+    container: contentWrapper,
+    title: 'Simulation Settings',
+  });
 
   const stats = new Stats({
     trackGPU: options.trackGPU ?? false,
