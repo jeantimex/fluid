@@ -25,6 +25,8 @@ This project is ported from [Sebastian Lague](https://github.com/SebLague)'s [Fl
 
 ### 3D Simulations
 
+https://github.com/user-attachments/assets/26b13e45-8f26-4896-9a95-ab9bfaddc907
+
 The project features several specialized 3D rendering techniques, all sharing a unified SPH simulation core:
 
 #### 1. Billboard Particles (webgpu_particles)
