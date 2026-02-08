@@ -20,6 +20,8 @@ This project is ported from [Sebastian Lague](https://github.com/SebLague)'s [Fl
 
 ### 2D Simulations
 
+https://github.com/user-attachments/assets/6559bca9-59b1-4ca3-9723-de5a8d6c1b95
+
 - **Canvas 2D**: A baseline implementation using the standard HTML5 Canvas API.
 - **WebGPU 2D**: A 2D simulation utilizing WebGPU compute shaders for physics and a custom render pipeline.
 
