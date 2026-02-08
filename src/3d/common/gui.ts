@@ -59,8 +59,8 @@ export function setupGui(
     style.textContent = `
       #gui-container {
         position: fixed;
-        top: 0;
-        right: 0;
+        top: 10px;
+        right: 10px;
         z-index: 1000;
         background: #1a1a1a;
         color: #fff;
@@ -69,22 +69,20 @@ export function setupGui(
         box-shadow: 0 4px 20px rgba(0,0,0,0.5);
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         width: 280px;
-        max-width: 100vw;
+        max-width: calc(100vw - 20px);
         height: auto;
-        max-height: 100vh;
+        max-height: calc(100vh - 20px);
         display: flex;
         flex-direction: column;
         user-select: none;
         overflow: hidden;
+        border-radius: 8px;
       }
       #gui-container.collapsed {
         width: 44px;
         height: 44px;
         border-radius: 22px;
-        top: 10px;
-        right: 10px;
         cursor: pointer;
-        overflow: hidden;
       }
       #gui-container.collapsed:hover {
         background: #2a2a2a;
@@ -162,9 +160,9 @@ export function setupGui(
       }
       @media (max-width: 480px) {
         #gui-container:not(.collapsed) {
-          width: 100vw;
-          top: 0;
-          right: 0;
+          width: calc(100vw - 20px);
+          top: 10px;
+          right: 10px;
         }
       }
     `;
@@ -172,6 +170,9 @@ export function setupGui(
 
     const container = document.createElement('div');
     container.id = 'gui-container';
+    if (window.innerWidth <= 480) {
+      container.classList.add('collapsed');
+    }
     document.body.appendChild(container);
 
     const headerMain = document.createElement('div');
@@ -449,9 +450,11 @@ export function setupGui(
       trackGPU: options.trackGPU ?? false,
       horizontal: true,
     });
-    stats.dom.style.display = 'none';
     document.body.appendChild(stats.dom);
   }
+
+  // Always hide stats by default
+  stats.dom.style.display = 'none';
 
   const uiState = { showStats: false };
 
