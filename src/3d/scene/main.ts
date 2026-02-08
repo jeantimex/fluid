@@ -18,10 +18,10 @@ const config: SceneConfig = {
   // Tile colors from Unity environmentSettings
   // Quadrant mapping: determined by hitPos.x and hitPos.z signs
   // Original Unity colors (linear space) - will be gamma corrected in shader
-  tileCol1: { r: 0.5647059, g: 0.4683025, b: 0.25490198 },   // Yellow
-  tileCol2: { r: 0.424268, g: 0.27100393, b: 0.6603774 },    // Pink
-  tileCol3: { r: 0.14057493, g: 0.3679245, b: 0.16709903 },  // Green
-  tileCol4: { r: 0.07164471, g: 0.19658183, b: 0.4339623 },  // Blue
+  tileCol1: { r: 0.5647059, g: 0.4683025, b: 0.25490198 }, // Yellow
+  tileCol2: { r: 0.424268, g: 0.27100393, b: 0.6603774 }, // Pink
+  tileCol3: { r: 0.14057493, g: 0.3679245, b: 0.16709903 }, // Green
+  tileCol4: { r: 0.07164471, g: 0.19658183, b: 0.4339623 }, // Blue
 
   // Floor parameters
   floorY: -5.0, // Bottom of simulation box (scale Y = 10, centered at origin)
@@ -37,9 +37,9 @@ const config: SceneConfig = {
   dirToSun: { x: -0.83, y: 0.42, z: -0.36 },
 
   // Sky colors from Unity FluidRender.shader
-  skyColorHorizon: { r: 1.0, g: 1.0, b: 1.0 },           // Pure white
-  skyColorZenith: { r: 0.08, g: 0.37, b: 0.73 },         // Blue
-  skyColorGround: { r: 0.55, g: 0.50, b: 0.55 },           // Warm gray with slight purple tint
+  skyColorHorizon: { r: 1.0, g: 1.0, b: 1.0 }, // Pure white
+  skyColorZenith: { r: 0.08, g: 0.37, b: 0.73 }, // Blue
+  skyColorGround: { r: 0.55, g: 0.5, b: 0.55 }, // Warm gray with slight purple tint
 
   // Lighting parameters
   sunPower: 500.0, // Exponent for sun highlight
@@ -97,23 +97,49 @@ async function main() {
   // Global adjustments
   const globalFolder = gui.addFolder('Global');
   const globalSettings = { brightness: 1.0, saturation: 1.0 };
-  globalFolder.add(globalSettings, 'brightness', 0.1, 4.0, 0.1).name('Brightness');
-  globalFolder.add(globalSettings, 'saturation', 0.0, 2.0, 0.1).name('Saturation');
+  globalFolder
+    .add(globalSettings, 'brightness', 0.1, 4.0, 0.1)
+    .name('Brightness');
+  globalFolder
+    .add(globalSettings, 'saturation', 0.0, 2.0, 0.1)
+    .name('Saturation');
 
   // Helper to convert RGB object to hex and back
-  const rgbToHex = (c: {r: number, g: number, b: number}) => {
-    const toHex = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
+  const rgbToHex = (c: { r: number; g: number; b: number }) => {
+    const toHex = (v: number) =>
+      Math.round(Math.min(1, Math.max(0, v)) * 255)
+        .toString(16)
+        .padStart(2, '0');
     return '#' + toHex(c.r) + toHex(c.g) + toHex(c.b);
   };
 
   // Color controls for each tile (gamma corrected for display)
-  const linearToSrgb = (c: number) => Math.pow(c, 1/2.2);
-  const toHex = (v: number) => Math.round(Math.min(1, Math.max(0, linearToSrgb(v))) * 255).toString(16).padStart(2, '0');
+  const linearToSrgb = (c: number) => Math.pow(c, 1 / 2.2);
+  const toHex = (v: number) =>
+    Math.round(Math.min(1, Math.max(0, linearToSrgb(v))) * 255)
+      .toString(16)
+      .padStart(2, '0');
   const colorSettings = {
-    tile1: '#' + toHex(config.tileCol1.r) + toHex(config.tileCol1.g) + toHex(config.tileCol1.b),
-    tile2: '#' + toHex(config.tileCol2.r) + toHex(config.tileCol2.g) + toHex(config.tileCol2.b),
-    tile3: '#' + toHex(config.tileCol3.r) + toHex(config.tileCol3.g) + toHex(config.tileCol3.b),
-    tile4: '#' + toHex(config.tileCol4.r) + toHex(config.tileCol4.g) + toHex(config.tileCol4.b),
+    tile1:
+      '#' +
+      toHex(config.tileCol1.r) +
+      toHex(config.tileCol1.g) +
+      toHex(config.tileCol1.b),
+    tile2:
+      '#' +
+      toHex(config.tileCol2.r) +
+      toHex(config.tileCol2.g) +
+      toHex(config.tileCol2.b),
+    tile3:
+      '#' +
+      toHex(config.tileCol3.r) +
+      toHex(config.tileCol3.g) +
+      toHex(config.tileCol3.b),
+    tile4:
+      '#' +
+      toHex(config.tileCol4.r) +
+      toHex(config.tileCol4.g) +
+      toHex(config.tileCol4.b),
   };
 
   // Convert hex (sRGB) back to linear for config
@@ -126,18 +152,30 @@ async function main() {
   };
 
   const colorsFolder = gui.addFolder('Tile Colors');
-  colorsFolder.addColor(colorSettings, 'tile1').name('Tile 1 (Yellow)').onChange((v: string) => {
-    config.tileCol1 = hexToRgb(v);
-  });
-  colorsFolder.addColor(colorSettings, 'tile2').name('Tile 2 (Pink)').onChange((v: string) => {
-    config.tileCol2 = hexToRgb(v);
-  });
-  colorsFolder.addColor(colorSettings, 'tile3').name('Tile 3 (Green)').onChange((v: string) => {
-    config.tileCol3 = hexToRgb(v);
-  });
-  colorsFolder.addColor(colorSettings, 'tile4').name('Tile 4 (Blue)').onChange((v: string) => {
-    config.tileCol4 = hexToRgb(v);
-  });
+  colorsFolder
+    .addColor(colorSettings, 'tile1')
+    .name('Tile 1 (Yellow)')
+    .onChange((v: string) => {
+      config.tileCol1 = hexToRgb(v);
+    });
+  colorsFolder
+    .addColor(colorSettings, 'tile2')
+    .name('Tile 2 (Pink)')
+    .onChange((v: string) => {
+      config.tileCol2 = hexToRgb(v);
+    });
+  colorsFolder
+    .addColor(colorSettings, 'tile3')
+    .name('Tile 3 (Green)')
+    .onChange((v: string) => {
+      config.tileCol3 = hexToRgb(v);
+    });
+  colorsFolder
+    .addColor(colorSettings, 'tile4')
+    .name('Tile 4 (Blue)')
+    .onChange((v: string) => {
+      config.tileCol4 = hexToRgb(v);
+    });
 
   // Sky color controls
   const skySettings = {
@@ -154,15 +192,24 @@ async function main() {
   };
 
   const skyFolder = gui.addFolder('Sky');
-  skyFolder.addColor(skySettings, 'horizon').name('Horizon').onChange((v: string) => {
-    config.skyColorHorizon = hexToRgbDirect(v);
-  });
-  skyFolder.addColor(skySettings, 'zenith').name('Zenith').onChange((v: string) => {
-    config.skyColorZenith = hexToRgbDirect(v);
-  });
-  skyFolder.addColor(skySettings, 'ground').name('Ground').onChange((v: string) => {
-    config.skyColorGround = hexToRgbDirect(v);
-  });
+  skyFolder
+    .addColor(skySettings, 'horizon')
+    .name('Horizon')
+    .onChange((v: string) => {
+      config.skyColorHorizon = hexToRgbDirect(v);
+    });
+  skyFolder
+    .addColor(skySettings, 'zenith')
+    .name('Zenith')
+    .onChange((v: string) => {
+      config.skyColorZenith = hexToRgbDirect(v);
+    });
+  skyFolder
+    .addColor(skySettings, 'ground')
+    .name('Ground')
+    .onChange((v: string) => {
+      config.skyColorGround = hexToRgbDirect(v);
+    });
 
   // Store global settings reference for renderer
   (config as any).globalBrightness = globalSettings.brightness;

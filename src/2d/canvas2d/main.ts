@@ -43,12 +43,12 @@ const { stats } = setupGui(
       'Canvas 2D Rendering',
       'Direct Pixel Manipulation',
       'Spatial Grid Optimization',
-      'Box Obstacle Interaction'
+      'Box Obstacle Interaction',
     ],
     interactions: [
       'Click & Drag: Pull Particles',
       'Right Click & Drag: Push Particles',
-      'Mouse Wheel: Zoom In/Out'
+      'Mouse Wheel: Zoom In/Out',
     ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }

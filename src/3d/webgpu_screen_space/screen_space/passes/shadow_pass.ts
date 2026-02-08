@@ -6,7 +6,11 @@
  */
 
 import shadowShader from '../shaders/shadow_debug.wgsl?raw';
-import type { ScreenSpaceFrame, ScreenSpaceTextures, SimBuffers } from '../screen_space_types.ts';
+import type {
+  ScreenSpaceFrame,
+  ScreenSpaceTextures,
+  SimBuffers,
+} from '../screen_space_types.ts';
 import {
   mat4LookAt,
   mat4Multiply,
@@ -100,9 +104,8 @@ export class ShadowPass {
       y: sceneCenter.y + sunDir.y * cameraDist,
       z: sceneCenter.z + sunDir.z * cameraDist,
     };
-    const up = Math.abs(sunDir.y) > 0.99
-      ? { x: 1, y: 0, z: 0 }
-      : { x: 0, y: 1, z: 0 };
+    const up =
+      Math.abs(sunDir.y) > 0.99 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
 
     const view = mat4LookAt(eye, sceneCenter, up);
 
@@ -115,9 +118,12 @@ export class ShadowPass {
     // Near/far need to encompass the scene from the camera's perspective
     // Camera is cameraDist from center, scene extends ~orthoSize in each direction
     const proj = mat4Ortho(
-      -orthoSize, orthoSize,
-      -orthoSize, orthoSize,
-      cameraDist - orthoSize - 10, cameraDist + orthoSize + 10,
+      -orthoSize,
+      orthoSize,
+      -orthoSize,
+      orthoSize,
+      cameraDist - orthoSize - 10,
+      cameraDist + orthoSize + 10
     );
 
     return mat4Multiply(proj, view);
@@ -126,7 +132,7 @@ export class ShadowPass {
   encode(
     encoder: GPUCommandEncoder,
     resources: ScreenSpaceTextures & { buffers: SimBuffers },
-    frame: ScreenSpaceFrame,
+    frame: ScreenSpaceFrame
   ): Float32Array | null {
     if (!resources.shadowTexture || !this.bindGroup) {
       return null;

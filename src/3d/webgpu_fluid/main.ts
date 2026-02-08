@@ -17,13 +17,13 @@ import { rgbToHex, hexToRgb } from '../common/color_utils.ts';
 function createCanvas(app: HTMLDivElement): HTMLCanvasElement {
   // Clean container
   app.innerHTML = '';
-  
+
   // Create Canvas
   const canvas = document.createElement('canvas');
   canvas.id = 'sim-canvas';
   canvas.ariaLabel = 'Fluid simulation';
   app.appendChild(canvas);
-  
+
   return canvas;
 }
 
@@ -257,7 +257,8 @@ author.style.cssText = `
   opacity: 1.0;
   letter-spacing: 0.01em;
 `;
-author.innerHTML = 'Original Author: <a href="https://github.com/SebLague" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Sebastian Lague</a>';
+author.innerHTML =
+  'Original Author: <a href="https://github.com/SebLague" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Sebastian Lague</a>';
 
 const webgpuAuthor = document.createElement('div');
 webgpuAuthor.style.cssText = `
@@ -267,7 +268,8 @@ webgpuAuthor.style.cssText = `
   opacity: 1.0;
   letter-spacing: 0.01em;
 `;
-webgpuAuthor.innerHTML = 'WebGPU Author: <a href="https://github.com/jeantimex" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">jeantimex</a>';
+webgpuAuthor.innerHTML =
+  'WebGPU Author: <a href="https://github.com/jeantimex" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">jeantimex</a>';
 
 const youtube = document.createElement('div');
 youtube.style.cssText = `
@@ -288,28 +290,28 @@ youtube.innerHTML = `
 `;
 
 const subtitleMap: Record<string, string> = {
-  'Particles': 'SPH Fluid • Particle Simulation',
-  'Raymarch': 'SPH Fluid • Volumetric Raymarching',
+  Particles: 'SPH Fluid • Particle Simulation',
+  Raymarch: 'SPH Fluid • Volumetric Raymarching',
   'Marching Cubes': 'SPH Fluid • Marching Cubes Reconstruction',
-  'Screen Space': 'SPH Fluid • Screen-Space Rendering'
+  'Screen Space': 'SPH Fluid • Screen-Space Rendering',
 };
 
 const featureMap: Record<string, string[]> = {
-  'Particles': [
+  Particles: [
     'SPH Fluid Simulator (GPU)',
     'Billboard Particle Rendering',
     'Frustum Culling',
     'Dynamic Shadow Mapping',
     'Precise Particle Interaction',
-    'Box/Sphere Obstacles'
+    'Box/Sphere Obstacles',
   ],
-  'Raymarch': [
+  Raymarch: [
     'SPH Fluid Simulator (GPU)',
     'Volumetric Density Splatting',
     'Physically-Based Raymarching',
     'Refraction & Reflection',
     'Beer–Lambert Transmittance',
-    'Shadows & Ambient Occlusion'
+    'Shadows & Ambient Occlusion',
   ],
   'Marching Cubes': [
     'SPH Fluid Simulator (GPU)',
@@ -317,7 +319,7 @@ const featureMap: Record<string, string[]> = {
     'Indirect Instanced Drawing',
     'Lambertian Shading',
     'Dynamic Shadow Mapping',
-    'Box/Sphere Obstacles'
+    'Box/Sphere Obstacles',
   ],
   'Screen Space': [
     'SPH Fluid Simulator (GPU)',
@@ -325,35 +327,35 @@ const featureMap: Record<string, string[]> = {
     'Curvature-Flow Smoothing',
     'Foam & Spray Simulation',
     'Refraction & Beer-Lambert Law',
-    'Bilateral Depth Filtering'
-  ]
+    'Bilateral Depth Filtering',
+  ],
 };
 
 const interactionMap: Record<string, string[]> = {
-  'Particles': [
+  Particles: [
     'Click & Drag (Background): Orbit Camera',
     'Click & Drag (Fluid): Pull Particles',
     'Shift + Click & Drag: Push Particles',
-    'Mouse Wheel: Zoom In/Out'
+    'Mouse Wheel: Zoom In/Out',
   ],
-  'Raymarch': [
+  Raymarch: [
     'Click & Drag (Background): Orbit Camera',
     'Click & Drag (Fluid): Pull Particles',
     'Shift + Click & Drag: Push Particles',
-    'Mouse Wheel: Zoom In/Out'
+    'Mouse Wheel: Zoom In/Out',
   ],
   'Marching Cubes': [
     'Click & Drag (Background): Orbit Camera',
     'Click & Drag (Fluid): Pull Particles',
     'Shift + Click & Drag: Push Particles',
-    'Mouse Wheel: Zoom In/Out'
+    'Mouse Wheel: Zoom In/Out',
   ],
   'Screen Space': [
     'Click & Drag (Background): Orbit Camera',
     'Click & Drag (Fluid): Pull Particles',
     'Shift + Click & Drag: Push Particles',
-    'Mouse Wheel: Zoom In/Out'
-  ]
+    'Mouse Wheel: Zoom In/Out',
+  ],
 };
 
 const header = document.createElement('div');
@@ -411,7 +413,7 @@ let isAboutOpen = true;
 aboutHeader.onclick = () => {
   if (aboutContent.style.maxHeight === 'none') {
     aboutContent.style.maxHeight = aboutContent.scrollHeight + 'px';
-    aboutContent.offsetHeight; 
+    aboutContent.offsetHeight;
   }
 
   isAboutOpen = !isAboutOpen;
@@ -431,7 +433,10 @@ aboutContent.appendChild(header);
 
 contentWrapper.appendChild(aboutSection);
 
-const mainGui = new GUI({ container: contentWrapper, title: 'Simulation Settings' });
+const mainGui = new GUI({
+  container: contentWrapper,
+  title: 'Simulation Settings',
+});
 const mainStats = new Stats({ trackGPU: true, horizontal: true });
 mainStats.dom.style.display = 'none';
 document.body.appendChild(mainStats.dom);
@@ -458,7 +463,12 @@ let updateInertia: (() => void) | null = null;
 let isSwitching = false;
 
 // Add Renderer Selector to GUI (Always at the top)
-mainGui.add(guiState, 'renderer', adapterRegistry.map(a => a.name))
+mainGui
+  .add(
+    guiState,
+    'renderer',
+    adapterRegistry.map((a) => a.name)
+  )
   .name('Renderer')
   .onChange((name: string) => switchAdapter(name));
 
@@ -478,7 +488,10 @@ function setCanvasSize(): void {
   canvas.height = Math.max(1, Math.floor(window.innerHeight * dpr));
 }
 
-function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): void {
+function syncAdapterConfig(
+  source: FluidAppAdapter,
+  target: FluidAppAdapter
+): void {
   const s = source.config;
   const t = target.config;
 
@@ -490,8 +503,8 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
   t.collisionDamping = s.collisionDamping;
   t.smoothingRadius = s.smoothingRadius;
   t.spawnDensity = s.spawnDensity;
-  t.viscosityStrength = s.viscosityStrength; 
-  
+  t.viscosityStrength = s.viscosityStrength;
+
   // Sync container bounds
   t.boundsSize.x = s.boundsSize.x;
   t.boundsSize.y = s.boundsSize.y;
@@ -511,13 +524,16 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
   t.obstacleRotation.x = s.obstacleRotation.x;
   t.obstacleRotation.y = s.obstacleRotation.y;
   t.obstacleRotation.z = s.obstacleRotation.z;
-  
+
   if (s.obstacleColor && t.obstacleColor) {
     t.obstacleColor.r = s.obstacleColor.r;
     t.obstacleColor.g = s.obstacleColor.g;
     t.obstacleColor.b = s.obstacleColor.b;
   }
-  if (typeof s.obstacleAlpha === 'number' && typeof t.obstacleAlpha === 'number') {
+  if (
+    typeof s.obstacleAlpha === 'number' &&
+    typeof t.obstacleAlpha === 'number'
+  ) {
     t.obstacleAlpha = s.obstacleAlpha;
   }
 
@@ -527,21 +543,25 @@ function syncAdapterConfig(source: FluidAppAdapter, target: FluidAppAdapter): vo
   if (sRay.renderScale !== undefined && tRay.renderScale !== undefined) {
     tRay.renderScale = sRay.renderScale;
   }
-  
+
   // Sync Environment
   const sEnv = s as any;
   const tEnv = t as any;
   if (sEnv.floorAmbient !== undefined && tEnv.floorAmbient !== undefined) {
-      tEnv.floorAmbient = sEnv.floorAmbient;
-      tEnv.sceneExposure = sEnv.sceneExposure;
-      tEnv.sunBrightness = sEnv.sunBrightness;
-      tEnv.globalBrightness = sEnv.globalBrightness;
-      tEnv.globalSaturation = sEnv.globalSaturation;
-      
-      if (sEnv.tileCol1 && tEnv.tileCol1) Object.assign(tEnv.tileCol1, sEnv.tileCol1);
-      if (sEnv.tileCol2 && tEnv.tileCol2) Object.assign(tEnv.tileCol2, sEnv.tileCol2);
-      if (sEnv.tileCol3 && tEnv.tileCol3) Object.assign(tEnv.tileCol3, sEnv.tileCol3);
-      if (sEnv.tileCol4 && tEnv.tileCol4) Object.assign(tEnv.tileCol4, sEnv.tileCol4);
+    tEnv.floorAmbient = sEnv.floorAmbient;
+    tEnv.sceneExposure = sEnv.sceneExposure;
+    tEnv.sunBrightness = sEnv.sunBrightness;
+    tEnv.globalBrightness = sEnv.globalBrightness;
+    tEnv.globalSaturation = sEnv.globalSaturation;
+
+    if (sEnv.tileCol1 && tEnv.tileCol1)
+      Object.assign(tEnv.tileCol1, sEnv.tileCol1);
+    if (sEnv.tileCol2 && tEnv.tileCol2)
+      Object.assign(tEnv.tileCol2, sEnv.tileCol2);
+    if (sEnv.tileCol3 && tEnv.tileCol3)
+      Object.assign(tEnv.tileCol3, sEnv.tileCol3);
+    if (sEnv.tileCol4 && tEnv.tileCol4)
+      Object.assign(tEnv.tileCol4, sEnv.tileCol4);
   }
 }
 
@@ -658,12 +678,13 @@ function updateGui(adapter: FluidAppAdapter): void {
 
   // ... (adapter specific controls) ...
 
-
   // -------------------------------------------------------------------------
   // Particles Adapter Controls
   // -------------------------------------------------------------------------
   if (adapter.name === 'Particles') {
-    const particlesFolder = mainGui.folders.find((f) => f._title === 'Particles');
+    const particlesFolder = mainGui.folders.find(
+      (f) => f._title === 'Particles'
+    );
     if (particlesFolder) {
       particlesFolder
         .add(config, 'particleRadius', 1, 5, 0.1)
@@ -676,16 +697,16 @@ function updateGui(adapter: FluidAppAdapter): void {
         .add(config, 'densityTextureRes', 32, 256, 1)
         .name('Volume Res')
         .onFinishChange(() => activeAdapter?.reset());
-      shadowFolder.add(config, 'densityOffset', 0, 500, 1).name('Density Offset');
+      shadowFolder
+        .add(config, 'densityOffset', 0, 500, 1)
+        .name('Density Offset');
       shadowFolder
         .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
         .name('Density Multiplier');
       shadowFolder
         .add(config, 'lightStepSize', 0.01, 0.5, 0.01)
         .name('Light Step');
-      shadowFolder
-        .add(config, 'showFluidShadows')
-        .name('Fluid Shadows');
+      shadowFolder.add(config, 'showFluidShadows').name('Fluid Shadows');
     }
   }
 
@@ -699,23 +720,33 @@ function updateGui(adapter: FluidAppAdapter): void {
       .add(config, 'densityTextureRes', 32, 256, 1)
       .name('Density Texture Res')
       .onFinishChange(() => activeAdapter?.reset());
-    raymarchFolder.add(config, 'densityOffset', 0, 400, 1).name('Density Offset');
+    raymarchFolder
+      .add(config, 'densityOffset', 0, 400, 1)
+      .name('Density Offset');
     raymarchFolder
       .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
       .name('Density Multiplier');
-    raymarchFolder.add(config, 'renderScale', 0.1, 1.0, 0.05).name('Render Scale');
+    raymarchFolder
+      .add(config, 'renderScale', 0.1, 1.0, 0.05)
+      .name('Render Scale');
     raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
     raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
-    const extinctionFolder = raymarchFolder.addFolder('Extinction (Absorption)');
-    extinctionFolder.add(config.extinctionCoefficients, 'x', 0, 50, 0.1).name('Red');
-    extinctionFolder.add(config.extinctionCoefficients, 'y', 0, 50, 0.1).name('Green');
-    extinctionFolder.add(config.extinctionCoefficients, 'z', 0, 50, 0.1).name('Blue');
+    const extinctionFolder = raymarchFolder.addFolder(
+      'Extinction (Absorption)'
+    );
+    extinctionFolder
+      .add(config.extinctionCoefficients, 'x', 0, 50, 0.1)
+      .name('Red');
+    extinctionFolder
+      .add(config.extinctionCoefficients, 'y', 0, 50, 0.1)
+      .name('Green');
+    extinctionFolder
+      .add(config.extinctionCoefficients, 'z', 0, 50, 0.1)
+      .name('Blue');
 
     const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
     if (shadowFolder) {
-      shadowFolder
-        .add(config, 'showFluidShadows')
-        .name('Fluid Shadows');
+      shadowFolder.add(config, 'showFluidShadows').name('Fluid Shadows');
     }
   }
 
@@ -747,9 +778,7 @@ function updateGui(adapter: FluidAppAdapter): void {
 
     const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
     if (shadowFolder) {
-      shadowFolder
-        .add(config, 'showFluidShadows')
-        .name('Fluid Shadows');
+      shadowFolder.add(config, 'showFluidShadows').name('Fluid Shadows');
     }
   }
 
@@ -757,7 +786,9 @@ function updateGui(adapter: FluidAppAdapter): void {
   // Screen Space Adapter Controls
   // -------------------------------------------------------------------------
   else if (adapter.name === 'Screen Space') {
-    const particlesFolder = mainGui.folders.find((f) => f._title === 'Particles');
+    const particlesFolder = mainGui.folders.find(
+      (f) => f._title === 'Particles'
+    );
     if (particlesFolder) {
       particlesFolder
         .add(config, 'particleRadius', 1, 5, 0.1)
@@ -767,12 +798,18 @@ function updateGui(adapter: FluidAppAdapter): void {
     const foamFolder = mainGui.addFolder('Foam');
     foamFolder.close();
     foamFolder.add(config, 'foamSpawnRate', 0, 1000, 1).name('Spawn Rate');
-    foamFolder.add(config, 'trappedAirVelocityMin', 0, 50, 0.1).name('Air Vel Min');
+    foamFolder
+      .add(config, 'trappedAirVelocityMin', 0, 50, 0.1)
+      .name('Air Vel Min');
     foamFolder
       .add(config, 'trappedAirVelocityMax', 0, 100, 0.1)
       .name('Air Vel Max');
-    foamFolder.add(config, 'foamKineticEnergyMin', 0, 50, 0.1).name('Kinetic Min');
-    foamFolder.add(config, 'foamKineticEnergyMax', 0, 200, 0.1).name('Kinetic Max');
+    foamFolder
+      .add(config, 'foamKineticEnergyMin', 0, 50, 0.1)
+      .name('Kinetic Min');
+    foamFolder
+      .add(config, 'foamKineticEnergyMax', 0, 200, 0.1)
+      .name('Kinetic Max');
     foamFolder.add(config, 'bubbleBuoyancy', 0, 5, 0.1).name('Buoyancy');
     foamFolder.add(config, 'bubbleScale', 0, 2, 0.01).name('Scale');
     foamFolder.add(config, 'foamLifetimeMin', 0, 30, 0.1).name('Lifetime Min');
@@ -818,9 +855,7 @@ function updateGui(adapter: FluidAppAdapter): void {
 
     const shadowFolder = mainGui.folders.find((f) => f._title === 'Shadow');
     if (shadowFolder) {
-      shadowFolder
-        .add(config, 'showFluidShadows')
-        .name('Fluid Shadows');
+      shadowFolder.add(config, 'showFluidShadows').name('Fluid Shadows');
     }
 
     const debugFolder = mainGui.addFolder('Debug');
@@ -837,7 +872,9 @@ function updateGui(adapter: FluidAppAdapter): void {
   }
 
   // Add Pause and Reset Buttons at the end
-  pauseController = mainGui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
+  pauseController = mainGui
+    .add(guiState, 'togglePause')
+    .name(guiState.paused ? 'Resume' : 'Pause');
   mainGui.add(guiState, 'reset').name('Reset Simulation');
 }
 
@@ -847,9 +884,9 @@ async function switchAdapter(name: string): Promise<void> {
   if (activeAdapter?.name === entry.name) return;
 
   isSwitching = true;
-  
+
   const nextAdapter = entry.create();
-  
+
   if (activeAdapter) {
     syncAdapterConfig(activeAdapter, nextAdapter);
     activeAdapter.destroy?.();

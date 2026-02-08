@@ -26,7 +26,10 @@ export class OrbitCamera {
 
   zoom(delta: number) {
     this.radius += delta;
-    this.radius = Math.max(this.minRadius, Math.min(this.maxRadius, this.radius));
+    this.radius = Math.max(
+      this.minRadius,
+      Math.min(this.maxRadius, this.radius)
+    );
   }
 
   get viewMatrix(): Float32Array {

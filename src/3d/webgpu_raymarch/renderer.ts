@@ -121,7 +121,6 @@ export class RaymarchRenderer {
   /** CPU-side typed array mirroring the uniform buffer contents (124 floats). */
   private uniformData = new Float32Array(124);
 
-
   // ---------------------------------------------------------------------------
   // Blit / Half-Resolution Rendering
   // ---------------------------------------------------------------------------
@@ -271,7 +270,9 @@ export class RaymarchRenderer {
     // Wireframe Pipeline
     // -------------------------------------------------------------------------
 
-    const wireframeModule = device.createShaderModule({ code: wireframeShader });
+    const wireframeModule = device.createShaderModule({
+      code: wireframeShader,
+    });
 
     this.wireframePipeline = device.createRenderPipeline({
       layout: 'auto',
@@ -430,11 +431,20 @@ export class RaymarchRenderer {
     // 12 edges of the box (pairs of corner indices)
     const edges = [
       // Bottom face edges
-      [0, 1], [1, 5], [5, 4], [4, 0],
+      [0, 1],
+      [1, 5],
+      [5, 4],
+      [4, 0],
       // Top face edges
-      [3, 2], [2, 6], [6, 7], [7, 3],
+      [3, 2],
+      [2, 6],
+      [6, 7],
+      [7, 3],
       // Vertical edges
-      [0, 3], [1, 2], [5, 6], [4, 7],
+      [0, 3],
+      [1, 2],
+      [5, 6],
+      [4, 7],
     ];
 
     let offset = 0;
@@ -633,13 +643,19 @@ export class RaymarchRenderer {
     this.uniformData[95] = 0; // pad16
 
     this.uniformData[96] = showObstacle
-      ? (obstacleIsSphere ? obstacleRadius : config.obstacleSize.x * 0.5)
+      ? obstacleIsSphere
+        ? obstacleRadius
+        : config.obstacleSize.x * 0.5
       : 0;
     this.uniformData[97] = showObstacle
-      ? (obstacleIsSphere ? obstacleRadius : config.obstacleSize.y * 0.5)
+      ? obstacleIsSphere
+        ? obstacleRadius
+        : config.obstacleSize.y * 0.5
       : 0;
     this.uniformData[98] = showObstacle
-      ? (obstacleIsSphere ? obstacleRadius : config.obstacleSize.z * 0.5)
+      ? obstacleIsSphere
+        ? obstacleRadius
+        : config.obstacleSize.z * 0.5
       : 0;
     this.uniformData[99] = 0; // pad17
 
@@ -716,9 +732,9 @@ export class RaymarchRenderer {
       const far = 200.0;
       projection[0] = 1 / (aspect * tanHalfFov);
       projection[5] = 1 / tanHalfFov;
-      projection[10] = -far / (far - near);  // WebGPU [0,1] depth
+      projection[10] = -far / (far - near); // WebGPU [0,1] depth
       projection[11] = -1;
-      projection[14] = -(far * near) / (far - near);  // WebGPU [0,1] depth
+      projection[14] = -(far * near) / (far - near); // WebGPU [0,1] depth
 
       const viewProj = new Float32Array(16);
       for (let i = 0; i < 4; i++) {

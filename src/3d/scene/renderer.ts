@@ -122,7 +122,10 @@ export class SceneRenderer {
     });
   }
 
-  render(viewMatrix: Float32Array, cameraPos: { x: number; y: number; z: number }) {
+  render(
+    viewMatrix: Float32Array,
+    cameraPos: { x: number; y: number; z: number }
+  ) {
     const aspect = this.canvas.width / this.canvas.height;
     const projMatrix = mat4Perspective(Math.PI / 3, aspect, 0.15, 500);
     const viewProjMatrix = mat4Multiply(projMatrix, viewMatrix);

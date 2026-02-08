@@ -7,7 +7,10 @@
 import type { SimState } from '../common/types.ts';
 import { createSpawnData } from '../common/spawn.ts';
 import { FluidBuffers } from '../common/fluid_buffers.ts';
-import { SpatialGrid, type SpatialGridUniforms } from '../common/spatial_grid.ts';
+import {
+  SpatialGrid,
+  type SpatialGridUniforms,
+} from '../common/spatial_grid.ts';
 import { FluidPhysics, type PhysicsUniforms } from '../common/fluid_physics.ts';
 import { OrbitCamera } from '../common/orbit_camera.ts';
 import { MarchingCubesRenderer } from './renderer.ts';
@@ -81,19 +84,49 @@ export class FluidSimulation {
 
     // Create all uniform buffers upfront
     this.physicsUniforms = {
-      external: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      density: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      pressure: device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      viscosity: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      integrate: device.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      external: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      density: device.createBuffer({
+        size: 48,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      pressure: device.createBuffer({
+        size: 64,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      viscosity: device.createBuffer({
+        size: 48,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      integrate: device.createBuffer({
+        size: 96,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
     };
 
     this.gridUniforms = {
-      hash: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      sort: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      scanL0: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      scanL1: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-      scanL2: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      hash: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      sort: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      scanL0: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      scanL1: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
+      scanL2: device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }),
     };
 
     this.reset();
@@ -124,7 +157,7 @@ export class FluidSimulation {
     this.state = this.createStateFromSpawn(spawn);
 
     this.buffers = new FluidBuffers(this.device, spawn, {
-      gridTotalCells: this.gridTotalCells
+      gridTotalCells: this.gridTotalCells,
     });
 
     this.physics.createBindGroups(this.buffers, this.physicsUniforms);
@@ -139,7 +172,11 @@ export class FluidSimulation {
 
     // Initial splat to ensure density texture is populated for rendering
     const encoder = this.device.createCommandEncoder();
-    this.splatPipeline.dispatch(encoder, this.buffers.particleCount, this.config);
+    this.splatPipeline.dispatch(
+      encoder,
+      this.buffers.particleCount,
+      this.config
+    );
     this.device.queue.submit([encoder.finish()]);
   }
 
@@ -169,7 +206,9 @@ export class FluidSimulation {
   async step(dt: number): Promise<void> {
     const { config, buffers, device } = this;
 
-    const maxDeltaTime = config.maxTimestepFPS ? 1 / config.maxTimestepFPS : Number.POSITIVE_INFINITY;
+    const maxDeltaTime = config.maxTimestepFPS
+      ? 1 / config.maxTimestepFPS
+      : Number.POSITIVE_INFINITY;
     const frameTime = Math.min(dt * config.timeScale, maxDeltaTime);
     const timeStep = frameTime / config.iterationsPerFrame;
 
@@ -179,7 +218,11 @@ export class FluidSimulation {
 
     // Update interaction point via GPU picking
     let pickingDispatched = false;
-    if (!this.isPicking && this.state.input.rayOrigin && this.state.input.rayDir) {
+    if (
+      !this.isPicking &&
+      this.state.input.rayOrigin &&
+      this.state.input.rayDir
+    ) {
       this.isPicking = true;
       pickingDispatched = true;
       this.pickingSystem.dispatch(
@@ -208,7 +251,7 @@ export class FluidSimulation {
 
     // Read back picking result AFTER submission
     if (pickingDispatched) {
-      this.pickingSystem.getResult().then(res => {
+      this.pickingSystem.getResult().then((res) => {
         if (res && res.hit) {
           let tx = res.hitPos.x;
           let ty = res.hitPos.y;
@@ -234,9 +277,12 @@ export class FluidSimulation {
 
     // Smoothly interpolate the actual interaction position to avoid "splashing"
     const lerp = 0.15; // Damping factor
-    this.interactionPos.x += (this.state.input.worldX - this.interactionPos.x) * lerp;
-    this.interactionPos.y += (this.state.input.worldY - this.interactionPos.y) * lerp;
-    this.interactionPos.z += (this.state.input.worldZ - this.interactionPos.z) * lerp;
+    this.interactionPos.x +=
+      (this.state.input.worldX - this.interactionPos.x) * lerp;
+    this.interactionPos.y +=
+      (this.state.input.worldY - this.interactionPos.y) * lerp;
+    this.interactionPos.z +=
+      (this.state.input.worldZ - this.interactionPos.z) * lerp;
   }
 
   private updateUniforms(timeStep: number): void {
@@ -255,7 +301,11 @@ export class FluidSimulation {
     this.computeData[5] = this.interactionPos.y;
     this.computeData[6] = this.interactionPos.z;
     this.computeData[7] = 0;
-    device.queue.writeBuffer(this.physicsUniforms.external, 0, this.computeData);
+    device.queue.writeBuffer(
+      this.physicsUniforms.external,
+      0,
+      this.computeData
+    );
 
     // 2. Hash
     this.hashParamsData[0] = config.smoothingRadius;
@@ -279,9 +329,21 @@ export class FluidSimulation {
     this.scanParamsDataL0[0] = this.gridTotalCells + 1;
     this.scanParamsDataL1[0] = blocksL0;
     this.scanParamsDataL2[0] = blocksL1;
-    device.queue.writeBuffer(this.gridUniforms.scanL0, 0, this.scanParamsDataL0);
-    device.queue.writeBuffer(this.gridUniforms.scanL1, 0, this.scanParamsDataL1);
-    device.queue.writeBuffer(this.gridUniforms.scanL2, 0, this.scanParamsDataL2);
+    device.queue.writeBuffer(
+      this.gridUniforms.scanL0,
+      0,
+      this.scanParamsDataL0
+    );
+    device.queue.writeBuffer(
+      this.gridUniforms.scanL1,
+      0,
+      this.scanParamsDataL1
+    );
+    device.queue.writeBuffer(
+      this.gridUniforms.scanL2,
+      0,
+      this.scanParamsDataL2
+    );
 
     // 5. Density
     const radius = config.smoothingRadius;
@@ -299,7 +361,11 @@ export class FluidSimulation {
     this.densityParamsData[9] = this.gridRes.y;
     this.densityParamsData[10] = this.gridRes.z;
     this.densityParamsData[11] = 0;
-    device.queue.writeBuffer(this.physicsUniforms.density, 0, this.densityParamsData);
+    device.queue.writeBuffer(
+      this.physicsUniforms.density,
+      0,
+      this.densityParamsData
+    );
 
     // 6. Pressure
     const spikyPow2DerivScale = 15 / (Math.PI * Math.pow(radius, 5));
@@ -320,7 +386,11 @@ export class FluidSimulation {
     this.pressureParamsData[13] = this.gridRes.y;
     this.pressureParamsData[14] = this.gridRes.z;
     this.pressureParamsData[15] = 0;
-    device.queue.writeBuffer(this.physicsUniforms.pressure, 0, this.pressureParamsData);
+    device.queue.writeBuffer(
+      this.physicsUniforms.pressure,
+      0,
+      this.pressureParamsData
+    );
 
     // 7. Viscosity
     const poly6Scale = 315 / (64 * Math.PI * Math.pow(radius, 9));
@@ -336,7 +406,11 @@ export class FluidSimulation {
     this.viscosityParamsData[9] = this.gridRes.y;
     this.viscosityParamsData[10] = this.gridRes.z;
     this.viscosityParamsData[11] = 0;
-    device.queue.writeBuffer(this.physicsUniforms.viscosity, 0, this.viscosityParamsData);
+    device.queue.writeBuffer(
+      this.physicsUniforms.viscosity,
+      0,
+      this.viscosityParamsData
+    );
 
     // 8. Integrate
     this.integrateData[0] = timeStep;
@@ -344,12 +418,13 @@ export class FluidSimulation {
     const obstacleShape = config.obstacleShape ?? 'box';
     const obstacleIsSphere = obstacleShape === 'sphere';
     const obstacleRadius = config.obstacleRadius ?? 0;
-    const hasObstacle = (config.showObstacle !== false) &&
+    const hasObstacle =
+      config.showObstacle !== false &&
       (obstacleIsSphere
         ? obstacleRadius > 0
-        : (config.obstacleSize.x > 0 &&
+        : config.obstacleSize.x > 0 &&
           config.obstacleSize.y > 0 &&
-          config.obstacleSize.z > 0));
+          config.obstacleSize.z > 0);
     this.integrateData[2] = hasObstacle ? 1 : 0;
     this.integrateData[3] = obstacleIsSphere ? 1 : 0;
     const size = config.boundsSize;
@@ -367,16 +442,26 @@ export class FluidSimulation {
       ? config.obstacleCentre.y
       : config.obstacleCentre.y + config.obstacleSize.y * 0.5;
     this.integrateData[14] = config.obstacleCentre.z;
-    const obsHalfX = obstacleIsSphere ? obstacleRadius : config.obstacleSize.x * 0.5;
-    const obsHalfY = obstacleIsSphere ? obstacleRadius : config.obstacleSize.y * 0.5;
-    const obsHalfZ = obstacleIsSphere ? obstacleRadius : config.obstacleSize.z * 0.5;
+    const obsHalfX = obstacleIsSphere
+      ? obstacleRadius
+      : config.obstacleSize.x * 0.5;
+    const obsHalfY = obstacleIsSphere
+      ? obstacleRadius
+      : config.obstacleSize.y * 0.5;
+    const obsHalfZ = obstacleIsSphere
+      ? obstacleRadius
+      : config.obstacleSize.z * 0.5;
     this.integrateData[16] = obsHalfX;
     this.integrateData[17] = obsHalfY;
     this.integrateData[18] = obsHalfZ;
     this.integrateData[20] = config.obstacleRotation.x;
     this.integrateData[21] = config.obstacleRotation.y;
     this.integrateData[22] = config.obstacleRotation.z;
-    device.queue.writeBuffer(this.physicsUniforms.integrate, 0, this.integrateData);
+    device.queue.writeBuffer(
+      this.physicsUniforms.integrate,
+      0,
+      this.integrateData
+    );
   }
 
   render(camera: OrbitCamera): void {

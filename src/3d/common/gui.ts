@@ -331,7 +331,8 @@ export function setupGui(
         opacity: 1.0;
         letter-spacing: 0.01em;
       `;
-      author.innerHTML = 'Original Author: <a href="https://github.com/SebLague" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Sebastian Lague</a>';
+      author.innerHTML =
+        'Original Author: <a href="https://github.com/SebLague" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Sebastian Lague</a>';
       aboutContent.appendChild(author);
 
       const webgpuAuthor = document.createElement('div');
@@ -342,7 +343,8 @@ export function setupGui(
         opacity: 1.0;
         letter-spacing: 0.01em;
       `;
-      webgpuAuthor.innerHTML = 'WebGPU Author: <a href="https://github.com/jeantimex" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">jeantimex</a>';
+      webgpuAuthor.innerHTML =
+        'WebGPU Author: <a href="https://github.com/jeantimex" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">jeantimex</a>';
       aboutContent.appendChild(webgpuAuthor);
 
       const youtube = document.createElement('div');
@@ -370,7 +372,7 @@ export function setupGui(
           padding: 5px 11px 10px 11px;
           border-top: 1px solid rgba(255, 255, 255, 0.1);
         `;
-        
+
         const featLabel = document.createElement('div');
         featLabel.style.cssText = `
           font-size: 10px;
@@ -390,7 +392,7 @@ export function setupGui(
           opacity: 0.7;
           line-height: 1.4;
         `;
-        options.features.forEach(f => {
+        options.features.forEach((f) => {
           const li = document.createElement('li');
           li.textContent = f;
           list.appendChild(li);
@@ -405,7 +407,7 @@ export function setupGui(
           padding: 5px 11px 10px 11px;
           border-top: 1px solid rgba(255, 255, 255, 0.1);
         `;
-        
+
         const intLabel = document.createElement('div');
         intLabel.style.cssText = `
           font-size: 10px;
@@ -425,7 +427,7 @@ export function setupGui(
           opacity: 0.7;
           line-height: 1.4;
         `;
-        options.interactions.forEach(i => {
+        options.interactions.forEach((i) => {
           const li = document.createElement('li');
           li.textContent = i;
           list.appendChild(li);
@@ -517,7 +519,10 @@ export function setupGui(
   const obstacleFolder = gui.addFolder('Obstacle');
   obstacleFolder.close();
 
-  const obstacleShapeOptions = { 'Rectangular Cuboid': 'box', Sphere: 'sphere' };
+  const obstacleShapeOptions = {
+    'Rectangular Cuboid': 'box',
+    Sphere: 'sphere',
+  };
   if (!config.obstacleShape) {
     config.obstacleShape = 'box';
   }
@@ -611,16 +616,23 @@ export function setupGui(
   // Wireframe toggle (only for ParticlesConfig which has this property)
   if ('showBoundsWireframe' in config) {
     const wireframeConfig = config as any;
-    containerFolder.add(wireframeConfig, 'showBoundsWireframe').name('Show Wireframe');
+    containerFolder
+      .add(wireframeConfig, 'showBoundsWireframe')
+      .name('Show Wireframe');
 
     if (wireframeConfig.boundsWireframeColor) {
-      const wireframeColorState = { color: rgbToHex(wireframeConfig.boundsWireframeColor) };
-      containerFolder.addColor(wireframeColorState, 'color').name('Wireframe Color').onChange((value: string) => {
-        const rgb = hexToRgb(value);
-        wireframeConfig.boundsWireframeColor.r = rgb.r / 255;
-        wireframeConfig.boundsWireframeColor.g = rgb.g / 255;
-        wireframeConfig.boundsWireframeColor.b = rgb.b / 255;
-      });
+      const wireframeColorState = {
+        color: rgbToHex(wireframeConfig.boundsWireframeColor),
+      };
+      containerFolder
+        .addColor(wireframeColorState, 'color')
+        .name('Wireframe Color')
+        .onChange((value: string) => {
+          const rgb = hexToRgb(value);
+          wireframeConfig.boundsWireframeColor.r = rgb.r / 255;
+          wireframeConfig.boundsWireframeColor.g = rgb.g / 255;
+          wireframeConfig.boundsWireframeColor.b = rgb.b / 255;
+        });
     }
   }
 
@@ -641,17 +653,25 @@ export function setupGui(
         .name('Sun Brightness');
     }
     if (!('densityTextureRes' in config) && 'shadowSoftness' in config) {
-      envFolder.add(envConfig, 'shadowSoftness', 0, 4, 0.05).name('Shadow Softness');
+      envFolder
+        .add(envConfig, 'shadowSoftness', 0, 4, 0.05)
+        .name('Shadow Softness');
       if ('shadowRadiusScale' in config) {
-        envFolder.add(envConfig, 'shadowRadiusScale', 0.2, 3.0, 0.05).name('Shadow Radius');
+        envFolder
+          .add(envConfig, 'shadowRadiusScale', 0.2, 3.0, 0.05)
+          .name('Shadow Radius');
       }
     }
 
     if (typeof envConfig.globalBrightness === 'number') {
-      envFolder.add(envConfig, 'globalBrightness', 0.1, 4.0, 0.1).name('Brightness');
+      envFolder
+        .add(envConfig, 'globalBrightness', 0.1, 4.0, 0.1)
+        .name('Brightness');
     }
     if (typeof envConfig.globalSaturation === 'number') {
-      envFolder.add(envConfig, 'globalSaturation', 0.0, 2.0, 0.1).name('Saturation');
+      envFolder
+        .add(envConfig, 'globalSaturation', 0.0, 2.0, 0.1)
+        .name('Saturation');
     }
 
     // Tile Colors
@@ -670,10 +690,22 @@ export function setupGui(
       envConfig[key].b = Math.pow(rgb.b / 255, 2.2);
     };
 
-    envFolder.addColor(tileColorState, 'tileCol1').name('Tile Color 1').onChange(updateTileColor('tileCol1'));
-    envFolder.addColor(tileColorState, 'tileCol2').name('Tile Color 2').onChange(updateTileColor('tileCol2'));
-    envFolder.addColor(tileColorState, 'tileCol3').name('Tile Color 3').onChange(updateTileColor('tileCol3'));
-    envFolder.addColor(tileColorState, 'tileCol4').name('Tile Color 4').onChange(updateTileColor('tileCol4'));
+    envFolder
+      .addColor(tileColorState, 'tileCol1')
+      .name('Tile Color 1')
+      .onChange(updateTileColor('tileCol1'));
+    envFolder
+      .addColor(tileColorState, 'tileCol2')
+      .name('Tile Color 2')
+      .onChange(updateTileColor('tileCol2'));
+    envFolder
+      .addColor(tileColorState, 'tileCol3')
+      .name('Tile Color 3')
+      .onChange(updateTileColor('tileCol3'));
+    envFolder
+      .addColor(tileColorState, 'tileCol4')
+      .name('Tile Color 4')
+      .onChange(updateTileColor('tileCol4'));
   }
 
   if ('shadowSoftness' in config) {

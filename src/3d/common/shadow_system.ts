@@ -23,7 +23,7 @@ export class ShadowSystem {
   readonly shadowTexture: GPUTexture;
   readonly shadowSampler: GPUSampler;
   readonly uniformBuffer: GPUBuffer;
-  
+
   // Pipelines
   private particlePipeline: GPURenderPipeline;
   private meshPipeline: GPURenderPipeline;
@@ -37,7 +37,8 @@ export class ShadowSystem {
     // 1. Shadow Map Texture (2048x2048)
     this.shadowTexture = device.createTexture({
       size: [2048, 2048],
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       format: 'depth24plus',
     });
 
@@ -69,14 +70,22 @@ export class ShadowSystem {
       layout: 'auto',
       vertex: { module: particleModule, entryPoint: 'vs_particles' },
       primitive: { topology: 'triangle-list' },
-      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
     });
 
     this.meshPipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: meshModule, entryPoint: 'vs_mesh' },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
-      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
     });
 
     this.obstaclePipeline = device.createRenderPipeline({
@@ -92,7 +101,11 @@ export class ShadowSystem {
         ],
       },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
-      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+      },
     });
   }
 
@@ -100,14 +113,38 @@ export class ShadowSystem {
    * Updates light view-projection and uploads uniforms.
    */
   update(config: ShadowConfig) {
-    const { dirToSun, boundsSize, floorSize, shadowSoftness, particleShadowRadius } = config;
+    const {
+      dirToSun,
+      boundsSize,
+      floorSize,
+      shadowSoftness,
+      particleShadowRadius,
+    } = config;
 
     // Calculate Matrix
-    const lightDistance = Math.max(boundsSize.x + boundsSize.z, floorSize.x + floorSize.z);
+    const lightDistance = Math.max(
+      boundsSize.x + boundsSize.z,
+      floorSize.x + floorSize.z
+    );
     const orthoSize = lightDistance * 0.6;
-    const lightPos = { x: dirToSun.x * lightDistance, y: dirToSun.y * lightDistance, z: dirToSun.z * lightDistance };
-    const lightView = mat4LookAt(lightPos, { x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
-    const lightProj = mat4Ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1, lightDistance * 3.0);
+    const lightPos = {
+      x: dirToSun.x * lightDistance,
+      y: dirToSun.y * lightDistance,
+      z: dirToSun.z * lightDistance,
+    };
+    const lightView = mat4LookAt(
+      lightPos,
+      { x: 0, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 }
+    );
+    const lightProj = mat4Ortho(
+      -orthoSize,
+      orthoSize,
+      -orthoSize,
+      orthoSize,
+      0.1,
+      lightDistance * 3.0
+    );
     const lightVP = mat4Multiply(lightProj, lightView);
     this.lightViewProj.set(lightVP);
 
@@ -171,9 +208,7 @@ export class ShadowSystem {
       pass.setPipeline(this.obstaclePipeline);
       const bg = this.device.createBindGroup({
         layout: this.obstaclePipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: this.uniformBuffer } },
-        ],
+        entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
       });
       pass.setBindGroup(0, bg);
       pass.setVertexBuffer(0, obstacleVertexBuffer);

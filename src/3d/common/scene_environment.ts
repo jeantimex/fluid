@@ -40,10 +40,10 @@ export class SceneEnvironment {
     // 3. Create Background Pipeline (Full-screen triangle)
     const bgCode = preprocessShader(backgroundShader, {
       '../../common/shaders/environment.wgsl': environmentShader,
-      // shadow_common is NOT used by the base background pass usually, 
+      // shadow_common is NOT used by the base background pass usually,
       // but let's provide it if the shader expects it.
     });
-    
+
     const bgModule = device.createShaderModule({ code: bgCode });
     this.backgroundPipeline = device.createRenderPipeline({
       layout: device.createPipelineLayout({
@@ -82,9 +82,7 @@ export class SceneEnvironment {
   createBindGroup(): GPUBindGroup {
     return this.device.createBindGroup({
       layout: this.bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: this.uniformBuffer } },
-      ],
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
     });
   }
 

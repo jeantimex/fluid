@@ -7,15 +7,13 @@ import type { InputState } from '../../common/types.ts';
 import type { AdapterInitOptions, FluidAppAdapter } from '../types.ts';
 import { resizeCanvasToDisplaySize } from './shared.ts';
 
-export class MarchingCubesAdapter
-  implements FluidAppAdapter<MarchingCubesConfig>
-{
+export class MarchingCubesAdapter implements FluidAppAdapter<MarchingCubesConfig> {
   readonly name = 'Marching Cubes';
   readonly config: MarchingCubesConfig = {
     ...createConfig(),
     ...createDefaultEnvironmentConfig(),
-    viscosityStrength: 0.001,
-    iterationsPerFrame: 3,
+    viscosityStrength: 0.01,
+    iterationsPerFrame: 2,
     densityTextureRes: 150,
     isoLevel: 75,
     surfaceColor: { r: 15 / 255, g: 91 / 255, b: 234 / 255 },
