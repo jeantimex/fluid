@@ -2,7 +2,7 @@
 
 WebGPU fluid simulation using Smoothed Particle Hydrodynamics (SPH).
 
-This project explores various rendering and simulation techniques for real-time fluids in the browser, leveraging the power of WebGPU for both compute-heavy physics and advanced visualization pipelines.
+This project is ported from [Sebastian Lague](https://github.com/SebLague)'s [Fluid-Sim](https://github.com/SebLague/Fluid-Sim) Unity project, which explores various rendering and simulation techniques for real-time fluids in the browser, leveraging the power of WebGPU for both compute-heavy physics and advanced visualization pipelines.
 
 ## Live Demo
 
@@ -34,7 +34,21 @@ Renders fluid particles as camera-facing quads.
 - **Techniques**: Vertex pulling, indirect instanced rendering, and frustum culling.
 - **Shading**: Features dynamic shadow mapping and velocity-based color gradients.
 
-#### 2. Screen-Space Fluid (webgpu_screen_space)
+#### 2. Marching Cubes (webgpu_marching_cubes)
+
+Extracts a polygonal mesh from the fluid density field in real-time.
+
+- **Techniques**: GPU-based Marching Cubes algorithm, density probing, and hardware-accelerated mesh rendering.
+- **Visuals**: Classic "metaball" look with a solid, reflective surface.
+
+#### 3. Volumetric Raymarching (webgpu_raymarch)
+
+Visualizes the fluid by marching rays through a density field.
+
+- **Techniques**: Signed Distance Fields (SDF) approximation from particles, volumetric lighting, and refraction.
+- **Visuals**: Provides a thick, jelly-like or deep-water aesthetic with realistic light extinction.
+
+#### 4. Screen-Space Fluid (webgpu_screen_space)
 
 A high-end rendering pipeline that treats fluid as a continuous surface.
 
@@ -45,20 +59,6 @@ A high-end rendering pipeline that treats fluid as a continuous surface.
   4. **Normal Pass**: Reconstructs surface normals from the depth buffer.
   5. **Foam Simulation**: Advects foam particles based on trapped air and kinetic energy.
   6. **Composite**: Final shading with refraction, Fresnel effects, and shadows.
-
-#### 3. Volumetric Raymarching (webgpu_raymarch)
-
-Visualizes the fluid by marching rays through a density field.
-
-- **Techniques**: Signed Distance Fields (SDF) approximation from particles, volumetric lighting, and refraction.
-- **Visuals**: Provides a thick, jelly-like or deep-water aesthetic with realistic light extinction.
-
-#### 4. Marching Cubes (webgpu_marching_cubes)
-
-Extracts a polygonal mesh from the fluid density field in real-time.
-
-- **Techniques**: GPU-based Marching Cubes algorithm, density probing, and hardware-accelerated mesh rendering.
-- **Visuals**: Classic "metaball" look with a solid, reflective surface.
 
 #### 5. Unified Dashboard (webgpu_fluid)
 
@@ -93,14 +93,11 @@ npm run dev
 ```bash
 # Build the project
 npm run build
-
-# Deploy to GitHub Pages
-npm run deploy
 ```
 
 ## Inspiration and Credits
 
-- Inspired by Sebastian Lague's "Coding Adventure: Simulating Fluids" and "Rendering Fluids".
+- Inspired by [Sebastian Lague](https://github.com/SebLague)'s "[Coding Adventure: Simulating Fluids](youtube.com/watch?si=oe9BznpAUnMWUslT&v=rSKMYc1CQHE&feature=youtu.be)" and "[Rendering Fluids](https://www.youtube.com/watch?v=kOkfC5fLfgE)".
 - Based on the Smoothed Particle Hydrodynamics (SPH) formulation for incompressible flow.
 
 ## License
