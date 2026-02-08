@@ -54,37 +54,166 @@ export function setupGui(
   if (parentGui) {
     gui = parentGui;
   } else {
-    const container = document.createElement('div');
-    container.style.cssText = `
-      position: fixed;
-      top: 0;
-      right: 0;
-      z-index: 1000;
-    `;
-    document.body.appendChild(container);
-
-    if (options.title) {
-      const header = document.createElement('div');
-      header.style.cssText = `
+    // Add CSS for the collapsible GUI
+    const style = document.createElement('style');
+    style.textContent = `
+      #gui-container {
+        position: fixed;
+        top: 0;
+        right: 0;
+        z-index: 1000;
         background: #1a1a1a;
         color: #fff;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         box-sizing: border-box;
-      `;
-
-      const heading = document.createElement('div');
-      heading.style.cssText = `
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        width: 280px;
+        max-width: 100vw;
+        height: auto;
+        max-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        user-select: none;
+        overflow: hidden;
+      }
+      #gui-container.collapsed {
+        width: 44px;
+        height: 44px;
+        border-radius: 22px;
+        top: 10px;
+        right: 10px;
+        cursor: pointer;
+        overflow: hidden;
+      }
+      #gui-container.collapsed:hover {
+        background: #2a2a2a;
+      }
+      #gui-container .gui-content-wrapper {
+        transition: opacity 0.2s ease;
+        opacity: 1;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        flex-grow: 1;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+      }
+      #gui-container .gui-content-wrapper::-webkit-scrollbar {
+        width: 6px;
+      }
+      #gui-container .gui-content-wrapper::-webkit-scrollbar-thumb {
+        background-color: rgba(255, 255, 255, 0.2);
+        border-radius: 3px;
+      }
+      #gui-container.collapsed .gui-content-wrapper {
+        opacity: 0;
+        pointer-events: none;
+        display: none;
+      }
+      #gui-container .gui-toggle-btn {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+      }
+      #gui-container .gui-toggle-btn:hover {
+        opacity: 1;
+      }
+      #gui-container.collapsed .gui-toggle-btn {
+        opacity: 1;
+      }
+      #gui-container .gui-header-main {
+        display: flex;
+        align-items: center;
+        background: #1a1a1a;
+        flex-shrink: 0;
+      }
+      #gui-container .gui-title-area {
+        flex-grow: 1;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 10px 11px 5px 11px;
+        padding-right: 11px;
+        overflow: hidden;
+      }
+      #gui-container.collapsed .gui-title-area {
+        display: none;
+      }
+      #gui-container .lil-gui.root,
+      #gui-container .lil-gui.lil-root {
+        width: 100% !important;
+        border: none;
+        box-shadow: none;
+        background: transparent;
+      }
+      #gui-container .lil-gui.root > .children,
+      #gui-container .lil-gui.lil-root > .children {
+        border: none;
+      }
+      @media (max-width: 480px) {
+        #gui-container:not(.collapsed) {
+          width: 100vw;
+          top: 0;
+          right: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+
+    const container = document.createElement('div');
+    container.id = 'gui-container';
+    document.body.appendChild(container);
+
+    const headerMain = document.createElement('div');
+    headerMain.className = 'gui-header-main';
+    container.appendChild(headerMain);
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'gui-toggle-btn';
+    toggleBtn.innerHTML = '<span class="material-icons">menu</span>';
+    headerMain.appendChild(toggleBtn);
+
+    const titleArea = document.createElement('div');
+    titleArea.className = 'gui-title-area';
+    headerMain.appendChild(titleArea);
+
+    const contentWrapper = document.createElement('div');
+    contentWrapper.className = 'gui-content-wrapper';
+    container.appendChild(contentWrapper);
+
+    const toggleCollapse = (e?: Event) => {
+      if (e) e.stopPropagation();
+      container.classList.toggle('collapsed');
+    };
+
+    toggleBtn.onclick = toggleCollapse;
+    container.onclick = () => {
+      if (container.classList.contains('collapsed')) {
+        container.classList.remove('collapsed');
+      }
+    };
+
+    if (options.title) {
+      const titleSpan = document.createElement('span');
+      titleSpan.style.cssText = `
         font-size: 16px;
         font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       `;
-
-      const titleSpan = document.createElement('span');
       titleSpan.textContent = options.title;
-      heading.appendChild(titleSpan);
+      titleArea.appendChild(titleSpan);
 
       if (options.githubUrl) {
         const githubLink = document.createElement('a');
@@ -98,6 +227,7 @@ export function setupGui(
           color: #fff;
           opacity: 0.7;
           transition: opacity 0.2s;
+          margin-left: 10px;
         `;
         githubLink.onpointerenter = () => (githubLink.style.opacity = '1');
         githubLink.onpointerleave = () => (githubLink.style.opacity = '0.7');
@@ -106,10 +236,15 @@ export function setupGui(
             <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
           </svg>
         `;
-        heading.appendChild(githubLink);
+        titleArea.appendChild(githubLink);
       }
 
-      header.appendChild(heading);
+      const header = document.createElement('div');
+      header.style.cssText = `
+        background: #1a1a1a;
+        color: #fff;
+        box-sizing: border-box;
+      `;
 
       // --- Custom Collapsible About Section ---
       const aboutSection = document.createElement('div');
@@ -300,12 +435,11 @@ export function setupGui(
 
       aboutSection.appendChild(aboutHeader);
       aboutSection.appendChild(aboutContent);
-      header.appendChild(aboutSection);
-
-      container.appendChild(header);
+      contentWrapper.appendChild(header);
+      contentWrapper.appendChild(aboutSection);
     }
 
-    gui = new GUI({ container, title: 'Simulation Settings' });
+    gui = new GUI({ container: contentWrapper, title: 'Simulation Settings' });
   }
 
   if (parentStats) {
