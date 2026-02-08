@@ -4,10 +4,6 @@ WebGPU fluid simulation using Smoothed Particle Hydrodynamics (SPH).
 
 This project is ported from [Sebastian Lague](https://github.com/SebLague)'s [Fluid-Sim](https://github.com/SebLague/Fluid-Sim) Unity project, which explores various rendering and simulation techniques for real-time fluids in the browser, leveraging the power of WebGPU for both compute-heavy physics and advanced visualization pipelines.
 
-## Live Demo
-
-[View the Live Simulation](https://jeantimex.github.io/fluid/)
-
 ## Key Features
 
 - **GPU-Accelerated SPH**: Physics calculations (Density, Pressure, Viscosity) run entirely in WebGPU compute shaders.

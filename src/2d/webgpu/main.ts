@@ -264,7 +264,19 @@ let simulation: FluidSimulation | null = null;
 
 // Setup GUI controls and performance stats
 // trackGPU: true enables GPU timing measurements in stats-gl
-const { stats } = setupGui(
+let pauseController: any;
+const guiState = {
+  paused: false,
+  togglePause: () => {
+    guiState.paused = !guiState.paused;
+    if (pauseController) {
+      pauseController.name(guiState.paused ? 'Resume' : 'Pause');
+    }
+  },
+  reset: () => simulation?.reset(),
+};
+
+const { stats, gui } = setupGui(
   config,
   {
     // Callback when reset button is clicked
@@ -291,6 +303,10 @@ const { stats } = setupGui(
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
+
+// Add Pause and Reset Buttons at the end
+pauseController = gui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
+gui.add(guiState, 'reset').name('Reset Simulation');
 
 /**
  * Main initialization and animation loop.
@@ -363,10 +379,12 @@ async function main(): Promise<void> {
     const dt = Math.min(0.033, (now - lastTime) / 1000);
     lastTime = now;
 
-    // Advance simulation by one frame
-    await simulation!.step(dt);
+    if (!guiState.paused) {
+      // Advance simulation by one frame
+      await simulation!.step(dt);
+    }
 
-    // Render current state
+    // Always render current state
     simulation!.render();
 
     // End performance measurement and update display

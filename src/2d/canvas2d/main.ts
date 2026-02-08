@@ -28,7 +28,19 @@ const canvas = document.querySelector<HTMLCanvasElement>('#sim-canvas')!;
 const sim = createSim(canvas);
 
 // === GUI Setup ===
-const { stats } = setupGui(
+let pauseController: any;
+const guiState = {
+  paused: false,
+  togglePause: () => {
+    guiState.paused = !guiState.paused;
+    if (pauseController) {
+      pauseController.name(guiState.paused ? 'Resume' : 'Pause');
+    }
+  },
+  reset: () => sim.reset(),
+};
+
+const { stats, gui } = setupGui(
   sim.config,
   {
     onReset: () => sim.reset(),
@@ -53,6 +65,10 @@ const { stats } = setupGui(
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
+
+// Add Pause and Reset Buttons at the end
+pauseController = gui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
+gui.add(guiState, 'reset').name('Reset Simulation');
 
 // === Animation Loop ===
 
@@ -86,8 +102,12 @@ function frame(now: number): void {
   const dt = Math.min(0.033, (now - lastTime) / 1000);
   lastTime = now;
 
-  // Run simulation step and render
-  sim.step(dt);
+  if (!guiState.paused) {
+    // Run simulation step
+    sim.step(dt);
+  }
+
+  // Always draw the current state
   sim.draw();
 
   // End stats measurement and update display
