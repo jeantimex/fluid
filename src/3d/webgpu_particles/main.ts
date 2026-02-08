@@ -21,8 +21,9 @@
  * main.ts (this file)
  *    │
  *    ├─► FluidSimulation    (simulation orchestrator)
- *    │      ├─► SimulationBuffers   (GPU memory management)
- *    │      ├─► ComputePipelines    (compute shader pipelines)
+ *    │      ├─► FluidBuffers        (GPU memory management)
+ *    │      ├─► SpatialGrid         (linear grid sorting)
+ *    │      ├─► FluidPhysics        (SPH compute pipelines)
  *    │      └─► Renderer            (particle visualization)
  *    │
  *    ├─► OrbitCamera        (3D camera controls)
@@ -47,16 +48,17 @@
 
 import './style.css';
 import { createConfig } from '../common/config.ts';
+import { createDefaultEnvironmentConfig } from '../common/environment.ts';
 import { setupGui } from '../common/gui.ts';
 import { FluidSimulation } from './fluid_simulation.ts';
-import { OrbitCamera } from './orbit_camera.ts';
-import { rayBoxIntersection, vec3Add, vec3Scale } from './math_utils.ts';
+import type { ParticlesConfig } from './types.ts';
+import { OrbitCamera } from '../common/orbit_camera.ts';
 import {
   initWebGPU,
   configureContext,
   WebGPUInitError,
-} from './webgpu_utils.ts';
-import type { InputState, SimConfig } from '../common/types.ts';
+} from '../common/webgpu_utils.ts';
+import { setupInputHandlers } from '../common/input_handler.ts';
 
 /**
  * Creates and inserts a canvas element into the application container.
@@ -79,308 +81,6 @@ function createCanvas(app: HTMLDivElement): HTMLCanvasElement {
   return canvas;
 }
 
-/**
- * Sets up all mouse/touch input handlers for camera control and particle interaction.
- *
- * ## Input Modes
- *
- * The input system distinguishes between two modes:
- *
- * 1. **Camera Mode** (clicking outside the bounding box or middle mouse):
- *    - Drag to orbit camera around the scene
- *    - Scroll to zoom in/out
- *
- * 2. **Particle Interaction Mode** (clicking inside the bounding box):
- *    - Left click + drag: Pull force (attracts particles)
- *    - Right click + drag: Push force (repels particles)
- *
- * ## Ray Casting
- *
- * To determine where the user clicked in 3D space:
- * 1. Convert mouse position to Normalized Device Coordinates (NDC)
- * 2. Construct a ray from the camera through the clicked point
- * 3. Test ray intersection with the simulation bounding box
- * 4. If hit, compute the 3D world position on a plane facing the camera
- *
- * @param canvas - The canvas element to attach handlers to
- * @param getInput - Function that returns the current input state (may be undefined during initialization)
- * @param camera - The orbit camera instance for controlling view
- * @param config - Simulation configuration containing bounds size
- */
-function setupInputHandlers(
-  canvas: HTMLCanvasElement,
-  getInput: () => InputState | undefined,
-  camera: OrbitCamera,
-  config: SimConfig
-) {
-  // ==========================================================================
-  // State Variables
-  // ==========================================================================
-
-  /** True when user is dragging to rotate the camera */
-  let isDraggingCamera = false;
-
-  /** True when user is interacting with particles (push/pull) */
-  let isInteractingParticle = false;
-
-  /** Last mouse X position for calculating drag delta */
-  let lastX = 0;
-
-  /** Last mouse Y position for calculating drag delta */
-  let lastY = 0;
-
-  // ==========================================================================
-  // Ray Casting Utilities
-  // ==========================================================================
-
-  /**
-   * Constructs a 3D ray from the camera through a screen point.
-   *
-   * ## Algorithm
-   *
-   * 1. Convert screen coordinates to NDC (Normalized Device Coordinates):
-   *    - NDC X: (screenX / width) * 2 - 1  → [-1, 1]
-   *    - NDC Y: -((screenY / height) * 2 - 1) → [-1, 1] (Y is flipped)
-   *
-   * 2. Calculate the ray direction in world space:
-   *    - Use the camera's basis vectors (right, up, forward)
-   *    - Apply perspective correction using FOV and aspect ratio
-   *    - direction = forward + right * (ndcX * aspect * tan(fov/2)) + up * (ndcY * tan(fov/2))
-   *
-   * 3. Normalize the direction vector
-   *
-   * @param clientX - Mouse X position in client coordinates
-   * @param clientY - Mouse Y position in client coordinates
-   * @returns Ray object with origin (camera position) and normalized direction
-   */
-  const getRay = (clientX: number, clientY: number) => {
-    const rect = canvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-
-    // Convert to NDC (Normalized Device Coordinates)
-    // NDC ranges from -1 to 1 in both axes
-    const nx = (x / rect.width) * 2 - 1;
-    const ny = -((y / rect.height) * 2 - 1); // Flip Y (screen Y is down, NDC Y is up)
-
-    // Perspective projection parameters
-    const fov = Math.PI / 3; // 60 degrees field of view (matches renderer)
-    const tanFov = Math.tan(fov / 2);
-    const aspect = canvas.width / canvas.height;
-
-    // Get camera basis vectors in world space
-    const { right, up, forward } = camera.basis;
-
-    // Construct ray direction:
-    // Start with forward direction, then offset based on where on screen we clicked
-    // The offset is scaled by FOV and aspect ratio for perspective-correct ray
-    const dir = vec3Add(
-      forward,
-      vec3Add(
-        vec3Scale(right, nx * aspect * tanFov),
-        vec3Scale(up, ny * tanFov)
-      )
-    );
-
-    // Normalize the direction vector
-    const len = Math.sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
-    return {
-      origin: camera.position,
-      dir: { x: dir.x / len, y: dir.y / len, z: dir.z / len },
-    };
-  };
-
-  /**
-   * Calculates the intersection point between a ray and a plane facing the camera.
-   *
-   * The plane passes through the scene origin (0,0,0) and faces the camera.
-   * This is used to convert 2D mouse position to 3D world coordinates for
-   * particle interaction.
-   *
-   * ## Math
-   *
-   * Plane equation: dot(P - Origin, Normal) = 0
-   * Ray equation: P = RayOrigin + t * RayDirection
-   *
-   * Substituting ray into plane:
-   * dot(RayOrigin + t * RayDir - Origin, Normal) = 0
-   * t = dot(Origin - RayOrigin, Normal) / dot(RayDir, Normal)
-   *
-   * @param ray - The ray to intersect with the plane
-   * @returns The 3D intersection point, or null if ray is parallel to plane
-   */
-  const getPlaneIntersection = (ray: { origin: any; dir: any }) => {
-    // Use camera forward as the plane normal
-    // The plane faces the camera (perpendicular to view direction)
-    const N = camera.basis.forward;
-
-    // Calculate denominator: dot(RayDirection, PlaneNormal)
-    // If near zero, ray is parallel to plane
-    const denom = ray.dir.x * N.x + ray.dir.y * N.y + ray.dir.z * N.z;
-    if (Math.abs(denom) < 1e-6) return null;
-
-    // Calculate numerator: dot(PlaneOrigin - RayOrigin, PlaneNormal)
-    // Plane origin is at (0,0,0), so this simplifies to -dot(RayOrigin, Normal)
-    const O = ray.origin;
-    const numer = -(O.x * N.x + O.y * N.y + O.z * N.z);
-
-    // Calculate t parameter (distance along ray)
-    const t = numer / denom;
-
-    // Negative t means intersection is behind the camera
-    if (t < 0) return null;
-
-    // Calculate intersection point: RayOrigin + t * RayDirection
-    return vec3Add(O, vec3Scale(ray.dir, t));
-  };
-
-  /**
-   * Updates the interaction point in world coordinates based on current mouse position.
-   * Called during particle interaction drag.
-   *
-   * @param event - Mouse event containing current cursor position
-   */
-  const updateInteraction = (event: MouseEvent) => {
-    const input = getInput();
-    if (!input) return;
-
-    const ray = getRay(event.clientX, event.clientY);
-    const point = getPlaneIntersection(ray);
-
-    if (point) {
-      input.worldX = point.x;
-      input.worldY = point.y;
-      input.worldZ = point.z;
-    }
-  };
-
-  // ==========================================================================
-  // Event Handlers
-  // ==========================================================================
-
-  /**
-   * Mouse Down Handler
-   *
-   * Determines whether to start camera rotation or particle interaction
-   * based on whether the click is inside the simulation bounds.
-   */
-  canvas.addEventListener('mousedown', (e) => {
-    const input = getInput();
-    if (!input) return;
-
-    const ray = getRay(e.clientX, e.clientY);
-
-    // Define the AABB (Axis-Aligned Bounding Box) for ray intersection test
-    const boxMin = {
-      x: -config.boundsSize.x / 2,
-      y: -config.boundsSize.y / 2,
-      z: -config.boundsSize.z / 2,
-    };
-    const boxMax = {
-      x: config.boundsSize.x / 2,
-      y: config.boundsSize.y / 2,
-      z: config.boundsSize.z / 2,
-    };
-
-    // Test if the ray intersects the simulation bounds
-    const hit = rayBoxIntersection(ray.origin, ray.dir, boxMin, boxMax);
-
-    if (hit && e.button !== 1) {
-      // Left click (0) or Right click (2) inside the box → particle interaction
-      isInteractingParticle = true;
-      updateInteraction(e);
-
-      // Set push/pull based on which mouse button
-      if (e.button === 0) input.pull = true; // Left click = attract
-      if (e.button === 2) input.push = true; // Right click = repel
-    } else {
-      // Click outside box or middle mouse → camera control
-      isDraggingCamera = true;
-      lastX = e.clientX;
-      lastY = e.clientY;
-    }
-  });
-
-  /**
-   * Mouse Move Handler
-   *
-   * Updates either camera rotation or interaction point based on current mode.
-   */
-  canvas.addEventListener('mousemove', (e) => {
-    const input = getInput();
-    if (!input) return;
-
-    if (isInteractingParticle) {
-      // Update the 3D position for particle forces
-      updateInteraction(e);
-    } else if (isDraggingCamera) {
-      // Calculate mouse movement delta
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
-      lastX = e.clientX;
-      lastY = e.clientY;
-
-      // Apply rotation with sensitivity scaling
-      const sensitivity = 0.005;
-      camera.rotate(-dx * sensitivity, -dy * sensitivity);
-    }
-  });
-
-  /**
-   * Mouse Up Handler
-   *
-   * Ends the current interaction mode.
-   */
-  canvas.addEventListener('mouseup', () => {
-    const input = getInput();
-    if (!input) return;
-
-    if (isInteractingParticle) {
-      isInteractingParticle = false;
-      input.pull = false;
-      input.push = false;
-    }
-    isDraggingCamera = false;
-  });
-
-  /**
-   * Mouse Leave Handler
-   *
-   * Cancels all interactions when cursor leaves the canvas.
-   * This prevents "stuck" states where the mouse up event is missed.
-   */
-  canvas.addEventListener('mouseleave', () => {
-    const input = getInput();
-    if (!input) return;
-    input.pull = false;
-    input.push = false;
-    isDraggingCamera = false;
-    isInteractingParticle = false;
-  });
-
-  /**
-   * Mouse Wheel Handler
-   *
-   * Zooms the camera in/out. Passive: false to allow preventDefault.
-   */
-  canvas.addEventListener(
-    'wheel',
-    (e) => {
-      camera.zoom(e.deltaY * 0.01);
-      e.preventDefault(); // Prevent page scrolling
-    },
-    { passive: false }
-  );
-
-  /**
-   * Context Menu Handler
-   *
-   * Prevents the right-click context menu from appearing,
-   * allowing right-click to be used for push interaction.
-   */
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-}
-
 // =============================================================================
 // Application Initialization
 // =============================================================================
@@ -393,7 +93,30 @@ if (!app) throw new Error('Missing #app container');
 const canvas = createCanvas(app);
 
 // Initialize simulation configuration with default values
-const config = createConfig();
+const config: ParticlesConfig = {
+  ...createConfig(),
+  ...createDefaultEnvironmentConfig(),
+  viscosityStrength: 0.01,
+  iterationsPerFrame: 3,
+  velocityDisplayMax: 8.0,
+  gradientResolution: 50,
+  densityTextureRes: 150,
+  densityOffset: 0,
+  densityMultiplier: 0.02,
+  lightStepSize: 0.1,
+  shadowSoftness: 2.5,
+  sceneExposure: 1.0,
+  extinctionCoefficients: { x: 2.12, y: 0.43, z: 0.3 },
+  showBoundsWireframe: false,
+  boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
+  showFluidShadows: true,
+  colorKeys: [
+    { t: 4064 / 65535, r: 0.13363299, g: 0.34235913, b: 0.7264151 }, // Slow: blue
+    { t: 33191 / 65535, r: 0.2980392, g: 1, b: 0.56327766 }, // Medium: cyan-green
+    { t: 46738 / 65535, r: 1, g: 0.9309917, b: 0 }, // Fast: yellow
+    { t: 1, r: 0.96862745, g: 0.28555763, b: 0.031372573 }, // Very fast: orange
+  ],
+};
 
 // Simulation instance (initialized asynchronously in main())
 let simulation: FluidSimulation | null = null;
@@ -405,7 +128,7 @@ camera.theta = Math.PI / 6; // 30 degrees horizontal rotation
 camera.phi = Math.PI / 2.5; // ~72 degrees from vertical (looking slightly down)
 
 // Set up the GUI controls panel
-const { stats } = setupGui(
+const { stats, gui } = setupGui(
   config,
   {
     onReset: () => simulation?.reset(),
@@ -414,9 +137,67 @@ const { stats } = setupGui(
   {
     trackGPU: true, // Enable GPU timing statistics
     title: 'WebGPU 3D Fluid',
+    subtitle: 'SPH Fluid • Particle Simulation',
+    features: [
+      'SPH Fluid Simulator (GPU)',
+      'Billboard Particle Rendering',
+      'Frustum Culling',
+      'Dynamic Shadow Mapping',
+      'Precise Particle Interaction',
+      'Box/Sphere Obstacles'
+    ],
+    interactions: [
+      'Click & Drag (Background): Orbit Camera',
+      'Click & Drag (Fluid): Pull Particles',
+      'Shift + Click & Drag: Push Particles',
+      'Mouse Wheel: Zoom In/Out'
+    ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
+
+// Add particle-rendering controls specific to this demo
+const particlesFolder = gui.folders.find((f) => f._title === 'Particles');
+if (particlesFolder) {
+  particlesFolder
+    .add(config, 'particleRadius', 1, 5, 0.1)
+    .name('Particle Radius');
+}
+
+const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
+if (shadowFolder) {
+  shadowFolder
+    .add(config, 'densityTextureRes', 32, 256, 1)
+    .name('Volume Res')
+    .onFinishChange(() => simulation?.reset());
+  shadowFolder.add(config, 'densityOffset', 0, 500, 1).name('Density Offset');
+  shadowFolder
+    .add(config, 'densityMultiplier', 0.0, 0.2, 0.001)
+    .name('Density Multiplier');
+  shadowFolder
+    .add(config, 'lightStepSize', 0.01, 0.5, 0.01)
+    .name('Light Step');
+  shadowFolder
+    .add(config, 'showFluidShadows')
+    .name('Fluid Shadows');
+}
+
+let pauseController: any;
+const guiState = {
+  paused: false,
+  togglePause: () => {
+    guiState.paused = !guiState.paused;
+    if (pauseController) {
+      pauseController.name(guiState.paused ? 'Resume' : 'Pause');
+    }
+  },
+  reset: () => simulation?.reset(),
+};
+
+// Add Pause and Reset Buttons at the end
+pauseController = gui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
+gui.add(guiState, 'reset').name('Reset Simulation');
+
 
 /**
  * Main Application Entry Point
@@ -472,7 +253,7 @@ async function main() {
   simulation = new FluidSimulation(device, context, canvas, config, format);
 
   // Set up input handlers (camera control + particle interaction)
-  setupInputHandlers(
+  const updateInertia = setupInputHandlers(
     canvas,
     () => simulation?.simulationState.input,
     camera,
@@ -505,7 +286,7 @@ async function main() {
   // -------------------------------------------------------------------------
 
   /** Timestamp of the last frame for delta time calculation */
-  let lastTime = performance.now();
+  let lastTime: number | null = null;
 
   /**
    * Main animation loop callback.
@@ -514,6 +295,7 @@ async function main() {
    * @param now - Current timestamp in milliseconds
    */
   const frame = async (now: number) => {
+    if (lastTime === null) lastTime = now;
     stats.begin(); // Start frame timing
 
     // Calculate delta time in seconds
@@ -521,9 +303,14 @@ async function main() {
     const dt = Math.min(0.033, (now - lastTime) / 1000);
     lastTime = now;
 
+    // Apply camera inertia (coasting after drag release)
+    updateInertia();
+
     if (simulation) {
-      // Run physics simulation step(s)
-      await simulation.step(dt);
+      if (!guiState.paused) {
+        // Run physics simulation step(s)
+        await simulation.step(dt);
+      }
 
       // Render the current state with the camera's view matrix
       simulation.render(camera.viewMatrix);

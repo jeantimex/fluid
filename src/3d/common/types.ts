@@ -4,6 +4,11 @@ export interface Vec3 {
   z: number;
 }
 
+export interface Vec2 {
+  x: number;
+  y: number;
+}
+
 export interface ColorKey {
   t: number;
   r: number;
@@ -34,17 +39,20 @@ export interface SimConfig {
   nearPressureMultiplier: number;
   viscosityStrength: number;
   boundsSize: Vec3;
+  showObstacle?: boolean;
+  obstacleShape?: string;
+  obstacleRadius?: number;
   obstacleSize: Vec3;
   obstacleCentre: Vec3;
+  obstacleRotation: Vec3;
+  obstacleColor?: RGB;
+  obstacleAlpha?: number;
   interactionRadius: number;
   interactionStrength: number;
   particleRadius: number;
   spawnDensity: number;
   initialVelocity: Vec3;
   jitterStr: number;
-  velocityDisplayMax: number;
-  gradientResolution: number;
-  colorKeys: ColorKey[];
   spawnRegions: SpawnRegion[];
 }
 
@@ -54,6 +62,9 @@ export interface InputState {
   worldZ: number;
   pull: boolean;
   push: boolean;
+  rayOrigin?: Vec3;
+  rayDir?: Vec3;
+  isHoveringFluid?: boolean;
 }
 
 export interface SimState {

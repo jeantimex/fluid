@@ -81,6 +81,8 @@
  * ============================================================================
  */
 
+// Beginner note: instance_index selects which particle to draw from visibleIndices.
+
 /**
  * Render Uniforms Buffer
  *
@@ -91,6 +93,12 @@
  *  64      8    canvasSize         - Canvas dimensions in pixels (width, height)
  *  72      4    particleRadius     - Visual radius of particles in pixels
  *  76      4    velocityDisplayMax - Speed at which color is fully saturated
+ *  80      4    sceneExposure      - Exposure multiplier
+ *  84      4    ambient            - Ambient lighting factor
+ *  88      4    sunBrightness      - Sun intensity multiplier
+ *  92      4    pad0               - Padding
+ *  96     12    lightDir           - Directional light (world space)
+ * 108      4    pad1               - Padding
  * ------
  * Total: 80 bytes
  */
@@ -99,6 +107,12 @@ struct Uniforms {
   canvasSize: vec2<f32>,
   particleRadius: f32,
   velocityDisplayMax: f32,
+  sceneExposure: f32,
+  ambient: f32,
+  sunBrightness: f32,
+  pad0: f32,
+  lightDir: vec3<f32>,
+  pad1: f32,
 };
 
 // ============================================================================
@@ -113,6 +127,9 @@ struct Uniforms {
 //              Indexed by normalized speed [0, 1] → [0, gradient.length-1]
 //   Binding 4: visibleIndices[]  - From culling pass
 //              Maps instance_index → actual particle index
+//   Binding 5: shadowTex         - Shadow map depth texture
+//   Binding 6: shadowSampler     - Comparison sampler for shadow map
+//   Binding 7: shadowUniforms    - Light view-projection + softness
 // ============================================================================
 
 @group(0) @binding(0) var<storage, read> positions: array<vec4<f32>>;
@@ -120,6 +137,12 @@ struct Uniforms {
 @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 @group(0) @binding(3) var<storage, read> gradient: array<vec4<f32>>;
 @group(0) @binding(4) var<storage, read> visibleIndices: array<u32>;
+@group(0) @binding(5) var shadowTex: texture_depth_2d;
+@group(0) @binding(6) var shadowSampler: sampler_comparison;
+
+#include "../../common/shaders/shadow_common.wgsl"
+
+@group(0) @binding(7) var<uniform> shadowUniforms: ShadowUniforms;
 
 /**
  * Vertex Shader Output / Fragment Shader Input
@@ -132,6 +155,7 @@ struct VertexOutput {
   @builtin(position) position: vec4<f32>,
   @location(0) uv: vec2<f32>,
   @location(1) color: vec3<f32>,
+  @location(2) worldPos: vec3<f32>,
 };
 
 /**
@@ -256,6 +280,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) ins
   // Pass UV coordinates for fragment shader circle test
   // quadPos is in [-1, 1], so distance from center is length(quadPos)
   out.uv = quadPos;
+  out.worldPos = pos;
 
   // ========================================================================
   // VELOCITY-BASED COLOR
@@ -273,6 +298,33 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) ins
   out.color = gradient[colorIndex].rgb;
 
   return out;
+}
+
+fn sampleShadow(worldPos: vec3<f32>) -> f32 {
+  let lightPos = shadowUniforms.lightViewProjection * vec4<f32>(worldPos, 1.0);
+  let ndc = lightPos.xyz / lightPos.w;
+  let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z < 0.0 || ndc.z > 1.0) {
+    return 1.0;
+  }
+
+  let depth = ndc.z - 0.0005;
+  let softness = shadowUniforms.shadowSoftness;
+
+  if (softness <= 0.001) {
+    return textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
+  }
+
+  let texel = vec2<f32>(1.0 / 2048.0) * softness;
+  var sum = 0.0;
+  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv, depth);
+  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(-texel.x, 0.0), depth);
+  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, texel.y), depth);
+  sum += textureSampleCompareLevel(shadowTex, shadowSampler, uv + vec2<f32>(0.0, -texel.y), depth);
+  
+  return sum * 0.2;
 }
 
 /**
@@ -315,5 +367,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
   // Return opaque colored pixel
   // Alpha = 1.0 (fully opaque)
-  return vec4<f32>(in.color, 1.0);
+  let shadow = sampleShadow(in.worldPos);
+  let lighting = uniforms.ambient + uniforms.sunBrightness * shadow;
+  return vec4<f32>(in.color * lighting * uniforms.sceneExposure, 1.0);
 }

@@ -1,25 +1,113 @@
-import type { SimConfig } from '../common/types.ts';
+/**
+ * =============================================================================
+ * Raymarch Configuration Types
+ * =============================================================================
+ *
+ * Extends the base simulation configuration with parameters specific to the
+ * raymarched volume rendering pipeline. These control density splatting,
+ * ray stepping, floor tiling, lighting, and optical properties of the fluid.
+ *
+ * @module types
+ */
 
-export interface RaymarchConfig extends SimConfig {
+import type { SimConfig } from '../common/types.ts';
+import type { EnvironmentConfig } from '../common/environment.ts';
+
+/**
+ * Configuration for the raymarch-based fluid renderer.
+ *
+ * Extends {@link SimConfig} (which defines particle count, bounds, smoothing
+ * radius, gravity, etc.) and {@link EnvironmentConfig} (which defines floor
+ * tiling, lighting, etc.) with parameters consumed by the density splat
+ * pipeline and the full-screen raymarch fragment shader.
+ */
+export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
+  // ---------------------------------------------------------------------------
+  // Density Volume
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolution of the 3D density texture along its longest axis.
+   * The other two axes are scaled proportionally to the bounds aspect ratio.
+   * Higher values produce sharper fluid surfaces but increase GPU cost.
+   * Typical range: 32–256.
+   */
   densityTextureRes: number;
+
+  /**
+   * Offset subtracted from the raw density value when sampling.
+   * Acts as an iso-surface threshold — higher values carve away
+   * low-density regions, producing a tighter fluid surface.
+   */
   densityOffset: number;
+
+  /**
+   * Multiplier applied to the sampled density during raymarching.
+   * Controls how opaque the fluid appears per unit of ray travel.
+   */
   densityMultiplier: number;
+
+  // ---------------------------------------------------------------------------
+  // Raymarching
+  // ---------------------------------------------------------------------------
+
+  /** World-space distance between successive ray samples (primary rays). */
   stepSize: number;
+
+  /** World-space distance between successive samples along shadow/light rays. */
   lightStepSize: number;
+
+  /**
+   * Scaling factor for the offscreen raymarch texture (0–1).
+   * 0.5 = half resolution (faster), 1.0 = full resolution (crisper).
+   */
+  renderScale: number;
+
+  /** Maximum number of ray steps before the march terminates. */
   maxSteps: number;
-  tileCol1: { r: number; g: number; b: number };
-  tileCol2: { r: number; g: number; b: number };
-  tileCol3: { r: number; g: number; b: number };
-  tileCol4: { r: number; g: number; b: number };
-  tileColVariation: { x: number; y: number; z: number };
-  tileScale: number;
-  tileDarkOffset: number;
-  tileDarkFactor: number;
-  floorAmbient: number;
-  sceneExposure: number;
-  debugFloorMode: number;
+
+  // ---------------------------------------------------------------------------
+  // Optical Properties
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Per-channel extinction (absorption) coefficients for Beer–Lambert
+   * transmittance. Higher values make the fluid more opaque along that
+   * color channel, producing tinted shadows and color shifts.
+   * Stored as { x: red, y: green, z: blue }.
+   */
   extinctionCoefficients: { x: number; y: number; z: number };
+
+  /** Index of refraction for the fluid (water ≈ 1.33). */
   indexOfRefraction: number;
+
+  /**
+   * Number of refraction bounces to trace per pixel.
+   * More bounces produce more realistic caustics and internal reflections
+   * but increase cost linearly.
+   */
   numRefractions: number;
-  floorSize: { x: number; y: number; z: number };
+
+  /** Multiplier applied to the "dark" tiles in the checkerboard (0–1). */
+  tileDarkOffset: number;
+
+  /** Softness of the volumetric shadows. */
+  shadowSoftness: number;
+
+  /** Whether to enable volume and scene shadows. */
+  showFluidShadows: boolean;
+
+  /** Whether to show the bounds wireframe. */
+  showBoundsWireframe: boolean;
+
+  /** Color of the bounds wireframe (linear RGB). */
+  boundsWireframeColor: { r: number; g: number; b: number };
+
+  /** Base surface color for the obstacle (linear RGB). */
+  obstacleColor: { r: number; g: number; b: number };
+
+  /** Opacity of the obstacle surface (0–1). */
+  obstacleAlpha: number;
 }
+
+  

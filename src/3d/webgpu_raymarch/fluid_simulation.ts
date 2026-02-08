@@ -1,264 +1,67 @@
 /**
  * =============================================================================
- * 3D Fluid Simulation Orchestrator for WebGPU
+ * 3D Fluid Simulation Orchestrator for WebGPU (Linear Grid)
  * =============================================================================
- *
- * This class coordinates the entire SPH (Smoothed Particle Hydrodynamics)
- * simulation pipeline on the GPU. It manages the simulation state, GPU resources,
- * and the execution of compute passes in the correct order.
- *
- * ## SPH Overview
- *
- * SPH is a computational method for simulating fluid dynamics. Key concepts:
- *
- * - **Particles**: The fluid is represented as discrete particles
- * - **Smoothing Kernel**: Each particle's properties are "smoothed" over nearby neighbors
- * - **Density**: Calculated by summing contributions from neighbors within smoothing radius
- * - **Pressure**: Derived from density using an Equation of State (EOS)
- * - **Forces**: Pressure gradients + viscosity + external forces (gravity, user input)
- *
- * ## Simulation Pipeline (Per Frame)
- *
- * ```
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │                     FOR EACH SUBSTEP                                 │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │                                                                      │
- * │  1. EXTERNAL FORCES                                                  │
- * │     └─► Apply gravity and user interaction forces                    │
- * │     └─► Predict next position (for spatial hashing)                  │
- * │                                                                      │
- * │  2. SPATIAL HASH & SORT (Most Complex Part)                          │
- * │     └─► Hash: Compute grid cell key for each particle                │
- * │     └─► Count: Build histogram of particles per cell                 │
- * │     └─► Prefix Sum (3 Levels): Parallel scan for sort offsets        │
- * │     └─► Scatter: Place particles in sorted positions                 │
- * │     └─► Spatial Offsets: Build cell → start index lookup table       │
- * │     └─► Reorder: Physically rearrange particle data for cache        │
- * │     └─► CopyBack: Move sorted data back to main buffers              │
- * │                                                                      │
- * │  3. DENSITY                                                          │
- * │     └─► Calculate density using Spiky kernel                         │
- * │     └─► Calculate near-density using Spiky³ kernel (clumping)        │
- * │                                                                      │
- * │  4. PRESSURE                                                         │
- * │     └─► Calculate pressure from density (EOS)                        │
- * │     └─► Apply pressure forces (symmetric for momentum conservation)  │
- * │                                                                      │
- * │  5. VISCOSITY (Optional)                                             │
- * │     └─► Smooth velocity differences using Poly6 kernel               │
- * │                                                                      │
- * │  6. INTEGRATION                                                      │
- * │     └─► Update positions: pos += vel * dt                            │
- * │     └─► Handle boundary collisions                                   │
- * │                                                                      │
- * └─────────────────────────────────────────────────────────────────────┘
- *
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │                     RENDERING                                        │
- * ├─────────────────────────────────────────────────────────────────────┤
- * │  7. FRUSTUM CULLING                                                  │
- * │     └─► GPU-driven culling to find visible particles                 │
- * │     └─► Populate indirect draw buffer                                │
- * │                                                                      │
- * │  8. RENDER                                                           │
- * │     └─► Draw visible particles as billboards                         │
- * │     └─► Draw bounding box wireframe                                  │
- * └─────────────────────────────────────────────────────────────────────┘
- * ```
- *
- * ## Performance Optimizations
- *
- * 1. **Spatial Hashing**: O(n) neighbor search instead of O(n²)
- * 2. **Physical Reordering**: Cache-coherent memory access (10-50x faster neighbors)
- * 3. **Parallel Prefix Sum**: Logarithmic time sorting on GPU
- * 4. **Frustum Culling**: Only render visible particles
- * 5. **Indirect Draw**: No CPU-GPU sync for particle count
- *
- * @module fluid_simulation
  */
 
 import type { SimState } from '../common/types.ts';
 import { createSpawnData } from '../common/spawn.ts';
-import { SimulationBuffers } from '../webgpu_particles/simulation_buffers.ts';
-import { ComputePipelines } from '../webgpu_particles/compute_pipelines.ts';
-import { OrbitCamera } from '../webgpu_particles/orbit_camera.ts';
+import { FluidBuffers } from '../common/fluid_buffers.ts';
+import { SpatialGrid, type SpatialGridUniforms } from '../common/spatial_grid.ts';
+import { FluidPhysics, type PhysicsUniforms } from '../common/fluid_physics.ts';
+import { OrbitCamera } from '../common/orbit_camera.ts';
 import { RaymarchRenderer } from './renderer.ts';
+import { SplatPipeline } from './splat_pipeline.ts';
 import type { RaymarchConfig } from './types.ts';
-import splatClearShader from './shaders/splat_clear.wgsl?raw';
-import splatParticlesShader from './shaders/splat_particles.wgsl?raw';
-import splatResolveShader from './shaders/splat_resolve.wgsl?raw';
+import { PickingSystem } from '../common/picking_system.ts';
 
 /**
- * Main orchestrator class for the 3D SPH fluid simulation.
- *
- * This class manages:
- * - GPU resources (buffers, pipelines)
- * - Simulation state (positions, velocities, densities)
- * - Compute pass execution order
- * - Uniform buffer updates
- * - Rendering coordination
+ * Orchestrates the full SPH fluid simulation pipeline on the GPU.
  */
 export class FluidSimulation {
-  // ===========================================================================
-  // WebGPU Resources
-  // ===========================================================================
-
-  /** The WebGPU device used for all GPU operations */
+  /**
+   * Beginner note:
+   * Computes SPH simulation on GPU, then the raymarch renderer visualizes
+   * the density volume produced by the splat pipeline.
+   */
   private device: GPUDevice;
-
-  /** The canvas context for presenting rendered frames */
   private context: GPUCanvasContext;
-
-  /** Simulation configuration (particle count, physics params, etc.) */
   private config: RaymarchConfig;
 
-  // ===========================================================================
-  // Component Modules
-  // ===========================================================================
-
-  /** Manages all GPU buffer allocations */
-  private buffers!: SimulationBuffers;
-
-  /** Manages compute shader pipelines and bind groups */
-  private pipelines: ComputePipelines;
-
-  /** Splat clear pipeline and bind group */
-  private splatClearPipeline: GPUComputePipeline;
-  private splatClearBindGroup!: GPUBindGroup;
-  private splatClearParamsBuffer: GPUBuffer;
-
-  /** Splat particles pipeline and bind group */
-  private splatParticlesPipeline: GPUComputePipeline;
-  private splatParticlesBindGroup!: GPUBindGroup;
-  private splatParticlesParamsBuffer: GPUBuffer;
-  private splatParticlesParamsData: ArrayBuffer;
-  private splatParticlesParamsF32: Float32Array;
-  private splatParticlesParamsU32: Uint32Array;
-
-  /** Splat resolve pipeline and bind group */
-  private splatResolvePipeline: GPUComputePipeline;
-  private splatResolveBindGroup!: GPUBindGroup;
-  private splatResolveParamsBuffer: GPUBuffer;
-  private splatResolveParamsData: ArrayBuffer;
-  private splatResolveParamsF32: Float32Array;
-  private splatResolveParamsU32: Uint32Array;
-
-  /** Atomic density buffer for particle splatting */
-  private atomicDensityBuffer!: GPUBuffer;
-
-  /** Density volume texture and view */
-  private densityTexture!: GPUTexture;
-  private densityTextureView!: GPUTextureView;
-  private densityTextureSize = { x: 1, y: 1, z: 1 };
-
-  private densityWorkgroupSize = { x: 8, y: 8, z: 4 };
-
-  /** Handles raymarch rendering */
+  // --- Subsystems (Modular) ---
+  private buffers!: FluidBuffers;
+  private physics: FluidPhysics;
+  private grid: SpatialGrid;
+  private splatPipeline: SplatPipeline;
   private renderer: RaymarchRenderer;
+  private pickingSystem: PickingSystem;
 
-  /** CPU-side simulation state (for UI and debugging) */
   private state!: SimState;
 
-  // ===========================================================================
-  // Compute Configuration
-  // ===========================================================================
+  // --- Grid Configuration ---
+  private gridRes = { x: 0, y: 0, z: 0 };
+  private gridTotalCells = 0;
 
-  /**
-   * Number of threads per workgroup for compute shaders.
-   * 256 is a common choice that works well on most GPUs.
-   * Total threads = ceil(particleCount / 256) * 256
-   */
-  private workgroupSize = 256;
+  // --- Interaction State ---
+  private isPicking = false;
+  private interactionPos = { x: 0, y: 0, z: 0 };
 
-  // ===========================================================================
-  // Pre-allocated Uniform Data Arrays
-  // ===========================================================================
-  // These TypedArrays are reused every frame to avoid garbage collection.
-  // Each array corresponds to a uniform buffer in the GPU.
+  // --- Uniform Buffers ---
+  private physicsUniforms!: PhysicsUniforms;
+  private gridUniforms!: SpatialGridUniforms;
 
-  /**
-   * External forces uniform data.
-   * Layout: [deltaTime, gravity, interactionRadius, interactionStrength,
-   *          inputX, inputY, inputZ, padding]
-   */
+  // --- CPU Staging Buffers ---
   private computeData = new Float32Array(8);
-
-  /**
-   * Integration uniform data.
-   * Layout: [deltaTime, collisionDamping, hasObstacle, padding,
-   *          halfBoundsX, halfBoundsY, halfBoundsZ, padding,
-   *          obstacleX, obstacleY, obstacleZ, padding,
-   *          obstacleHalfX, obstacleHalfY, obstacleHalfZ, padding]
-   */
-  private integrateData = new Float32Array(16);
-
-  /**
-   * Spatial hash uniform data.
-   * Layout: [smoothingRadius, particleCount, padding, padding]
-   */
-  private hashParamsData = new Float32Array(4);
-
-  /**
-   * Sort uniform data.
-   * Layout: [particleCount, padding, padding, padding, ...]
-   */
+  private integrateData = new Float32Array(24);
+  private hashParamsData = new Float32Array(8);
   private sortParamsData = new Uint32Array(8);
-
-  /**
-   * Scan parameters for Level 0 (particle data → L1 block sums).
-   * Layout: [elementCount, padding, padding, padding]
-   */
   private scanParamsDataL0 = new Uint32Array(4);
-
-  /**
-   * Scan parameters for Level 1 (L1 sums → L2 block sums).
-   * Layout: [elementCount, padding, padding, padding]
-   */
   private scanParamsDataL1 = new Uint32Array(4);
-
-  /**
-   * Scan parameters for Level 2 (L2 sums → scratch).
-   * Layout: [elementCount, padding, padding, padding]
-   */
   private scanParamsDataL2 = new Uint32Array(4);
-
-  /**
-   * Density calculation uniform data.
-   * Layout: [radius, spikyPow2Scale, spikyPow3Scale, particleCount,
-   *          padding, padding, padding, padding]
-   */
-  private densityParamsData = new Float32Array(8);
-
-  /**
-   * Pressure calculation uniform data.
-   * Layout: [dt, targetDensity, pressureMultiplier, nearPressureMultiplier,
-   *          radius, spikyPow2DerivScale, spikyPow3DerivScale, particleCount,
-   *          padding, padding, padding, padding]
-   */
-  private pressureParamsData = new Float32Array(12);
-
-  /**
-   * Viscosity calculation uniform data.
-   * Layout: [dt, viscosityStrength, radius, poly6Scale,
-   *          particleCount, padding, padding, padding, ...]
-   */
+  private densityParamsData = new Float32Array(12);
+  private pressureParamsData = new Float32Array(16);
   private viscosityParamsData = new Float32Array(12);
 
-
-  // ===========================================================================
-  // Constructor
-  // ===========================================================================
-
-  /**
-   * Creates a new FluidSimulation instance.
-   *
-   * @param device - The WebGPU device for GPU operations
-   * @param context - The canvas context for rendering
-   * @param canvas - The HTML canvas element
-   * @param config - Simulation configuration
-   * @param format - The preferred texture format for rendering
-   */
   constructor(
     device: GPUDevice,
     context: GPUCanvasContext,
@@ -270,837 +73,317 @@ export class FluidSimulation {
     this.context = context;
     this.config = config;
 
-    // Create compute pipelines (compiles all shaders)
-    this.pipelines = new ComputePipelines(device);
-
-    // Splat clear pipeline
-    const clearModule = device.createShaderModule({ code: splatClearShader });
-    this.splatClearPipeline = device.createComputePipeline({
-      layout: 'auto',
-      compute: { module: clearModule, entryPoint: 'main' },
-    });
-    this.splatClearParamsBuffer = device.createBuffer({
-      size: 16, // totalVoxels (u32) + padding to 16-byte alignment
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    // Splat particles pipeline
-    const splatModule = device.createShaderModule({ code: splatParticlesShader });
-    this.splatParticlesPipeline = device.createComputePipeline({
-      layout: 'auto',
-      compute: { module: splatModule, entryPoint: 'main' },
-    });
-    // SplatParams: radius(f32), spikyPow2Scale(f32), particleCount(u32), fixedPointScale(f32),
-    //              boundsSize(vec3<f32>), pad0(f32), volumeSize(vec3<u32>), pad1(u32) = 48 bytes
-    this.splatParticlesParamsData = new ArrayBuffer(48);
-    this.splatParticlesParamsF32 = new Float32Array(this.splatParticlesParamsData);
-    this.splatParticlesParamsU32 = new Uint32Array(this.splatParticlesParamsData);
-    this.splatParticlesParamsBuffer = device.createBuffer({
-      size: 48,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    // Splat resolve pipeline
-    const resolveModule = device.createShaderModule({ code: splatResolveShader });
-    this.splatResolvePipeline = device.createComputePipeline({
-      layout: 'auto',
-      compute: { module: resolveModule, entryPoint: 'main' },
-    });
-    // ResolveParams: fixedPointScale(f32), pad0(f32), pad1(f32), pad2(f32),
-    //                volumeSize(vec3<u32>), pad3(u32) = 32 bytes
-    this.splatResolveParamsData = new ArrayBuffer(32);
-    this.splatResolveParamsF32 = new Float32Array(this.splatResolveParamsData);
-    this.splatResolveParamsU32 = new Uint32Array(this.splatResolveParamsData);
-    this.splatResolveParamsBuffer = device.createBuffer({
-      size: 32,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    // Create renderer (raymarched volume)
+    this.physics = new FluidPhysics(device);
+    this.grid = new SpatialGrid(device);
+    this.splatPipeline = new SplatPipeline(device);
     this.renderer = new RaymarchRenderer(device, canvas, format);
+    this.pickingSystem = new PickingSystem(device);
 
-    // Initialize simulation state and buffers
+    // Create all uniform buffers upfront
+    this.physicsUniforms = {
+      external: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      density: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      pressure: device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      viscosity: device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      integrate: device.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+    };
+
+    this.gridUniforms = {
+      hash: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      sort: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      scanL0: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      scanL1: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      scanL2: device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+    };
+
     this.reset();
   }
 
-  // ===========================================================================
-  // Public Getters
-  // ===========================================================================
-
-  /**
-   * Returns the current number of particles in the simulation.
-   */
   get particleCount(): number {
     return this.buffers.particleCount;
   }
 
-  /**
-   * Returns the current simulation state.
-   * Includes input state for UI interaction.
-   */
   get simulationState(): SimState {
     return this.state;
   }
 
-  // ===========================================================================
-  // Simulation Control
-  // ===========================================================================
-
-  /**
-   * Resets the simulation to its initial state.
-   *
-   * This destroys existing GPU buffers and recreates them with fresh
-   * particle data based on the current configuration.
-   */
   reset(): void {
-    // Destroy existing buffers if present
     if (this.buffers) {
       this.buffers.destroy();
     }
 
-    if (this.densityTexture) {
-      this.densityTexture.destroy();
-    }
+    const { boundsSize, smoothingRadius } = this.config;
+    this.gridRes = {
+      x: Math.ceil(boundsSize.x / smoothingRadius),
+      y: Math.ceil(boundsSize.y / smoothingRadius),
+      z: Math.ceil(boundsSize.z / smoothingRadius),
+    };
+    this.gridTotalCells = this.gridRes.x * this.gridRes.y * this.gridRes.z;
 
-    // Generate initial particle positions and velocities
     const spawn = createSpawnData(this.config);
-
-    // Create CPU-side state for UI/debugging
     this.state = this.createStateFromSpawn(spawn);
 
-    // Allocate GPU buffers with initial data
-    this.buffers = new SimulationBuffers(this.device, spawn);
+    this.buffers = new FluidBuffers(this.device, spawn, {
+      gridTotalCells: this.gridTotalCells
+    });
 
-    // Recreate bind groups to point to new buffers
-    this.pipelines.createBindGroups(this.buffers);
+    this.physics.createBindGroups(this.buffers, this.physicsUniforms);
+    this.grid.createBindGroups(this.buffers, this.gridUniforms);
 
-    this.createDensityTexture();
-    this.createAtomicDensityBuffer();
-    this.createSplatBindGroups();
-    this.renderer.createBindGroup(this.densityTextureView);
+    this.splatPipeline.recreate(this.config, this.buffers.predicted);
+    this.renderer.createBindGroup(this.splatPipeline.textureView);
+    this.pickingSystem.createBindGroup(this.buffers.positions);
+
+    // Initial splat to ensure density texture is populated for rendering
+    const encoder = this.device.createCommandEncoder();
+    this.splatPipeline.dispatch(encoder, this.buffers.particleCount, this.config);
+    this.device.queue.submit([encoder.finish()]);
   }
 
-  private createDensityTexture(): void {
-    const bounds = this.config.boundsSize;
-    const maxAxis = Math.max(bounds.x, bounds.y, bounds.z);
-
-    const targetRes = Math.max(1, Math.round(this.config.densityTextureRes));
-    const width = Math.max(1, Math.round((bounds.x / maxAxis) * targetRes));
-    const height = Math.max(1, Math.round((bounds.y / maxAxis) * targetRes));
-    const depth = Math.max(1, Math.round((bounds.z / maxAxis) * targetRes));
-
-    this.densityTextureSize = { x: width, y: height, z: depth };
-
-    this.densityTexture = this.device.createTexture({
-      size: { width, height, depthOrArrayLayers: depth },
-      dimension: '3d',
-      format: 'rgba16float',
-      usage:
-        GPUTextureUsage.STORAGE_BINDING |
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_SRC,
-    });
-
-    this.densityTextureView = this.densityTexture.createView({
-      dimension: '3d',
-    });
-  }
-
-  private createAtomicDensityBuffer(): void {
-    if (this.atomicDensityBuffer) {
-      this.atomicDensityBuffer.destroy();
-    }
-    const totalVoxels =
-      this.densityTextureSize.x *
-      this.densityTextureSize.y *
-      this.densityTextureSize.z;
-    this.atomicDensityBuffer = this.device.createBuffer({
-      size: totalVoxels * 4, // u32 per voxel
-      usage: GPUBufferUsage.STORAGE,
-    });
-  }
-
-  private createSplatBindGroups(): void {
-    // Clear bind group
-    this.splatClearBindGroup = this.device.createBindGroup({
-      layout: this.splatClearPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.atomicDensityBuffer } },
-        { binding: 1, resource: { buffer: this.splatClearParamsBuffer } },
-      ],
-    });
-
-    // Splat particles bind group
-    this.splatParticlesBindGroup = this.device.createBindGroup({
-      layout: this.splatParticlesPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.buffers.predicted } },
-        { binding: 1, resource: { buffer: this.atomicDensityBuffer } },
-        { binding: 2, resource: { buffer: this.splatParticlesParamsBuffer } },
-      ],
-    });
-
-    // Resolve bind group
-    this.splatResolveBindGroup = this.device.createBindGroup({
-      layout: this.splatResolvePipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.atomicDensityBuffer } },
-        { binding: 1, resource: this.densityTextureView },
-        { binding: 2, resource: { buffer: this.splatResolveParamsBuffer } },
-      ],
-    });
-  }
-
-  /**
-   * Creates the CPU-side simulation state from spawn data.
-   *
-   * @param spawn - Initial particle positions and velocities
-   * @returns SimState object with all required arrays
-   */
   private createStateFromSpawn(spawn: {
     positions: Float32Array;
     velocities: Float32Array;
     count: number;
   }): SimState {
     return {
-      // Particle data arrays (mirrored on GPU)
       positions: spawn.positions,
       predicted: new Float32Array(spawn.positions),
       velocities: spawn.velocities,
-      densities: new Float32Array(spawn.count * 2), // density + nearDensity
-
-      // Spatial hash arrays
+      densities: new Float32Array(spawn.count * 2),
       keys: new Uint32Array(spawn.count),
       sortedKeys: new Uint32Array(spawn.count),
       indices: new Uint32Array(spawn.count),
       sortOffsets: new Uint32Array(spawn.count),
       spatialOffsets: new Uint32Array(spawn.count),
-
-      // Sorted data arrays (for cache optimization)
       positionsSorted: new Float32Array(spawn.count * 4),
       predictedSorted: new Float32Array(spawn.count * 4),
       velocitiesSorted: new Float32Array(spawn.count * 4),
-
-      // Metadata
       count: spawn.count,
-
-      // Input state for user interaction
-      input: {
-        worldX: 0,
-        worldY: 0,
-        worldZ: 0,
-        pull: false,
-        push: false,
-      },
+      input: { worldX: 0, worldY: 0, worldZ: 0, pull: false, push: false },
     };
   }
 
-  // ===========================================================================
-  // Main Simulation Step
-  // ===========================================================================
-
-  /**
-   * Advances the simulation by one frame.
-   *
-   * The frame time is divided into multiple substeps for stability.
-   * More substeps = more accurate but slower simulation.
-   *
-   * @param dt - Delta time in seconds since last frame
-   */
   async step(dt: number): Promise<void> {
-    const { config, buffers, pipelines, device, state } = this;
+    const { config, buffers, device } = this;
 
-    // -------------------------------------------------------------------------
-    // Time Step Calculation
-    // -------------------------------------------------------------------------
-
-    // Cap maximum time step to prevent instability
-    const maxDeltaTime = config.maxTimestepFPS
-      ? 1 / config.maxTimestepFPS
-      : Number.POSITIVE_INFINITY;
-
-    // Apply time scale and cap
+    const maxDeltaTime = config.maxTimestepFPS ? 1 / config.maxTimestepFPS : Number.POSITIVE_INFINITY;
     const frameTime = Math.min(dt * config.timeScale, maxDeltaTime);
-
-    // Divide frame time into substeps
     const timeStep = frameTime / config.iterationsPerFrame;
 
-    // -------------------------------------------------------------------------
-    // Substep Loop
-    // -------------------------------------------------------------------------
+    this.updateUniforms(timeStep);
 
+    const encoder = device.createCommandEncoder();
+
+    // Update interaction point via GPU picking
+    let pickingDispatched = false;
+    if (!this.isPicking && this.state.input.rayOrigin && this.state.input.rayDir) {
+      this.isPicking = true;
+      pickingDispatched = true;
+      this.pickingSystem.dispatch(
+        encoder,
+        this.state.input.rayOrigin,
+        this.state.input.rayDir,
+        config.smoothingRadius,
+        buffers.particleCount
+      );
+    }
+
+    const computePass = encoder.beginComputePass();
     for (let i = 0; i < config.iterationsPerFrame; i++) {
-      // -----------------------------------------------------------------------
-      // 1. External Forces & Prediction
-      // -----------------------------------------------------------------------
-
-      // Determine interaction strength from user input
-      let interactionStrength = 0;
-      if (state.input.push) interactionStrength = -config.interactionStrength;
-      else if (state.input.pull)
-        interactionStrength = config.interactionStrength;
-
-      // Pack uniform data for external forces shader
-      this.computeData[0] = timeStep;
-      this.computeData[1] = config.gravity;
-      this.computeData[2] = config.interactionRadius;
-      this.computeData[3] = interactionStrength;
-      this.computeData[4] = state.input.worldX;
-      this.computeData[5] = state.input.worldY;
-      this.computeData[6] = state.input.worldZ;
-      this.computeData[7] = 0; // padding
-
-      // Upload uniform data to GPU
-      device.queue.writeBuffer(
-        pipelines.uniformBuffers.compute,
-        0,
-        this.computeData
+      this.physics.step(
+        computePass,
+        this.grid,
+        buffers.particleCount,
+        this.gridTotalCells,
+        config.viscosityStrength > 0
       );
+    }
+    computePass.end();
 
-      // Create command encoder for this substep
-      const encoder = device.createCommandEncoder();
+    this.splatPipeline.dispatch(encoder, buffers.particleCount, config);
+    device.queue.submit([encoder.finish()]);
 
-      // Dispatch external forces compute pass
-      const computePass = encoder.beginComputePass();
-      computePass.setPipeline(pipelines.externalForces);
-      computePass.setBindGroup(0, pipelines.externalForcesBindGroup);
-      computePass.dispatchWorkgroups(
-        Math.ceil(buffers.particleCount / this.workgroupSize)
-      );
-      computePass.end();
+    // Read back picking result AFTER submission
+    if (pickingDispatched) {
+      this.pickingSystem.getResult().then(res => {
+        if (res && res.hit) {
+          let tx = res.hitPos.x;
+          let ty = res.hitPos.y;
+          let tz = res.hitPos.z;
 
-      // -----------------------------------------------------------------------
-      // 2. Spatial Hash, Sort, and Reorder
-      // -----------------------------------------------------------------------
-      // This is the most complex part of the simulation.
-      // It builds an acceleration structure for O(1) neighbor lookup and
-      // physically reorders particle data for cache-coherent access.
-      this.dispatchSpatialHash(encoder);
+          // If pulling, offset slightly deeper into the fluid to keep clusters together
+          if (this.state.input.pull && this.state.input.rayDir) {
+            tx += this.state.input.rayDir.x * 0.5;
+            ty += this.state.input.rayDir.y * 0.5;
+            tz += this.state.input.rayDir.z * 0.5;
+          }
 
-      // -----------------------------------------------------------------------
-      // 3. Density Calculation
-      // -----------------------------------------------------------------------
-      this.updateDensityUniforms();
-      const densityPass = encoder.beginComputePass();
-      densityPass.setPipeline(pipelines.density);
-      densityPass.setBindGroup(0, pipelines.densityBindGroup);
-      densityPass.dispatchWorkgroups(
-        Math.ceil(buffers.particleCount / this.workgroupSize)
-      );
-      densityPass.end();
-
-      // -----------------------------------------------------------------------
-      // 4. Pressure Force Calculation
-      // -----------------------------------------------------------------------
-      this.updatePressureUniforms(timeStep);
-      const pressurePass = encoder.beginComputePass();
-      pressurePass.setPipeline(pipelines.pressure);
-      pressurePass.setBindGroup(0, pipelines.pressureBindGroup);
-      pressurePass.dispatchWorkgroups(
-        Math.ceil(buffers.particleCount / this.workgroupSize)
-      );
-      pressurePass.end();
-
-      // -----------------------------------------------------------------------
-      // 5. Viscosity (Optional)
-      // -----------------------------------------------------------------------
-      // Only apply viscosity if strength is non-zero
-      if (config.viscosityStrength > 0) {
-        this.updateViscosityUniforms(timeStep);
-        const viscosityPass = encoder.beginComputePass();
-        viscosityPass.setPipeline(pipelines.viscosity);
-        viscosityPass.setBindGroup(0, pipelines.viscosityBindGroup);
-        viscosityPass.dispatchWorkgroups(
-          Math.ceil(buffers.particleCount / this.workgroupSize)
-        );
-        viscosityPass.end();
-      }
-
-      // -----------------------------------------------------------------------
-      // 6. Integration (Position Update + Collision)
-      // -----------------------------------------------------------------------
-      this.updateIntegrateUniforms(timeStep);
-      const integratePass = encoder.beginComputePass();
-      integratePass.setPipeline(pipelines.integrate);
-      integratePass.setBindGroup(0, pipelines.integrateBindGroup);
-      integratePass.dispatchWorkgroups(
-        Math.ceil(buffers.particleCount / this.workgroupSize)
-      );
-      integratePass.end();
-
-      // Submit all compute passes for this substep
-      device.queue.submit([encoder.finish()]);
+          this.state.input.worldX = tx;
+          this.state.input.worldY = ty;
+          this.state.input.worldZ = tz;
+          this.state.input.isHoveringFluid = true;
+        } else {
+          this.state.input.isHoveringFluid = false;
+        }
+        this.isPicking = false;
+      });
     }
 
-    // -----------------------------------------------------------------------
-    // 7. Density Volume Texture (Particle Splatting: Clear -> Splat -> Resolve)
-    // -----------------------------------------------------------------------
-    this.updateSplatParams();
-    const totalVoxels =
-      this.densityTextureSize.x *
-      this.densityTextureSize.y *
-      this.densityTextureSize.z;
-
-    const splatEncoder = device.createCommandEncoder();
-
-    // Pass 1: Clear atomic buffer
-    const clearPass = splatEncoder.beginComputePass();
-    clearPass.setPipeline(this.splatClearPipeline);
-    clearPass.setBindGroup(0, this.splatClearBindGroup);
-    clearPass.dispatchWorkgroups(Math.ceil(totalVoxels / 256));
-    clearPass.end();
-
-    // Pass 2: Splat particles into atomic buffer
-    const splatPass = splatEncoder.beginComputePass();
-    splatPass.setPipeline(this.splatParticlesPipeline);
-    splatPass.setBindGroup(0, this.splatParticlesBindGroup);
-    splatPass.dispatchWorkgroups(
-      Math.ceil(buffers.particleCount / 256)
-    );
-    splatPass.end();
-
-    // Pass 3: Resolve atomic buffer to density texture
-    const resolvePass = splatEncoder.beginComputePass();
-    resolvePass.setPipeline(this.splatResolvePipeline);
-    resolvePass.setBindGroup(0, this.splatResolveBindGroup);
-    resolvePass.dispatchWorkgroups(
-      Math.ceil(this.densityTextureSize.x / this.densityWorkgroupSize.x),
-      Math.ceil(this.densityTextureSize.y / this.densityWorkgroupSize.y),
-      Math.ceil(this.densityTextureSize.z / this.densityWorkgroupSize.z)
-    );
-    resolvePass.end();
-
-    device.queue.submit([splatEncoder.finish()]);
+    // Smoothly interpolate the actual interaction position to avoid "splashing"
+    const lerp = 0.15; // Damping factor
+    this.interactionPos.x += (this.state.input.worldX - this.interactionPos.x) * lerp;
+    this.interactionPos.y += (this.state.input.worldY - this.interactionPos.y) * lerp;
+    this.interactionPos.z += (this.state.input.worldZ - this.interactionPos.z) * lerp;
   }
 
-  // ===========================================================================
-  // Spatial Hash Pipeline
-  // ===========================================================================
+  private updateUniforms(timeStep: number): void {
+    const { config, state, buffers, device } = this;
 
-  /**
-   * Executes the complete spatial hashing pipeline.
-   *
-   * This is the most complex part of the simulation, consisting of 7+ passes
-   * that build an acceleration structure and physically reorder particle data.
-   *
-   * ## Pipeline Stages
-   *
-   * 1. **Hash**: Compute spatial hash key for each particle based on grid cell
-   * 2. **Clear**: Zero the histogram buckets
-   * 3. **Count**: Build histogram of particles per cell (atomic increment)
-   * 4. **Prefix Sum** (3 levels): Parallel scan to convert histogram to offsets
-   * 5. **Scatter**: Place particles into sorted positions using offsets
-   * 6. **Spatial Offsets**: Build key → start index lookup table
-   * 7. **Reorder**: Copy particle data to sorted buffers
-   * 8. **CopyBack**: Copy sorted data back to main buffers
-   *
-   * ## Hierarchical Prefix Sum
-   *
-   * The prefix sum is computed in 3 levels to handle arbitrary particle counts:
-   *
-   * ```
-   * Level 0: Process 512 particles per workgroup → output L1 block sums
-   * Level 1: Process L1 block sums → output L2 block sums
-   * Level 2: Process L2 block sums (small enough for single workgroup)
-   *
-   * Then combine in reverse order:
-   * Combine L1: Add scanned L2 sums back to L1
-   * Combine L0: Add scanned L1 sums back to original data
-   * ```
-   *
-   * @param encoder - Command encoder to record compute passes to
-   */
-  private dispatchSpatialHash(encoder: GPUCommandEncoder): void {
-    const { pipelines, buffers } = this;
-    const workgroups = Math.ceil(buffers.particleCount / this.workgroupSize);
+    // 1. External
+    let interactionStrength = 0;
+    if (state.input.push) interactionStrength = -config.interactionStrength;
+    else if (state.input.pull) interactionStrength = config.interactionStrength;
 
-    // -------------------------------------------------------------------------
-    // Calculate Block Counts for Hierarchical Prefix Sum
-    // -------------------------------------------------------------------------
+    this.computeData[0] = timeStep;
+    this.computeData[1] = config.gravity;
+    this.computeData[2] = config.interactionRadius;
+    this.computeData[3] = interactionStrength;
+    this.computeData[4] = this.interactionPos.x;
+    this.computeData[5] = this.interactionPos.y;
+    this.computeData[6] = this.interactionPos.z;
+    this.computeData[7] = 0;
+    device.queue.writeBuffer(this.physicsUniforms.external, 0, this.computeData);
 
-    // Level 0: Each block processes 512 particles
-    const blocksL0 = Math.ceil(buffers.particleCount / 512);
-
-    // Level 1: Each block processes 512 L0 block sums
-    const blocksL1 = Math.ceil(blocksL0 / 512);
-
-    // Level 2: Each block processes 512 L1 block sums (usually just 1 block)
-    const blocksL2 = Math.ceil(blocksL1 / 512);
-
-    // -------------------------------------------------------------------------
-    // Update Uniform Buffers
-    // -------------------------------------------------------------------------
-
-    // Hash parameters
-    this.hashParamsData[0] = this.config.smoothingRadius;
+    // 2. Hash
+    this.hashParamsData[0] = config.smoothingRadius;
     this.hashParamsData[1] = buffers.particleCount;
-    this.device.queue.writeBuffer(
-      pipelines.uniformBuffers.hash,
-      0,
-      this.hashParamsData
-    );
+    this.hashParamsData[2] = -config.boundsSize.x * 0.5;
+    this.hashParamsData[3] = -5.0;
+    this.hashParamsData[4] = -config.boundsSize.z * 0.5;
+    this.hashParamsData[5] = this.gridRes.x;
+    this.hashParamsData[6] = this.gridRes.y;
+    this.hashParamsData[7] = this.gridRes.z;
+    device.queue.writeBuffer(this.gridUniforms.hash, 0, this.hashParamsData);
 
-    // Sort parameters
+    // 3. Sort
     this.sortParamsData[0] = buffers.particleCount;
-    this.device.queue.writeBuffer(
-      pipelines.uniformBuffers.sort,
-      0,
-      this.sortParamsData
-    );
+    this.sortParamsData[1] = this.gridTotalCells;
+    device.queue.writeBuffer(this.gridUniforms.sort, 0, this.sortParamsData);
 
-    // Scan parameters for each level
-    this.scanParamsDataL0[0] = buffers.particleCount;
-    this.device.queue.writeBuffer(
-      pipelines.uniformBuffers.scanParamsL0,
-      0,
-      this.scanParamsDataL0
-    );
-
+    // 4. Scan
+    const blocksL0 = Math.ceil((this.gridTotalCells + 1) / 512);
+    const blocksL1 = Math.ceil(blocksL0 / 512);
+    this.scanParamsDataL0[0] = this.gridTotalCells + 1;
     this.scanParamsDataL1[0] = blocksL0;
-    this.device.queue.writeBuffer(
-      pipelines.uniformBuffers.scanParamsL1,
-      0,
-      this.scanParamsDataL1
-    );
-
     this.scanParamsDataL2[0] = blocksL1;
-    this.device.queue.writeBuffer(
-      pipelines.uniformBuffers.scanParamsL2,
-      0,
-      this.scanParamsDataL2
-    );
+    device.queue.writeBuffer(this.gridUniforms.scanL0, 0, this.scanParamsDataL0);
+    device.queue.writeBuffer(this.gridUniforms.scanL1, 0, this.scanParamsDataL1);
+    device.queue.writeBuffer(this.gridUniforms.scanL2, 0, this.scanParamsDataL2);
 
-    // -------------------------------------------------------------------------
-    // Stage 1: Hash
-    // -------------------------------------------------------------------------
-    // Compute spatial hash key for each particle based on predicted position.
-    // Also stores original particle index for later reordering.
-    const hashPass = encoder.beginComputePass();
-    hashPass.setPipeline(pipelines.hash);
-    hashPass.setBindGroup(0, pipelines.hashBindGroup);
-    hashPass.dispatchWorkgroups(workgroups);
-    hashPass.end();
-
-    // -------------------------------------------------------------------------
-    // Stage 2: Clear + Count (Histogram)
-    // -------------------------------------------------------------------------
-    // Clear the offset array, then count particles per cell using atomics
-    const clearPass = encoder.beginComputePass();
-    clearPass.setPipeline(pipelines.clearOffsets);
-    clearPass.setBindGroup(0, pipelines.clearOffsetsBindGroup);
-    clearPass.dispatchWorkgroups(workgroups);
-    clearPass.end();
-
-    const countPass = encoder.beginComputePass();
-    countPass.setPipeline(pipelines.countOffsets);
-    countPass.setBindGroup(1, pipelines.countOffsetsBindGroup);
-    countPass.dispatchWorkgroups(workgroups);
-    countPass.end();
-
-    // -------------------------------------------------------------------------
-    // Stage 3: Hierarchical Prefix Sum
-    // -------------------------------------------------------------------------
-    // Convert histogram to exclusive prefix sum (running total).
-    // This tells us where each cell's particles should be placed in sorted array.
-
-    // Level 0: Scan particle data → write block sums to L1
-    const scanPass0 = encoder.beginComputePass();
-    scanPass0.setPipeline(pipelines.prefixScan);
-    scanPass0.setBindGroup(0, pipelines.scanPass0BindGroup);
-    scanPass0.dispatchWorkgroups(blocksL0);
-    scanPass0.end();
-
-    // Level 1: Scan L1 block sums → write to L2
-    if (blocksL0 > 1) {
-      const scanPass1 = encoder.beginComputePass();
-      scanPass1.setPipeline(pipelines.prefixScan);
-      scanPass1.setBindGroup(0, pipelines.scanPass1BindGroup);
-      scanPass1.dispatchWorkgroups(blocksL1);
-      scanPass1.end();
-    }
-
-    // Level 2: Scan L2 block sums
-    if (blocksL1 > 1) {
-      const scanPass2 = encoder.beginComputePass();
-      scanPass2.setPipeline(pipelines.prefixScan);
-      scanPass2.setBindGroup(0, pipelines.scanPass2BindGroup);
-      scanPass2.dispatchWorkgroups(blocksL2);
-      scanPass2.end();
-    }
-
-    // Combine Level 1: Add scanned L2 sums back to L1 block results
-    if (blocksL1 > 1) {
-      const combinePass1 = encoder.beginComputePass();
-      combinePass1.setPipeline(pipelines.prefixCombine);
-      combinePass1.setBindGroup(0, pipelines.combinePass1BindGroup);
-      combinePass1.dispatchWorkgroups(blocksL1);
-      combinePass1.end();
-    }
-
-    // Combine Level 0: Add scanned L1 sums back to original data
-    if (blocksL0 > 1) {
-      const combinePass0 = encoder.beginComputePass();
-      combinePass0.setPipeline(pipelines.prefixCombine);
-      combinePass0.setBindGroup(0, pipelines.combinePass0BindGroup);
-      combinePass0.dispatchWorkgroups(blocksL0);
-      combinePass0.end();
-    }
-
-    // -------------------------------------------------------------------------
-    // Stage 4: Scatter
-    // -------------------------------------------------------------------------
-    // Use prefix sum results to place particles into their sorted positions.
-    // Atomic increment ensures no collisions when multiple particles hash to same cell.
-    const scatterPass = encoder.beginComputePass();
-    scatterPass.setPipeline(pipelines.scatter);
-    scatterPass.setBindGroup(0, pipelines.scatterBindGroup);
-    scatterPass.dispatchWorkgroups(workgroups);
-    scatterPass.end();
-
-    // -------------------------------------------------------------------------
-    // Stage 5: Spatial Offsets
-    // -------------------------------------------------------------------------
-    // Build lookup table: spatialOffsets[key] = first index in sorted array for that key.
-    // First initialize all to sentinel value, then find boundaries between different keys.
-    const initSpatialPass = encoder.beginComputePass();
-    initSpatialPass.setPipeline(pipelines.initSpatialOffsets);
-    initSpatialPass.setBindGroup(0, pipelines.initSpatialOffsetsBindGroup);
-    initSpatialPass.dispatchWorkgroups(workgroups);
-    initSpatialPass.end();
-
-    const updateSpatialPass = encoder.beginComputePass();
-    updateSpatialPass.setPipeline(pipelines.updateSpatialOffsets);
-    updateSpatialPass.setBindGroup(0, pipelines.updateSpatialOffsetsBindGroup);
-    updateSpatialPass.dispatchWorkgroups(workgroups);
-    updateSpatialPass.end();
-
-    // -------------------------------------------------------------------------
-    // Stage 6: Reorder
-    // -------------------------------------------------------------------------
-    // Physically copy particle data to sorted order for cache-coherent access.
-    // This is the key optimization that makes neighbor search 10-50x faster.
-    const reorderPass = encoder.beginComputePass();
-    reorderPass.setPipeline(pipelines.reorder);
-    reorderPass.setBindGroup(0, pipelines.reorderBindGroup);
-    reorderPass.dispatchWorkgroups(workgroups);
-    reorderPass.end();
-
-    // -------------------------------------------------------------------------
-    // Stage 7: Copy Back
-    // -------------------------------------------------------------------------
-    // Copy sorted data back to main buffers for use in next frame.
-    const copyBackPass = encoder.beginComputePass();
-    copyBackPass.setPipeline(pipelines.copyBack);
-    copyBackPass.setBindGroup(0, pipelines.copyBackBindGroup);
-    copyBackPass.dispatchWorkgroups(workgroups);
-    copyBackPass.end();
-  }
-
-  // ===========================================================================
-  // Uniform Buffer Updates
-  // ===========================================================================
-
-  /**
-   * Updates the uniform buffer for density calculation.
-   *
-   * SPH Kernel Normalization Constants (3D):
-   * - spikyPow2Scale = 15 / (2π * r⁵) for standard density kernel
-   * - spikyPow3Scale = 15 / (π * r⁶) for near-density kernel
-   *
-   * These constants ensure the kernel integrates to 1 over the support volume.
-   */
-  private updateDensityUniforms(): void {
-    const radius = this.config.smoothingRadius;
-
-    // Proper 3D SPH kernel normalization constants
+    // 5. Density
+    const radius = config.smoothingRadius;
     const spikyPow2Scale = 15 / (2 * Math.PI * Math.pow(radius, 5));
     const spikyPow3Scale = 15 / (Math.PI * Math.pow(radius, 6));
-
     this.densityParamsData[0] = radius;
     this.densityParamsData[1] = spikyPow2Scale;
     this.densityParamsData[2] = spikyPow3Scale;
-    this.densityParamsData[3] = this.buffers.particleCount;
+    this.densityParamsData[3] = buffers.particleCount;
+    this.densityParamsData[4] = -config.boundsSize.x * 0.5;
+    this.densityParamsData[5] = -5.0;
+    this.densityParamsData[6] = -config.boundsSize.z * 0.5;
+    this.densityParamsData[7] = 0;
+    this.densityParamsData[8] = this.gridRes.x;
+    this.densityParamsData[9] = this.gridRes.y;
+    this.densityParamsData[10] = this.gridRes.z;
+    this.densityParamsData[11] = 0;
+    device.queue.writeBuffer(this.physicsUniforms.density, 0, this.densityParamsData);
 
-    this.device.queue.writeBuffer(
-      this.pipelines.uniformBuffers.density,
-      0,
-      this.densityParamsData
-    );
-  }
-
-  private updateSplatParams(): void {
-    const bounds = this.config.boundsSize;
-    const radius = this.config.smoothingRadius;
-    const spikyPow2Scale = 15 / (2 * Math.PI * Math.pow(radius, 5));
-    const fixedPointScale = 1000.0;
-    const totalVoxels =
-      this.densityTextureSize.x *
-      this.densityTextureSize.y *
-      this.densityTextureSize.z;
-
-    // Clear params: totalVoxels (u32) + 3x padding
-    const clearData = new Uint32Array(4);
-    clearData[0] = totalVoxels;
-    this.device.queue.writeBuffer(this.splatClearParamsBuffer, 0, clearData);
-
-    // Splat particles params
-    this.splatParticlesParamsF32[0] = radius;
-    this.splatParticlesParamsF32[1] = spikyPow2Scale;
-    this.splatParticlesParamsU32[2] = this.buffers.particleCount;
-    this.splatParticlesParamsF32[3] = fixedPointScale;
-    this.splatParticlesParamsF32[4] = bounds.x;
-    this.splatParticlesParamsF32[5] = bounds.y;
-    this.splatParticlesParamsF32[6] = bounds.z;
-    this.splatParticlesParamsF32[7] = 0;
-    this.splatParticlesParamsU32[8] = this.densityTextureSize.x;
-    this.splatParticlesParamsU32[9] = this.densityTextureSize.y;
-    this.splatParticlesParamsU32[10] = this.densityTextureSize.z;
-    this.splatParticlesParamsU32[11] = 0;
-    this.device.queue.writeBuffer(
-      this.splatParticlesParamsBuffer,
-      0,
-      this.splatParticlesParamsData
-    );
-
-    // Resolve params
-    this.splatResolveParamsF32[0] = fixedPointScale;
-    this.splatResolveParamsF32[1] = 0;
-    this.splatResolveParamsF32[2] = 0;
-    this.splatResolveParamsF32[3] = 0;
-    this.splatResolveParamsU32[4] = this.densityTextureSize.x;
-    this.splatResolveParamsU32[5] = this.densityTextureSize.y;
-    this.splatResolveParamsU32[6] = this.densityTextureSize.z;
-    this.splatResolveParamsU32[7] = 0;
-    this.device.queue.writeBuffer(
-      this.splatResolveParamsBuffer,
-      0,
-      this.splatResolveParamsData
-    );
-  }
-
-  /**
-   * Updates the uniform buffer for pressure calculation.
-   *
-   * SPH Kernel Derivative Normalization Constants (3D):
-   * - spikyPow2DerivScale = 15 / (π * r⁵) for pressure gradient
-   * - spikyPow3DerivScale = 45 / (π * r⁶) for near-pressure gradient
-   *
-   * These are the derivatives of the density kernels used for force calculation.
-   *
-   * @param timeStep - Current simulation time step
-   */
-  private updatePressureUniforms(timeStep: number): void {
-    const radius = this.config.smoothingRadius;
-
-    // Proper 3D SPH kernel derivative normalization constants
+    // 6. Pressure
     const spikyPow2DerivScale = 15 / (Math.PI * Math.pow(radius, 5));
     const spikyPow3DerivScale = 45 / (Math.PI * Math.pow(radius, 6));
-
     this.pressureParamsData[0] = timeStep;
-    this.pressureParamsData[1] = this.config.targetDensity;
-    this.pressureParamsData[2] = this.config.pressureMultiplier;
-    this.pressureParamsData[3] = this.config.nearPressureMultiplier;
+    this.pressureParamsData[1] = config.targetDensity;
+    this.pressureParamsData[2] = config.pressureMultiplier;
+    this.pressureParamsData[3] = config.nearPressureMultiplier;
     this.pressureParamsData[4] = radius;
     this.pressureParamsData[5] = spikyPow2DerivScale;
     this.pressureParamsData[6] = spikyPow3DerivScale;
-    this.pressureParamsData[7] = this.buffers.particleCount;
+    this.pressureParamsData[7] = buffers.particleCount;
+    this.pressureParamsData[8] = -config.boundsSize.x * 0.5;
+    this.pressureParamsData[9] = -5.0;
+    this.pressureParamsData[10] = -config.boundsSize.z * 0.5;
+    this.pressureParamsData[11] = 0;
+    this.pressureParamsData[12] = this.gridRes.x;
+    this.pressureParamsData[13] = this.gridRes.y;
+    this.pressureParamsData[14] = this.gridRes.z;
+    this.pressureParamsData[15] = 0;
+    device.queue.writeBuffer(this.physicsUniforms.pressure, 0, this.pressureParamsData);
 
-    this.device.queue.writeBuffer(
-      this.pipelines.uniformBuffers.pressure,
-      0,
-      this.pressureParamsData
-    );
-  }
-
-  /**
-   * Updates the uniform buffer for viscosity calculation.
-   *
-   * Poly6 Kernel Normalization Constant (3D):
-   * - poly6Scale = 315 / (64π * r⁹)
-   *
-   * Poly6 is used for viscosity because it's positive everywhere,
-   * unlike spiky kernels which have discontinuities.
-   *
-   * @param timeStep - Current simulation time step
-   */
-  private updateViscosityUniforms(timeStep: number): void {
-    const radius = this.config.smoothingRadius;
-
-    // Proper 3D Poly6 kernel normalization constant
+    // 7. Viscosity
     const poly6Scale = 315 / (64 * Math.PI * Math.pow(radius, 9));
-
     this.viscosityParamsData[0] = timeStep;
-    this.viscosityParamsData[1] = this.config.viscosityStrength;
+    this.viscosityParamsData[1] = config.viscosityStrength;
     this.viscosityParamsData[2] = radius;
     this.viscosityParamsData[3] = poly6Scale;
-    this.viscosityParamsData[4] = this.buffers.particleCount;
+    this.viscosityParamsData[4] = buffers.particleCount;
+    this.viscosityParamsData[5] = -config.boundsSize.x * 0.5;
+    this.viscosityParamsData[6] = -5.0;
+    this.viscosityParamsData[7] = -config.boundsSize.z * 0.5;
+    this.viscosityParamsData[8] = this.gridRes.x;
+    this.viscosityParamsData[9] = this.gridRes.y;
+    this.viscosityParamsData[10] = this.gridRes.z;
+    this.viscosityParamsData[11] = 0;
+    device.queue.writeBuffer(this.physicsUniforms.viscosity, 0, this.viscosityParamsData);
 
-    this.device.queue.writeBuffer(
-      this.pipelines.uniformBuffers.viscosity,
-      0,
-      this.viscosityParamsData
-    );
-  }
-
-  /**
-   * Updates the uniform buffer for position integration and collision.
-   *
-   * @param timeStep - Current simulation time step
-   */
-  private updateIntegrateUniforms(timeStep: number): void {
+    // 8. Integrate
     this.integrateData[0] = timeStep;
-    this.integrateData[1] = this.config.collisionDamping;
-    
-    // Check if obstacle is active (has volume)
-    const hasObstacle = this.config.obstacleSize.x > 0 && 
-                       this.config.obstacleSize.y > 0 && 
-                       this.config.obstacleSize.z > 0;
+    this.integrateData[1] = config.collisionDamping;
+    const obstacleShape = config.obstacleShape ?? 'box';
+    const obstacleIsSphere = obstacleShape === 'sphere';
+    const obstacleRadius = config.obstacleRadius ?? 0;
+    const hasObstacle = (config.showObstacle !== false) &&
+      (obstacleIsSphere
+        ? obstacleRadius > 0
+        : (config.obstacleSize.x > 0 &&
+          config.obstacleSize.y > 0 &&
+          config.obstacleSize.z > 0));
     this.integrateData[2] = hasObstacle ? 1 : 0;
-
-    // Calculate half-extents of simulation bounds
-    const hx = this.config.boundsSize.x * 0.5;
-    const hy = this.config.boundsSize.y * 0.5;
-    const hz = this.config.boundsSize.z * 0.5;
-
-    this.integrateData[4] = hx;
-    this.integrateData[5] = hy;
-    this.integrateData[6] = hz;
-
-    // Obstacle parameters
-    this.integrateData[8] = this.config.obstacleCentre.x;
-    this.integrateData[9] = this.config.obstacleCentre.y;
-    this.integrateData[10] = this.config.obstacleCentre.z;
-
-    this.integrateData[12] = this.config.obstacleSize.x * 0.5;
-    this.integrateData[13] = this.config.obstacleSize.y * 0.5;
-    this.integrateData[14] = this.config.obstacleSize.z * 0.5;
-
-    this.device.queue.writeBuffer(
-      this.pipelines.uniformBuffers.integrate,
-      0,
-      this.integrateData
-    );
+    this.integrateData[3] = obstacleIsSphere ? 1 : 0;
+    const size = config.boundsSize;
+    const hx = size.x * 0.5;
+    const hz = size.z * 0.5;
+    const minY = -5.0;
+    this.integrateData[4] = -hx;
+    this.integrateData[5] = minY;
+    this.integrateData[6] = -hz;
+    this.integrateData[8] = hx;
+    this.integrateData[9] = minY + size.y;
+    this.integrateData[10] = hz;
+    this.integrateData[12] = config.obstacleCentre.x;
+    this.integrateData[13] = obstacleIsSphere
+      ? config.obstacleCentre.y
+      : config.obstacleCentre.y + config.obstacleSize.y * 0.5;
+    this.integrateData[14] = config.obstacleCentre.z;
+    const obsHalfX = obstacleIsSphere ? obstacleRadius : config.obstacleSize.x * 0.5;
+    const obsHalfY = obstacleIsSphere ? obstacleRadius : config.obstacleSize.y * 0.5;
+    const obsHalfZ = obstacleIsSphere ? obstacleRadius : config.obstacleSize.z * 0.5;
+    this.integrateData[16] = obsHalfX;
+    this.integrateData[17] = obsHalfY;
+    this.integrateData[18] = obsHalfZ;
+    this.integrateData[20] = config.obstacleRotation.x;
+    this.integrateData[21] = config.obstacleRotation.y;
+    this.integrateData[22] = config.obstacleRotation.z;
+    device.queue.writeBuffer(this.physicsUniforms.integrate, 0, this.integrateData);
   }
 
-  // ===========================================================================
-  // Rendering
-  // ===========================================================================
-
-  /**
-   * Renders the current simulation state.
-   *
-   * @param viewMatrix - The camera's view matrix
-   */
   render(camera: OrbitCamera): void {
     const encoder = this.device.createCommandEncoder();
-
     this.renderer.render(
       encoder,
       this.context.getCurrentTexture().createView(),
       camera,
       this.config
     );
-
     this.device.queue.submit([encoder.finish()]);
   }
 }
