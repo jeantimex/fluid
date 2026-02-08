@@ -275,6 +275,19 @@ const { stats } = setupGui(
   {
     trackGPU: true,
     title: 'WebGPU 2D Fluid',
+    subtitle: 'SPH Fluid • Particle Simulation',
+    features: [
+      'SPH Fluid Simulator (GPU)',
+      'WebGPU Compute Pipelines',
+      'Bitonic Sort Optimization',
+      'Spatial Grid Optimization',
+      'High-Performance Rendering'
+    ],
+    interactions: [
+      'Click & Drag: Pull Particles',
+      'Right Click & Drag: Push Particles',
+      'Mouse Wheel: Zoom In/Out'
+    ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
