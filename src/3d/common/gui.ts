@@ -449,11 +449,11 @@ export function setupGui(
       trackGPU: options.trackGPU ?? false,
       horizontal: true,
     });
-    stats.dom.style.display = 'block';
+    stats.dom.style.display = 'none';
     document.body.appendChild(stats.dom);
   }
 
-  const uiState = { showStats: true };
+  const uiState = { showStats: false };
 
   // Folder order: Fluid, Obstacle, Container, Environment, Shadow, Interaction, Performance
   const particlesFolder = gui.addFolder('Fluid');
