@@ -19,11 +19,15 @@ This project is ported from [Sebastian Lague](https://github.com/SebLague)'s [Fl
 https://github.com/user-attachments/assets/6559bca9-59b1-4ca3-9723-de5a8d6c1b95
 
 - **Canvas 2D**: A baseline implementation using the standard HTML5 Canvas API.
+  - [Live Demo](https://jeantimex.github.io/fluid/canvas2d.html)
 - **WebGPU 2D**: A 2D simulation utilizing WebGPU compute shaders for physics and a custom render pipeline.
+  - [Live Demo](https://jeantimex.github.io/fluid/webgpu2d.html)
 
 ### 3D Simulations
 
 https://github.com/user-attachments/assets/26b13e45-8f26-4896-9a95-ab9bfaddc907
+
+[Live Demo](https://jeantimex.github.io/fluid/)
 
 The project features several specialized 3D rendering techniques, all sharing a unified SPH simulation core:
 
