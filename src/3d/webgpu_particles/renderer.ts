@@ -974,7 +974,7 @@ export class Renderer {
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
     // Update Environment Uniforms (cached)
-    const envParamKey = `${config.globalBrightness}-${config.globalSaturation}-${config.floorAmbient}-${config.sunBrightness}-${config.dirToSun.x}-${config.dirToSun.y}-${config.dirToSun.z}-${obsCol.r}-${obsCol.g}-${obsCol.b}-${obsAlpha}`;
+    const envParamKey = `${config.globalBrightness}-${config.globalSaturation}-${config.floorAmbient}-${config.sunBrightness}-${config.dirToSun.x}-${config.dirToSun.y}-${config.dirToSun.z}-${obsCol.r}-${obsCol.g}-${obsCol.b}-${obsAlpha}-${config.tileCol1.r}-${config.tileCol1.g}-${config.tileCol1.b}-${config.tileCol2.r}-${config.tileCol2.g}-${config.tileCol2.b}-${config.tileCol3.r}-${config.tileCol3.g}-${config.tileCol3.b}-${config.tileCol4.r}-${config.tileCol4.g}-${config.tileCol4.b}-${config.skyColorHorizon.r}-${config.skyColorHorizon.g}-${config.skyColorHorizon.b}-${config.skyColorZenith.r}-${config.skyColorZenith.g}-${config.skyColorZenith.b}-${config.skyColorGround.r}-${config.skyColorGround.g}-${config.skyColorGround.b}`;
     if (envParamKey !== this.lastEnvParams) {
       const envData = new Float32Array(60);
       writeEnvironmentUniforms(envData, 0, config, config);
