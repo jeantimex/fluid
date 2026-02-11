@@ -3,7 +3,7 @@ import{G as ht}from"./lil-gui.esm-DA0aiWCL.js";import{S as xt}from"./main-DwTz-q
       position: fixed;
       top: 10px;
       right: 10px;
-      z-index: 1000;
+      z-index: 10001;
       background: #1a1a1a;
       color: #fff;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
