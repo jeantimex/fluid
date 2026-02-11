@@ -61,7 +61,7 @@ export function setupGui(
         position: fixed;
         top: 10px;
         right: 10px;
-        z-index: 1000;
+        z-index: 10001;
         background: #1a1a1a;
         color: #fff;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

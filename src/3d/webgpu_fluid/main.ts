@@ -41,7 +41,7 @@ style.textContent = `
     position: fixed;
     top: 0;
     right: 0;
-    z-index: 1000;
+    z-index: 10001;
     background: #1a1a1a;
     color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
