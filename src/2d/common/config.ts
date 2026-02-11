@@ -65,7 +65,7 @@ export function createConfig(): SimConfig {
     ],
 
     // === Particle Spawning ===
-    spawnDensity: 129, // Particles per unit area
+    spawnDensity: 35, // Particles per unit area
     initialVelocity: { x: 0, y: 0 }, // Start at rest
     jitterStr: 0.03, // Small random offset to break symmetry
 

@@ -247,6 +247,11 @@ export function setupInputHandlers(
     const input = getInput();
     if (!input) return;
 
+    // Prevent default browser behaviors like scrolling/zooming
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+
     const size = config.boundsSize;
     const hx = size.x * 0.5;
     const hz = size.z * 0.5;
@@ -292,6 +297,11 @@ export function setupInputHandlers(
   canvas.addEventListener('pointermove', (e) => {
     const input = getInput();
     if (!input) return;
+
+    // Prevent default browser behaviors like scrolling/zooming
+    if (e.cancelable) {
+      e.preventDefault();
+    }
 
     // Always update ray for hover detection even when not interacting
     const ray = getRay(e.clientX, e.clientY);

@@ -238,12 +238,18 @@ async function main() {
   let lastY = 0;
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (e.cancelable) {
+      e.preventDefault();
+    }
     isDragging = true;
     lastX = e.clientX;
     lastY = e.clientY;
   });
 
   canvas.addEventListener('pointermove', (e) => {
+    if (e.cancelable) {
+      e.preventDefault();
+    }
     if (!isDragging) return;
 
     const dx = e.clientX - lastX;

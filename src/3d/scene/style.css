@@ -19,4 +19,5 @@ canvas {
   height: 100%;
   border: 0;
   background: #05070b;
+  touch-action: none;
 }

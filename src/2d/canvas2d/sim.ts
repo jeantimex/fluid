@@ -110,6 +110,11 @@ function installInputHandlers(
     const world = canvasToWorld(px, py);
     inputState.worldX = world.x;
     inputState.worldY = world.y;
+
+    // Prevent default browser behaviors like scrolling/zooming
+    if (event.cancelable) {
+      event.preventDefault();
+    }
   };
 
   // Track pointer movement
@@ -117,6 +122,11 @@ function installInputHandlers(
 
   // Handle pointer button press
   canvas.addEventListener('pointerdown', (event) => {
+    // Prevent default browser behaviors like scrolling/zooming
+    if (event.cancelable) {
+      event.preventDefault();
+    }
+
     updatePointer(event);
     if (event.button === 0) inputState.pull = true; // Left click = pull
     if (event.button === 2) inputState.push = true; // Right click = push

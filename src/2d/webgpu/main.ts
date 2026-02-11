@@ -131,6 +131,11 @@ function setupInputHandlers(
     );
     input.worldX = world.x;
     input.worldY = world.y;
+
+    // Prevent default browser behaviors like scrolling/zooming
+    if (event.cancelable) {
+      event.preventDefault();
+    }
   };
 
   // Track pointer position as it moves
@@ -140,6 +145,11 @@ function setupInputHandlers(
   canvas.addEventListener('pointerdown', (event) => {
     const input = getInput();
     if (!input) return;
+
+    // Prevent default browser behaviors like scrolling/zooming
+    if (event.cancelable) {
+      event.preventDefault();
+    }
 
     // Update position first
     updatePointer(event);
