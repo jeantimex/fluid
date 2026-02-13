@@ -16,7 +16,8 @@ export class FoamPass {
     this.device = device;
 
     this.uniformBuffer = device.createBuffer({
-      size: 80, // mat4(64) + vec2(8) + f32(4) + pad(4) = 80
+      // mat4(64) + vec2(8) + f32(4) + pad(4) + vec2(8) + vec2(8) = 96
+      size: 96,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -94,12 +95,16 @@ export class FoamPass {
       return;
     }
 
-    const uniforms = new Float32Array(20);
+    const uniforms = new Float32Array(24);
     uniforms.set(frame.viewProjection);
     uniforms[16] = frame.canvasWidth;
     uniforms[17] = frame.canvasHeight;
     uniforms[18] = frame.foamParticleRadius;
     uniforms[19] = 0; // pad
+    uniforms[20] = frame.foamAnisotropy;
+    uniforms[21] = frame.foamRenderMode === 'patches' ? 1 : 0;
+    uniforms[22] = 0;
+    uniforms[23] = 0;
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniforms);
 
     const pass = encoder.beginRenderPass({

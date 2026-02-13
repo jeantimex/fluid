@@ -28,7 +28,8 @@ Port the highest-impact FLIP whitewater concepts into `webgpu_flip` so foam appe
 - Phase 2: Complete
 - Phase 3: Complete
 - Phase 4: Complete
-- Phase 5: In progress (next)
+- Phase 5: Complete
+- Phase 6: In progress (next)
 
 ## Baseline Gaps
 

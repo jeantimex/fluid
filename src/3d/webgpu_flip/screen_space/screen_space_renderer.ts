@@ -23,6 +23,7 @@ import { NormalPass } from './passes/normal_pass.ts';
 import { SmoothPass } from './passes/smooth_pass.ts';
 import { CompositePass } from './passes/composite_pass.ts';
 import { ShadowPass } from './passes/shadow_pass.ts';
+import { FoamPostPass } from './passes/foam_post_pass.ts';
 
 export class ScreenSpaceRenderer {
   /**
@@ -43,7 +44,9 @@ export class ScreenSpaceRenderer {
   private normalTexture: GPUTexture | null = null;
   private smoothTextureA: GPUTexture | null = null;
   private smoothTextureB: GPUTexture | null = null;
+  private foamRawTexture: GPUTexture | null = null;
   private foamTexture: GPUTexture | null = null;
+  private foamHistoryTexture: GPUTexture | null = null;
   private shadowTexture: GPUTexture | null = null;
   private shadowSmoothTexture: GPUTexture | null = null;
 
@@ -54,6 +57,7 @@ export class ScreenSpaceRenderer {
   private normalPass: NormalPass;
   private smoothPass: SmoothPass;
   private foamPass: FoamPass;
+  private foamPostPass: FoamPostPass;
   private compositePass: CompositePass;
   private shadowPass: ShadowPass;
 
@@ -72,6 +76,7 @@ export class ScreenSpaceRenderer {
     this.normalPass = new NormalPass(device);
     this.smoothPass = new SmoothPass(device);
     this.foamPass = new FoamPass(device);
+    this.foamPostPass = new FoamPostPass(device);
     this.compositePass = new CompositePass(device, format);
     this.shadowPass = new ShadowPass(device);
   }
@@ -86,7 +91,9 @@ export class ScreenSpaceRenderer {
       normalTexture: this.normalTexture,
       smoothTextureA: this.smoothTextureA,
       smoothTextureB: this.smoothTextureB,
+      foamRawTexture: this.foamRawTexture,
       foamTexture: this.foamTexture,
+      foamHistoryTexture: this.foamHistoryTexture,
       shadowTexture: this.shadowTexture,
       shadowSmoothTexture: this.shadowSmoothTexture,
     };
@@ -151,11 +158,27 @@ export class ScreenSpaceRenderer {
       usage: colorUsage,
     });
 
-    this.foamTexture = this.device.createTexture({
+    const foamUsage =
+      GPUTextureUsage.RENDER_ATTACHMENT |
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.COPY_SRC |
+      GPUTextureUsage.COPY_DST;
+
+    this.foamRawTexture = this.device.createTexture({
       size: { width: this.width, height: this.height },
       format: 'r16float',
       usage:
         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    this.foamTexture = this.device.createTexture({
+      size: { width: this.width, height: this.height },
+      format: 'r16float',
+      usage: foamUsage,
+    });
+    this.foamHistoryTexture = this.device.createTexture({
+      size: { width: this.width, height: this.height },
+      format: 'r16float',
+      usage: foamUsage,
     });
 
     // Shadow textures at 1/4 resolution (like Unity)
@@ -246,16 +269,15 @@ export class ScreenSpaceRenderer {
       normalTexture: this.normalTexture,
       smoothTextureA: this.smoothTextureA,
       smoothTextureB: this.smoothTextureB,
+      foamRawTexture: this.foamRawTexture,
       foamTexture: this.foamTexture,
+      foamHistoryTexture: this.foamHistoryTexture,
       shadowTexture: this.shadowTexture,
       shadowSmoothTexture: this.shadowSmoothTexture,
     };
 
     this.depthPass.encode(encoder, resources, frame);
     this.thicknessPass.encode(encoder, resources, frame);
-    if (resources.foamTexture) {
-      this.foamPass.encode(encoder, resources, frame, resources.foamTexture);
-    }
 
     // Shadow pass: render thickness from light's perspective, then smooth
     if (this.config.showFluidShadows) {
@@ -322,6 +344,36 @@ export class ScreenSpaceRenderer {
     }
     this.normalPass.encode(encoder, resources, frame);
 
+    if (resources.foamRawTexture) {
+      this.foamPass.encode(encoder, resources, frame, resources.foamRawTexture);
+    }
+    if (
+      resources.foamRawTexture &&
+      resources.foamTexture &&
+      resources.foamHistoryTexture
+    ) {
+      const foamThicknessRef =
+        resources.smoothTextureB ?? resources.thicknessTexture;
+      if (foamThicknessRef) {
+        this.foamPostPass.encode(
+          encoder,
+          frame,
+          resources.foamRawTexture,
+          foamThicknessRef,
+          resources.foamHistoryTexture,
+          resources.foamTexture
+        );
+      }
+    }
+
     this.compositePass.encode(encoder, resources, frame, swapchainView);
+
+    if (resources.foamTexture && resources.foamHistoryTexture) {
+      encoder.copyTextureToTexture(
+        { texture: resources.foamTexture },
+        { texture: resources.foamHistoryTexture },
+        { width: this.width, height: this.height, depthOrArrayLayers: 1 }
+      );
+    }
   }
 }

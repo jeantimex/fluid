@@ -10,7 +10,9 @@ export interface ScreenSpaceTextures {
   normalTexture: GPUTexture | null;
   smoothTextureA: GPUTexture | null;
   smoothTextureB: GPUTexture | null;
+  foamRawTexture: GPUTexture | null;
   foamTexture: GPUTexture | null;
+  foamHistoryTexture: GPUTexture | null;
   shadowTexture: GPUTexture | null;
   shadowSmoothTexture: GPUTexture | null;
 }
@@ -28,6 +30,13 @@ export interface ScreenSpaceFrame extends EnvironmentConfig {
   deepWaterColor: RGB;
   foamColor: RGB;
   foamOpacity: number;
+  foamRenderMode: 'points' | 'patches';
+  foamBlurPasses: number;
+  foamThreshold: number;
+  foamSoftness: number;
+  foamAnisotropy: number;
+  foamEdgeBoost: number;
+  foamTemporalBlend: number;
   extinctionCoeff: Vec3;
   extinctionMultiplier: number;
   refractionStrength: number;
