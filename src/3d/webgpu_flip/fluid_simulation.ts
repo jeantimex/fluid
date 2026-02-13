@@ -579,7 +579,8 @@ export class FluidSimulation {
 
     device.queue.writeBuffer(this.foamUniforms.spawn, 0, this.foamSpawnData);
 
-    // Update uniforms
+    // Update uniforms (32 floats / 128 bytes)
+    this.foamUpdateData.fill(0);
     this.foamUpdateData[0] = frameTime;
     this.foamUpdateData[1] = config.gravity;
     this.foamUpdateData[2] = config.sprayDrag;
@@ -597,22 +598,32 @@ export class FluidSimulation {
     this.foamUpdateData[8] = -hx;
     this.foamUpdateData[9] = minY;
     this.foamUpdateData[10] = -hz;
-    this.foamUpdateData[11] = 0;
+    this.foamUpdateData[11] = config.bubbleNeighborMin;
 
     this.foamUpdateData[12] = this.gridRes.x;
     this.foamUpdateData[13] = this.gridRes.y;
     this.foamUpdateData[14] = this.gridRes.z;
-    this.foamUpdateData[15] = 0;
+    this.foamUpdateData[15] = config.sprayNeighborMax;
 
-    const u32Update = new Uint32Array(this.foamUpdateData.buffer);
-    u32Update[16] = config.bubbleNeighborMin;
-    u32Update[17] = config.sprayNeighborMax;
-    this.foamUpdateData[18] = config.bubbleScale;
-    this.foamUpdateData[19] = config.bubbleChangeScaleSpeed;
-    this.foamUpdateData[20] = config.foamLayerDepth;
-    this.foamUpdateData[21] = config.foamLayerOffset;
-    this.foamUpdateData[22] = config.foamBubbleHysteresis;
-    this.foamUpdateData[23] = 0;
+    this.foamUpdateData[16] = config.bubbleScale;
+    this.foamUpdateData[17] = config.bubbleChangeScaleSpeed;
+    this.foamUpdateData[18] = config.foamLayerDepth;
+    this.foamUpdateData[19] = config.foamLayerOffset;
+
+    this.foamUpdateData[20] = config.foamBubbleHysteresis;
+    this.foamUpdateData[21] = config.foamAdvectionStrength;
+    this.foamUpdateData[22] = config.bubbleDrag;
+    this.foamUpdateData[23] = config.sprayFriction;
+
+    this.foamUpdateData[24] = config.sprayRestitution;
+    this.foamUpdateData[25] = config.foamLifetimeDecay;
+    this.foamUpdateData[26] = config.bubbleLifetimeDecay;
+    this.foamUpdateData[27] = config.sprayLifetimeDecay;
+
+    this.foamUpdateData[28] = config.foamPreservationRate;
+    this.foamUpdateData[29] = config.foamDensityMin;
+    this.foamUpdateData[30] = config.foamDensityMax;
+    this.foamUpdateData[31] = config.foamPreservationEnabled ? 1 : 0;
 
     device.queue.writeBuffer(this.foamUniforms.update, 0, this.foamUpdateData);
 

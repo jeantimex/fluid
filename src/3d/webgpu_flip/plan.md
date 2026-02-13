@@ -22,6 +22,14 @@ Port the highest-impact FLIP whitewater concepts into `webgpu_flip` so foam appe
 - Spray and bubbles behave distinctly from surface foam.
 - Final render reads as patches/lines, not point cloud speckle.
 
+## Progress
+
+- Phase 1: Complete
+- Phase 2: Complete
+- Phase 3: Complete
+- Phase 4: Complete
+- Phase 5: In progress (next)
+
 ## Baseline Gaps
 
 - Spawn: trapped-air + kinetic thresholds only.
