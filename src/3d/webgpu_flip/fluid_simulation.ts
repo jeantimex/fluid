@@ -13,7 +13,7 @@ import {
   type SpatialGridUniforms,
 } from '../common/spatial_grid.ts';
 import { FluidPhysics, type PhysicsUniforms } from '../common/fluid_physics.ts';
-import { FoamPipeline, type FoamUniforms } from '../common/foam_pipeline.ts';
+import { FoamPipeline, type FoamUniforms } from './foam_pipeline.ts';
 import { ScreenSpaceRenderer } from './screen_space/screen_space_renderer.ts';
 import { PickingSystem } from '../common/picking_system.ts';
 
@@ -62,7 +62,7 @@ export class FluidSimulation {
   private densityParamsData = new Float32Array(12);
   private pressureParamsData = new Float32Array(16);
   private viscosityParamsData = new Float32Array(12);
-  private foamSpawnData = new Float32Array(28);
+  private foamSpawnData = new Float32Array(40);
   private foamUpdateData = new Float32Array(28);
 
   private foamFrameCount = 0;
@@ -134,7 +134,7 @@ export class FluidSimulation {
 
     this.foamUniforms = {
       spawn: device.createBuffer({
-        size: 112,
+        size: 160,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
       update: device.createBuffer({
@@ -491,29 +491,72 @@ export class FluidSimulation {
             )
           );
 
+    const obstacleShape = config.obstacleShape ?? 'box';
+    const obstacleIsSphere = obstacleShape === 'sphere';
+    const obstacleRadius = config.obstacleRadius ?? 0;
+    const hasObstacle =
+      config.showObstacle !== false &&
+      (obstacleIsSphere
+        ? obstacleRadius > 0
+        : config.obstacleSize.x > 0 &&
+          config.obstacleSize.y > 0 &&
+          config.obstacleSize.z > 0);
+    const obstacleCenterY = obstacleIsSphere
+      ? config.obstacleCentre.y
+      : config.obstacleCentre.y + config.obstacleSize.y * 0.5;
+    const obstacleHalfX = obstacleIsSphere
+      ? obstacleRadius
+      : config.obstacleSize.x * 0.5;
+    const obstacleHalfY = obstacleIsSphere
+      ? obstacleRadius
+      : config.obstacleSize.y * 0.5;
+    const obstacleHalfZ = obstacleIsSphere
+      ? obstacleRadius
+      : config.obstacleSize.z * 0.5;
+
+    // Spawn uniforms (40 floats / 160 bytes)
+    this.foamSpawnData.fill(0);
     this.foamSpawnData[0] = frameTime;
     this.foamSpawnData[1] = config.whitewaterEmitterRate * fadeInT * fadeInT;
     this.foamSpawnData[2] = config.trappedAirVelocityMin;
     this.foamSpawnData[3] = config.trappedAirVelocityMax;
-    this.foamSpawnData[4] = config.foamKineticEnergyMin;
-    this.foamSpawnData[5] = config.foamKineticEnergyMax;
+    this.foamSpawnData[4] = config.energyMin;
+    this.foamSpawnData[5] = config.energyMax;
+    this.foamSpawnData[6] = config.turbulenceMin;
+    this.foamSpawnData[7] = config.turbulenceMax;
 
     const u32SpawnView = new Uint32Array(this.foamSpawnData.buffer);
-    u32SpawnView[6] = maxFoam;
-    u32SpawnView[7] = this.foamFrameCount;
-    this.foamSpawnData[8] = buffers.particleCount;
+    u32SpawnView[8] = maxFoam;
+    u32SpawnView[9] = this.foamFrameCount;
+    u32SpawnView[10] = buffers.particleCount;
+    // bit0: obstacle enabled, bit1: sphere obstacle
+    u32SpawnView[11] = (hasObstacle ? 1 : 0) | (obstacleIsSphere ? 2 : 0);
 
-    this.foamSpawnData[9] = config.smoothingRadius;
-    this.foamSpawnData[10] = config.foamLifetimeMin;
-    this.foamSpawnData[11] = config.foamLifetimeMax;
+    this.foamSpawnData[12] = config.smoothingRadius;
+    this.foamSpawnData[13] = config.foamLifetimeMin;
+    this.foamSpawnData[14] = config.foamLifetimeMax;
+    this.foamSpawnData[15] = config.wavecrestSharpness;
 
-    this.foamSpawnData[12] = -config.boundsSize.x * 0.5;
-    this.foamSpawnData[13] = -5.0;
-    this.foamSpawnData[14] = -config.boundsSize.z * 0.5;
-    this.foamSpawnData[16] = this.gridRes.x;
-    this.foamSpawnData[17] = this.gridRes.y;
-    this.foamSpawnData[18] = this.gridRes.z;
-    this.foamSpawnData[19] = config.bubbleScale;
+    this.foamSpawnData[16] = -config.boundsSize.x * 0.5;
+    this.foamSpawnData[17] = -5.0;
+    this.foamSpawnData[18] = -config.boundsSize.z * 0.5;
+    this.foamSpawnData[20] = this.gridRes.x;
+    this.foamSpawnData[21] = this.gridRes.y;
+    this.foamSpawnData[22] = this.gridRes.z;
+    this.foamSpawnData[23] = config.bubbleScale;
+
+    this.foamSpawnData[24] = config.obstacleCentre.x;
+    this.foamSpawnData[25] = obstacleCenterY;
+    this.foamSpawnData[26] = config.obstacleCentre.z;
+    this.foamSpawnData[27] = config.obstacleInfluenceBase;
+    this.foamSpawnData[28] = obstacleHalfX;
+    this.foamSpawnData[29] = obstacleHalfY;
+    this.foamSpawnData[30] = obstacleHalfZ;
+    this.foamSpawnData[31] = config.obstacleInfluenceDecay;
+    this.foamSpawnData[32] = obstacleRadius;
+    this.foamSpawnData[33] = 1.0; // spray speed boost placeholder (phase 2)
+    this.foamSpawnData[34] = config.wavecrestMin;
+    this.foamSpawnData[35] = config.wavecrestMax;
 
     device.queue.writeBuffer(this.foamUniforms.spawn, 0, this.foamSpawnData);
 
