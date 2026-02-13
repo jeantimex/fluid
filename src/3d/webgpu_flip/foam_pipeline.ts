@@ -42,7 +42,11 @@ export class FoamPipeline {
     });
   }
 
-  createBindGroups(buffers: FluidBuffers, uniforms: FoamUniforms): void {
+  createBindGroups(
+    buffers: FluidBuffers,
+    uniforms: FoamUniforms,
+    foamStateBuffer: GPUBuffer
+  ): void {
     if (
       !buffers.foamPositions ||
       !buffers.foamVelocities ||
@@ -80,6 +84,7 @@ export class FoamPipeline {
         { binding: 3, resource: { buffer: buffers.predicted } },
         { binding: 4, resource: { buffer: buffers.velocities } },
         { binding: 5, resource: { buffer: buffers.sortOffsets } },
+        { binding: 6, resource: { buffer: foamStateBuffer } },
       ],
     });
   }

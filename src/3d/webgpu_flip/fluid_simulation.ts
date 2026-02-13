@@ -50,6 +50,7 @@ export class FluidSimulation {
   private physicsUniforms!: PhysicsUniforms;
   private gridUniforms!: SpatialGridUniforms;
   private foamUniforms!: FoamUniforms;
+  private foamStateBuffer: GPUBuffer | null = null;
 
   // --- CPU Staging Buffers ---
   private computeData = new Float32Array(8);
@@ -63,7 +64,7 @@ export class FluidSimulation {
   private pressureParamsData = new Float32Array(16);
   private viscosityParamsData = new Float32Array(12);
   private foamSpawnData = new Float32Array(40);
-  private foamUpdateData = new Float32Array(28);
+  private foamUpdateData = new Float32Array(32);
 
   private foamFrameCount = 0;
   private simTimer = 0;
@@ -138,7 +139,7 @@ export class FluidSimulation {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
       update: device.createBuffer({
-        size: 112,
+        size: 128,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       }),
     };
@@ -155,6 +156,11 @@ export class FluidSimulation {
   }
 
   reset(): void {
+    if (this.foamStateBuffer) {
+      this.foamStateBuffer.destroy();
+      this.foamStateBuffer = null;
+    }
+
     if (this.buffers) {
       this.buffers.destroy();
     }
@@ -179,9 +185,22 @@ export class FluidSimulation {
       maxFoamParticles: FluidBuffers.DEFAULT_MAX_FOAM_PARTICLES,
     });
 
+    this.foamStateBuffer = this.device.createBuffer({
+      size: this.buffers.maxFoamParticles * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    // Initialize to unknown type state so update pass can adopt stable first type.
+    const initState = new Uint32Array(this.buffers.maxFoamParticles);
+    initState.fill(0xffffffff);
+    this.device.queue.writeBuffer(this.foamStateBuffer, 0, initState);
+
     this.physics.createBindGroups(this.buffers, this.physicsUniforms);
     this.grid.createBindGroups(this.buffers, this.gridUniforms);
-    this.foam.createBindGroups(this.buffers, this.foamUniforms);
+    this.foam.createBindGroups(
+      this.buffers,
+      this.foamUniforms,
+      this.foamStateBuffer
+    );
     this.renderer.createBindGroups(this.buffers);
     this.pickingSystem.createBindGroup(this.buffers.positions);
   }
@@ -590,6 +609,10 @@ export class FluidSimulation {
     u32Update[17] = config.sprayNeighborMax;
     this.foamUpdateData[18] = config.bubbleScale;
     this.foamUpdateData[19] = config.bubbleChangeScaleSpeed;
+    this.foamUpdateData[20] = config.foamLayerDepth;
+    this.foamUpdateData[21] = config.foamLayerOffset;
+    this.foamUpdateData[22] = config.foamBubbleHysteresis;
+    this.foamUpdateData[23] = 0;
 
     device.queue.writeBuffer(this.foamUniforms.update, 0, this.foamUpdateData);
 
