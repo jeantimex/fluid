@@ -100,6 +100,42 @@ const config: ScreenSpaceConfig = {
   viscosityStrength: 0.01,
   iterationsPerFrame: 2,
 
+  // FLIP Whitewater (Track 3 scaffolding)
+  whitewaterEmitterRate: 70,
+  wavecrestMin: 0.4,
+  wavecrestMax: 1.0,
+  wavecrestSharpness: 0.4,
+  energyMin: 0.1,
+  energyMax: 60.0,
+  turbulenceMin: 100.0,
+  turbulenceMax: 200.0,
+  obstacleInfluenceBase: 1.0,
+  obstacleInfluenceDecay: 5.0,
+  foamLayerDepth: 1.0,
+  foamLayerOffset: 0.0,
+  foamBubbleHysteresis: 1.0,
+  sprayNeighborMax: 5,
+  bubbleNeighborMin: 15,
+  foamLifetimeDecay: 1.0,
+  bubbleLifetimeDecay: 0.333,
+  sprayLifetimeDecay: 2.0,
+  foamPreservationEnabled: false,
+  foamPreservationRate: 0.75,
+  foamDensityMin: 20.0,
+  foamDensityMax: 45.0,
+  foamAdvectionStrength: 1.0,
+  bubbleDrag: 1.0,
+  sprayDrag: 0.04,
+  sprayFriction: 0.0,
+  sprayRestitution: 0.2,
+  foamRenderMode: 'points',
+  foamBlurPasses: 2,
+  foamThreshold: 0.2,
+  foamSoftness: 0.3,
+  foamAnisotropy: 0.0,
+  foamEdgeBoost: 0.0,
+  foamTemporalBlend: 0.0,
+
   // Foam Settings (matching Unity exact values)
   foamSpawnRate: 70,
   trappedAirVelocityMin: 5,
@@ -189,7 +225,12 @@ if (particlesFolder) {
 const foamFolder = gui.addFolder('Foam');
 foamFolder.close();
 
-foamFolder.add(config, 'foamSpawnRate', 0, 1000, 1).name('Spawn Rate');
+foamFolder
+  .add(config, 'foamSpawnRate', 0, 1000, 1)
+  .name('Spawn Rate')
+  .onChange((value: number) => {
+    config.whitewaterEmitterRate = value;
+  });
 foamFolder.add(config, 'trappedAirVelocityMin', 0, 50, 0.1).name('Air Vel Min');
 foamFolder
   .add(config, 'trappedAirVelocityMax', 0, 100, 0.1)
@@ -204,10 +245,16 @@ foamFolder.addColor(config, 'foamColor').name('Color');
 foamFolder.add(config, 'foamOpacity', 0, 20, 0.1).name('Opacity');
 foamFolder
   .add(config, 'sprayClassifyMaxNeighbours', 0, 20, 1)
-  .name('Spray Max Neighbors');
+  .name('Spray Max Neighbors')
+  .onChange((value: number) => {
+    config.sprayNeighborMax = value;
+  });
 foamFolder
   .add(config, 'bubbleClassifyMinNeighbours', 0, 50, 1)
-  .name('Bubble Min Neighbors');
+  .name('Bubble Min Neighbors')
+  .onChange((value: number) => {
+    config.bubbleNeighborMin = value;
+  });
 foamFolder
   .add(config, 'foamParticleRadius', 0.1, 5, 0.1)
   .name('Particle Radius');
@@ -220,6 +267,109 @@ foamFolder
 foamFolder
   .add(config, 'bubbleChangeScaleSpeed', 0, 20, 0.1)
   .name('Bubble Scale Speed');
+
+// ---------------------------------------------------------------------------
+// FLIP Whitewater GUI Controls (Track 3 scaffolding)
+// ---------------------------------------------------------------------------
+const flipFolder = gui.addFolder('FLIP Whitewater');
+flipFolder.close();
+
+const flipEmission = flipFolder.addFolder('Emission');
+flipEmission
+  .add(config, 'whitewaterEmitterRate', 0, 1000, 1)
+  .name('Emitter Rate')
+  .onChange((value: number) => {
+    // Phase 1 compatibility: legacy foam path still reads foamSpawnRate.
+    config.foamSpawnRate = value;
+  });
+flipEmission.add(config, 'wavecrestMin', 0, 5, 0.01).name('Wavecrest Min');
+flipEmission.add(config, 'wavecrestMax', 0, 5, 0.01).name('Wavecrest Max');
+flipEmission
+  .add(config, 'wavecrestSharpness', -1, 1, 0.01)
+  .name('Wavecrest Sharpness');
+flipEmission.add(config, 'energyMin', 0, 100, 0.1).name('Energy Min');
+flipEmission.add(config, 'energyMax', 0, 200, 0.1).name('Energy Max');
+flipEmission
+  .add(config, 'turbulenceMin', 0, 500, 1)
+  .name('Turbulence Min');
+flipEmission
+  .add(config, 'turbulenceMax', 0, 500, 1)
+  .name('Turbulence Max');
+flipEmission
+  .add(config, 'obstacleInfluenceBase', 0, 2, 0.01)
+  .name('Obstacle Influence Base');
+flipEmission
+  .add(config, 'obstacleInfluenceDecay', 0, 20, 0.1)
+  .name('Obstacle Influence Decay');
+
+const flipClassification = flipFolder.addFolder('Classification');
+flipClassification
+  .add(config, 'foamLayerDepth', 0, 5, 0.01)
+  .name('Foam Layer Depth');
+flipClassification
+  .add(config, 'foamLayerOffset', -2, 2, 0.01)
+  .name('Foam Layer Offset');
+flipClassification
+  .add(config, 'foamBubbleHysteresis', 0, 5, 0.01)
+  .name('Foam-Bubble Hysteresis');
+flipClassification
+  .add(config, 'sprayNeighborMax', 0, 50, 1)
+  .name('Spray Neighbor Max')
+  .onChange((value: number) => {
+    // Phase 1 compatibility: legacy foam path still reads sprayClassifyMaxNeighbours.
+    config.sprayClassifyMaxNeighbours = value;
+  });
+flipClassification
+  .add(config, 'bubbleNeighborMin', 0, 100, 1)
+  .name('Bubble Neighbor Min')
+  .onChange((value: number) => {
+    // Phase 1 compatibility: legacy foam path still reads bubbleClassifyMinNeighbours.
+    config.bubbleClassifyMinNeighbours = value;
+  });
+
+const flipLifetime = flipFolder.addFolder('Lifetime');
+flipLifetime
+  .add(config, 'foamLifetimeDecay', 0, 10, 0.01)
+  .name('Foam Decay');
+flipLifetime
+  .add(config, 'bubbleLifetimeDecay', 0, 10, 0.01)
+  .name('Bubble Decay');
+flipLifetime
+  .add(config, 'sprayLifetimeDecay', 0, 10, 0.01)
+  .name('Spray Decay');
+flipLifetime
+  .add(config, 'foamPreservationEnabled')
+  .name('Foam Preservation');
+flipLifetime
+  .add(config, 'foamPreservationRate', 0, 5, 0.01)
+  .name('Preservation Rate');
+flipLifetime.add(config, 'foamDensityMin', 0, 200, 1).name('Foam Density Min');
+flipLifetime.add(config, 'foamDensityMax', 0, 200, 1).name('Foam Density Max');
+
+const flipDynamics = flipFolder.addFolder('Dynamics');
+flipDynamics
+  .add(config, 'foamAdvectionStrength', 0, 2, 0.01)
+  .name('Foam Advection');
+flipDynamics.add(config, 'bubbleBuoyancy', -10, 10, 0.01).name('Bubble Buoyancy');
+flipDynamics.add(config, 'bubbleDrag', 0, 2, 0.01).name('Bubble Drag');
+flipDynamics.add(config, 'sprayDrag', 0, 2, 0.01).name('Spray Drag');
+flipDynamics.add(config, 'sprayFriction', 0, 1, 0.01).name('Spray Friction');
+flipDynamics
+  .add(config, 'sprayRestitution', 0, 1, 0.01)
+  .name('Spray Restitution');
+
+const flipRendering = flipFolder.addFolder('Rendering');
+flipRendering
+  .add(config, 'foamRenderMode', { Points: 'points', Patches: 'patches' })
+  .name('Foam Mode');
+flipRendering.add(config, 'foamBlurPasses', 0, 8, 1).name('Blur Passes');
+flipRendering.add(config, 'foamThreshold', 0, 1, 0.001).name('Threshold');
+flipRendering.add(config, 'foamSoftness', 0, 1, 0.001).name('Softness');
+flipRendering.add(config, 'foamAnisotropy', 0, 2, 0.01).name('Anisotropy');
+flipRendering.add(config, 'foamEdgeBoost', 0, 4, 0.01).name('Edge Boost');
+flipRendering
+  .add(config, 'foamTemporalBlend', 0, 0.99, 0.01)
+  .name('Temporal Blend');
 
 // ---------------------------------------------------------------------------
 // Screen-space GUI Controls

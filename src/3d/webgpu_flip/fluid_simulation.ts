@@ -492,7 +492,7 @@ export class FluidSimulation {
           );
 
     this.foamSpawnData[0] = frameTime;
-    this.foamSpawnData[1] = config.foamSpawnRate * fadeInT * fadeInT;
+    this.foamSpawnData[1] = config.whitewaterEmitterRate * fadeInT * fadeInT;
     this.foamSpawnData[2] = config.trappedAirVelocityMin;
     this.foamSpawnData[3] = config.trappedAirVelocityMax;
     this.foamSpawnData[4] = config.foamKineticEnergyMin;
@@ -520,7 +520,7 @@ export class FluidSimulation {
     // Update uniforms
     this.foamUpdateData[0] = frameTime;
     this.foamUpdateData[1] = config.gravity;
-    this.foamUpdateData[2] = 0.04;
+    this.foamUpdateData[2] = config.sprayDrag;
     this.foamUpdateData[3] = config.bubbleBuoyancy;
 
     const hx = config.boundsSize.x * 0.5;
@@ -543,8 +543,8 @@ export class FluidSimulation {
     this.foamUpdateData[15] = 0;
 
     const u32Update = new Uint32Array(this.foamUpdateData.buffer);
-    u32Update[16] = config.bubbleClassifyMinNeighbours;
-    u32Update[17] = config.sprayClassifyMaxNeighbours;
+    u32Update[16] = config.bubbleNeighborMin;
+    u32Update[17] = config.sprayNeighborMax;
     this.foamUpdateData[18] = config.bubbleScale;
     this.foamUpdateData[19] = config.bubbleChangeScaleSpeed;
 

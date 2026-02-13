@@ -1,61 +1,66 @@
-# webgpu_flip - FLIP-style Whitewater Port Plan
+# webgpu_flip - FLIP Whitewater Port Plan (Track 3: Max Fidelity)
+
+## Selected Track
+
+`3 (Max fidelity)`: prioritize FLIP-like whitewater behavior and visual structure over implementation speed.
 
 ## Objective
 
-Port the most impactful FLIP whitewater ideas into `webgpu_flip` (based on `webgpu_screen_space`) so foam reads as cohesive sheets/clumps instead of sparse point dots.
-
-Scope is intentionally split:
-
-- Physics + classification upgrade first.
-- Rendering/style upgrade second.
-- Keep core SPH fluid simulation unchanged.
+Port the highest-impact FLIP whitewater concepts into `webgpu_flip` so foam appears as cohesive, persistent sheets/clumps with stable type behavior (`foam`/`bubble`/`spray`), while keeping the core SPH fluid simulation intact.
 
 ## Non-goals
 
-- Do not attempt full Blender/FLIP parity in one pass.
-- Do not change other demos (`webgpu_screen_space`, `webgpu_raymarch`) until `webgpu_flip` is stable.
-- Do not introduce CPU readback-heavy debug paths in the runtime loop.
+- Do not target exact Blender shading parity in one iteration.
+- Do not modify `webgpu_screen_space` or `webgpu_raymarch` during core implementation.
+- Do not add CPU readback-dependent runtime logic.
 
-## Baseline Gaps (Current)
+## Fidelity Targets
 
-- Spawn signal is mostly trapped-air + kinetic thresholds.
-- Particle type classification is pure neighbor-count thresholding.
-- No foam-preservation/lifetime reinforcement from local foam density.
-- Rendering is single scalar foam intensity pass; visually too point-like.
+- Emission is concentrated at energetic crests/impacts, not broad noise.
+- Type transitions are stable (minimal flicker).
+- Foam preservation creates visible streaking/clumping.
+- Spray and bubbles behave distinctly from surface foam.
+- Final render reads as patches/lines, not point cloud speckle.
 
-## Design Principles
+## Baseline Gaps
 
-- Prefer GPU-only passes and existing linear grid data (`sortOffsets`, `predicted`, `velocities`).
-- Add functionality incrementally behind config toggles.
-- Keep memory layout stable and explicit for WGSL uniform/storage structs.
-- Validate each phase visually and with build checks before next phase.
+- Spawn: trapped-air + kinetic thresholds only.
+- Type logic: neighbor count thresholds only.
+- No foam-preservation reinforcement.
+- Rendering: single scalar foam splat composited as one color.
 
-## Implementation Phases
+## Architecture Rules
 
-### Phase 0 - Planning/Scaffolding (this document)
+- Prefer GPU-only additions.
+- Keep linear-grid neighbor search (`sortOffsets`) as common primitive.
+- Isolate high-fidelity changes in `webgpu_flip` path; avoid breaking shared demos.
+- Add features behind config toggles; default to compatibility-safe values.
+
+## Phase Plan
+
+### Phase 0 - Planning Lock
 
 Deliverables:
 
-- Finalized staged plan and acceptance criteria.
-- New config fields listed before code work.
+- This document approved.
+- File ownership and order of work fixed.
 
 Exit criteria:
 
-- Team agrees on phase boundaries and rollback points.
+- No simulation code changes before Phase 1 starts.
 
 ---
 
-### Phase 1 - Whitewater Data Model + Config Expansion
+### Phase 1 - Config + Data Model Expansion
 
 Goal:
-Expose FLIP-inspired controls needed for later compute/render phases.
+Add all parameters and storage hooks needed for high-fidelity behavior.
 
-Files to update:
+Files:
 
 - `src/3d/webgpu_flip/types.ts`
-- `src/3d/webgpu_flip/main.ts` (defaults)
-- `src/3d/webgpu_flip/fluid_simulation.ts` (uniform packing)
-- `src/3d/webgpu_fluid/main.ts` (if GUI should expose flip-only controls through adapter)
+- `src/3d/webgpu_flip/main.ts`
+- `src/3d/webgpu_flip/fluid_simulation.ts`
 
 Add config groups:
 
@@ -68,7 +73,7 @@ Add config groups:
 - Classification:
   - `foamLayerDepth`, `foamLayerOffset`
   - `foamBubbleHysteresis`
-  - `sprayNeighborMax`, `bubbleNeighborMin` (keep existing thresholds but rename/alias)
+  - `sprayNeighborMax`, `bubbleNeighborMin`
 - Lifetime:
   - `foamLifetimeDecay`, `bubbleLifetimeDecay`, `sprayLifetimeDecay`
   - `foamPreservationEnabled`
@@ -76,187 +81,258 @@ Add config groups:
 - Dynamics:
   - `foamAdvectionStrength`
   - `bubbleBuoyancy`, `bubbleDrag`
-  - `sprayDrag`, `sprayRestitution`, `sprayFriction`
+  - `sprayDrag`, `sprayFriction`, `sprayRestitution`
 - Rendering:
   - `foamRenderMode` (`points`, `patches`)
   - `foamBlurPasses`, `foamThreshold`, `foamSoftness`
   - `foamAnisotropy`, `foamEdgeBoost`
+  - `foamTemporalBlend`
+
+Storage changes:
+
+- Add dedicated foam state buffer (type + flags + hysteresis helper data).
+- Preserve existing foam position/velocity buffer contracts.
 
 Exit criteria:
 
-- Build passes.
-- No behavior change when new controls are left at compatibility defaults.
+- `npm run build` passes.
+- Default config preserves baseline behavior.
 
 ---
 
-### Phase 2 - Compute: Emission Signal Upgrade
+### Phase 2 - Emission Signal Upgrade (FLIP-like Multi-signal)
 
 Goal:
-Upgrade spawn from single trapped-air heuristic to multi-signal FLIP-like scoring.
+Replace single-factor spawn with combined signal scoring.
 
-Files to update:
+Files:
 
-- `src/3d/common/shaders/foam_spawn.wgsl` (or copy into `webgpu_flip` local shader path if decoupling is preferred)
-- `src/3d/common/foam_pipeline.ts` (if bind groups/uniforms need extension)
-- `src/3d/webgpu_flip/fluid_simulation.ts` (uniform values)
+- `src/3d/webgpu_flip/shaders/foam_spawn.wgsl` (create local shader copy)
+- `src/3d/webgpu_flip/fluid_simulation.ts`
+- `src/3d/common/foam_pipeline.ts` (only if bind layout extension is required)
 
-Changes:
+Implementation:
 
-- Keep existing neighbor search and add terms:
-  - `energyPotential` from local speed (clamped/remapped).
-  - `wavecrestPotential` proxy from local surface gradient/curvature approximation.
-  - `turbulencePotential` proxy from local velocity variance/vorticity-like metric.
-  - optional obstacle attenuation/boost from obstacle distance/proxy field.
+- Compute per-fluid-particle emission potential:
+  - `energyPotential` from speed (clamped/remapped).
+  - `wavecrestPotential` proxy from local surface/gradient cues.
+  - `turbulencePotential` proxy from local velocity variance/vorticity.
+  - optional obstacle influence multiplier.
 - Spawn count:
-  - weighted sum of potentials _ emitter rate _ dt.
-  - deterministic stochastic rounding (keep current PCG approach).
-- Preserve ring-buffer safety and burst clamp.
+  - weighted sum _ emitter rate _ dt.
+  - stochastic rounding with deterministic hash.
+- Directional emitter sampling:
+  - velocity-aligned spawn offset/radius to mimic crest throw.
 
 Exit criteria:
 
-- Spawn concentrates around breaking crests/impact regions.
-- No exploding spawn counts or persistent counter overflow artifacts.
+- Spawn localizes to high-energy crest regions.
+- No burst instability / counter overflow artifacts.
 
 ---
 
-### Phase 3 - Compute: Type Classification + Hysteresis
+### Phase 3 - Type Classification + Hysteresis
 
 Goal:
-Move from neighbor-count-only type assignment to surface-band-based FLIP-like classification.
+Introduce FLIP-like type assignment and temporal stability.
 
-Files to update:
+Files:
 
-- `src/3d/common/shaders/foam_update.wgsl`
-- `src/3d/webgpu_flip/fluid_simulation.ts` (uniform packing)
-
-Changes:
-
-- Add per-particle type state storage:
-  - extend foam velocity/state buffer packing (or add dedicated `foamState` buffer).
-  - type enum (`foam`, `bubble`, `spray`) + flags.
-- Classification logic:
-  - surface-band test using fluid-surface proxy (thickness/depth neighborhood or particle signed-distance approximation).
-  - bubble below band, spray above band/outside boundary, foam near surface band.
-  - hysteresis buffer to prevent foam/bubble flicker.
-  - keep neighbor thresholds only as secondary fallback/safety.
-
-Exit criteria:
-
-- Stable foam sheets at interface, fewer frame-to-frame type flips.
-- Bubble/spray separation becomes visually plausible.
-
----
-
-### Phase 4 - Compute: Lifetime Preservation + Per-Type Dynamics
-
-Goal:
-Port FLIP’s clumping behavior and distinct motion models.
-
-Files to update:
-
-- `src/3d/common/shaders/foam_update.wgsl`
+- `src/3d/webgpu_flip/shaders/foam_update.wgsl` (local shader)
 - `src/3d/webgpu_flip/fluid_simulation.ts`
 
-Changes:
+Implementation:
 
-- Lifetime:
-  - per-type decay modifiers.
-  - foam-preservation term from local foam density grid/proxy.
-- Dynamics by type:
-  - Foam: advection-dominant (`foamAdvectionStrength`).
-  - Bubble: buoyancy + drag toward local fluid velocity.
-  - Spray: ballistic gravity + drag + collision response controls.
-- Keep boundary and obstacle collision behavior consistent.
+- Classify by surface-band proxy first:
+  - foam near band, bubble below band, spray above/outside.
+- Keep neighbor thresholds as fallback support.
+- Add hysteresis buffer for foam<->bubble and foam<->spray transitions.
+- Persist and update type in dedicated state buffer.
 
 Exit criteria:
 
-- Foam persists and forms streaks/clumps instead of disappearing uniformly.
-- Spray follows ballistic arcs; bubbles remain submerged/near-surface.
+- Strong reduction of type flicker at interface.
+- Stable foam banding around the fluid surface.
 
 ---
 
-### Phase 5 - Rendering: From Dots to Patches
+### Phase 4 - Lifetime Preservation + Per-type Dynamics
 
 Goal:
-Replace dot-like whitewater look with soft clustered foam appearance.
+Port clumping persistence and motion differences.
 
-Files to update:
+Files:
+
+- `src/3d/webgpu_flip/shaders/foam_update.wgsl`
+- `src/3d/webgpu_flip/fluid_simulation.ts`
+
+Implementation:
+
+- Lifetime:
+  - per-type decay rates.
+  - foam-preservation boost based on local foam density proxy.
+- Dynamics:
+  - Foam: advection-dominant.
+  - Bubble: buoyancy + drag toward fluid velocity.
+  - Spray: ballistic + drag + collision response.
+- Boundary behavior:
+  - support per-type mode semantics (`collide`, `ballistic`, `kill`).
+
+Exit criteria:
+
+- Persistent foam streaks in recirculation zones.
+- Clear visual separation between spray/bubble/foam motion.
+
+---
+
+### Phase 5 - Rendering Upgrade (Patch-based Whitewater)
+
+Goal:
+Make whitewater read as sheets and patch clusters.
+
+Files:
 
 - `src/3d/webgpu_flip/screen_space/shaders/foam.wgsl`
 - `src/3d/webgpu_flip/screen_space/passes/foam_pass.ts`
 - `src/3d/webgpu_flip/screen_space/shaders/composite_final.wgsl`
 - `src/3d/webgpu_flip/screen_space/passes/composite_pass.ts`
-- optional new shaders/passes:
+- new optional shaders/passes:
   - `foam_blur.wgsl`
   - `foam_reconstruct.wgsl`
-  - new pass files under `src/3d/webgpu_flip/screen_space/passes/`
+  - `foam_temporal.wgsl`
 
-Changes:
+Implementation:
 
-- Render typed foam with different footprint/opacity response.
-- Add foam post-process:
-  - accumulate -> separable blur -> threshold/soft-threshold -> composite.
-- Composite tweaks:
-  - depth-aware foam masking.
-  - edge/crest emphasis near high curvature or thin film areas.
-  - optional anisotropic streaking along flow direction.
+- Typed rendering response:
+  - foam: broader soft patches
+  - bubble: subdued subsurface contribution
+  - spray: sharper highlights/speckles
+- Post chain:
+  - accumulate -> blur -> threshold/soft-threshold -> temporal blend -> composite.
+- Composite:
+  - depth-aware masking.
+  - crest/edge boost and directional (anisotropic) emphasis.
 
 Exit criteria:
 
-- Foam reads as connected patches/lines at crests, not a static particle cloud.
-- No severe haloing or screen-space popping.
+- Visual texture changes from dots to coherent whitewater patches.
+- No major haloing/pop artifacts.
 
 ---
 
-### Phase 6 - Tuning, Perf, and Guardrails
+### Phase 6 - Performance + Stability Guardrails
 
 Goal:
-Make the result usable in demo conditions.
+Keep high-fidelity pipeline operational in interactive settings.
 
-Files to update:
+Files:
 
-- `src/3d/webgpu_flip/main.ts` (preset values)
-- `src/3d/webgpu_flip/style.css` (if UI hints are needed)
-- `src/3d/webgpu_flip/screen_space/screen_space_renderer.ts` (pass ordering/resolution scaling)
+- `src/3d/webgpu_flip/screen_space/screen_space_renderer.ts`
+- `src/3d/webgpu_flip/main.ts`
 
-Tasks:
+Implementation:
 
-- Add 2-3 curated presets:
-  - `Calm Shoreline`
-  - `Breaking Waves`
-  - `High Energy`
-- Add quality/performance mode:
-  - lower foam pass resolution option.
-  - clamp max spawn per frame.
-- Protect against pathological cases:
-  - NaN guards in WGSL.
-  - strict lifetime floor/ceiling.
+- Add quality tiers (high/medium/low) controlling:
+  - foam resolution scale
+  - blur pass count
+  - max spawn per frame
+  - temporal blend strength
+- Add NaN/invalid-value guards in WGSL.
+- Add hard caps on per-cell/per-frame spawn and lifetime.
 
 Exit criteria:
 
-- Stable 60fps-ish behavior on typical particle counts used by the demo.
-- Visual quality clearly improved over current baseline screenshots.
+- Stable runtime with no validation errors.
+- Acceptable FPS at demo particle counts with `medium` tier.
 
-## Validation Checklist (per phase)
+---
+
+### Phase 7 - FLIP-Parity Feature Pass (Required for Track 3)
+
+Goal:
+Close remaining realism gaps that are not covered by base phases.
+
+Files:
+
+- `src/3d/webgpu_flip/fluid_simulation.ts`
+- `src/3d/webgpu_flip/screen_space/shaders/composite_final.wgsl`
+- additional flip-local compute shaders if needed
+
+Implementation:
+
+- Obstacle influence field/proxy sampled by emission and lifetime logic.
+- Whitewater density proxy field reused across simulation + rendering.
+- Per-type force-field weights (foam/bubble/spray) for richer coupling.
+- Debug views:
+  - type map
+  - emission potential
+  - foam density preservation field
+
+Exit criteria:
+
+- Debug views match expected behavior.
+- Obstacle-rich scenes show localized, believable whitewater enhancement.
+
+---
+
+### Phase 8 - Cross-scene Calibration (Required for Track 3)
+
+Goal:
+Prevent overtuning and ensure robust defaults.
+
+Scenes:
+
+- Breaking wave over obstacles.
+- Calm shoreline wash.
+- High-energy collision/inflow.
+
+Tasks:
+
+- Tune and save presets:
+  - `Calm Shoreline`
+  - `Breaking Waves`
+  - `High Energy`
+- Define default parameter envelope valid across all scenes.
+
+Exit criteria:
+
+- One default preset acceptable across all scenes.
+- Scene presets improve quality without code-path changes.
+
+---
+
+### Phase 9 - Optional Raymarch Follow-up
+
+Goal:
+After `webgpu_flip` is stable, optionally port mature whitewater state to raymarch.
+
+Exit criteria:
+
+- Raymarch integration works without regressions to `webgpu_flip`.
+
+## Validation Checklist (Every Phase)
 
 - `npm run build` passes.
-- No WebGPU validation errors in browser console.
-- Toggle new features on/off without requiring full app restart.
-- Resize + camera orbit + interaction continue to work.
-- Adapter switching (if wired into `webgpu_fluid`) does not crash.
+- No WebGPU validation errors.
+- Interaction/camera/resize remain stable.
+- New toggles can be changed live.
+
+Track 3 metrics:
+
+- Flicker score below target in 300+ frame capture.
+- Type distribution stable under steady inflow.
+- No long-run runaway foam accumulation.
 
 ## Risks and Mitigations
 
-- Risk: Overfitting to one scene.
-  - Mitigation: tune with at least two obstacle layouts and energy levels.
-- Risk: Too many extra passes hurt performance.
-  - Mitigation: half-resolution foam pipeline and adjustable blur pass count.
-- Risk: Type flicker and noisy transitions.
-  - Mitigation: hysteresis + temporal smoothing for type and opacity.
-- Risk: Shared `common` shader changes affect other demos.
-  - Mitigation: prefer local shader copies under `webgpu_flip` when behavior diverges.
+- Risk: overfitting one scene.
+  - Mitigation: Phase 8 mandatory before declaring done.
+- Risk: performance collapse from extra passes.
+  - Mitigation: quality tiers + half-resolution foam path.
+- Risk: shared shader regressions.
+  - Mitigation: keep high-fidelity shader logic under `webgpu_flip` local paths.
 
-## Suggested Execution Order
+## Execution Order
 
 1. Phase 1
 2. Phase 2
@@ -264,5 +340,6 @@ Exit criteria:
 4. Phase 4
 5. Phase 5
 6. Phase 6
-
-No simulation code changes should start before Phase 1 config/model updates are merged.
+7. Phase 7
+8. Phase 8
+9. Phase 9 (optional)
