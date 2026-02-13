@@ -120,6 +120,10 @@ const config: RaymarchConfig = {
   boundsWireframeColor: { r: 1.0, g: 1.0, b: 1.0 },
   obstacleColor: { r: 1.0, g: 0.0, b: 0.0 },
   obstacleAlpha: 1.0,
+  // Performance tuning parameters
+  maxSurfaceSteps: 256,
+  maxShadowSteps: 32,
+  usePrecomputedNormals: true,
 };
 
 // Simulation instance (initialized asynchronously in main())
@@ -180,6 +184,26 @@ raymarchFolder
 raymarchFolder.add(config, 'renderScale', 0.1, 1.0, 0.05).name('Render Scale');
 raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
 raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
+
+// Performance tuning controls (within Raymarch folder)
+raymarchFolder
+  .add(config, 'numRefractions', 1, 8, 1)
+  .name('Refraction Bounces');
+raymarchFolder
+  .add(config, 'lightStepSize', 0.05, 1.0, 0.05)
+  .name('Shadow Step Size');
+raymarchFolder
+  .add(config, 'shadowSoftness', 0, 10, 0.5)
+  .name('Shadow Softness');
+raymarchFolder
+  .add(config, 'maxSurfaceSteps', 32, 512, 16)
+  .name('Max Surface Steps');
+raymarchFolder
+  .add(config, 'maxShadowSteps', 8, 64, 4)
+  .name('Max Shadow Steps');
+raymarchFolder
+  .add(config, 'usePrecomputedNormals')
+  .name('Precomputed Normals');
 
 const shadowFolder = gui.folders.find((f) => f._title === 'Shadow');
 if (shadowFolder) {

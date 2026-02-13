@@ -108,4 +108,29 @@ export interface RaymarchConfig extends SimConfig, EnvironmentConfig {
 
   /** Opacity of the obstacle surface (0–1). */
   obstacleAlpha: number;
+
+  // ---------------------------------------------------------------------------
+  // Performance Tuning
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Maximum iterations for the surface finding loop in raymarching.
+   * Lower values improve performance but may miss thin surfaces.
+   * Typical range: 64–512.
+   */
+  maxSurfaceSteps: number;
+
+  /**
+   * Maximum iterations for shadow ray marching.
+   * Lower values produce faster but potentially less accurate shadows.
+   * Typical range: 8–64.
+   */
+  maxShadowSteps: number;
+
+  /**
+   * Whether to use GPU-precomputed normals stored in the density texture.
+   * When true, normals are computed once in a compute shader pass, saving
+   * 6 texture samples per normal lookup in the fragment shader.
+   */
+  usePrecomputedNormals: boolean;
 }

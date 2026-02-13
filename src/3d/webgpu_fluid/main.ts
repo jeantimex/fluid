@@ -731,6 +731,27 @@ function updateGui(adapter: FluidAppAdapter): void {
       .name('Render Scale');
     raymarchFolder.add(config, 'stepSize', 0.01, 0.5, 0.01).name('Step Size');
     raymarchFolder.add(config, 'maxSteps', 32, 2048, 32).name('Max Steps');
+
+    // Performance tuning controls
+    raymarchFolder
+      .add(config, 'numRefractions', 1, 8, 1)
+      .name('Refraction Bounces');
+    raymarchFolder
+      .add(config, 'lightStepSize', 0.05, 1.0, 0.05)
+      .name('Shadow Step Size');
+    raymarchFolder
+      .add(config, 'shadowSoftness', 0, 10, 0.5)
+      .name('Shadow Softness');
+    raymarchFolder
+      .add(config, 'maxSurfaceSteps', 32, 512, 16)
+      .name('Max Surface Steps');
+    raymarchFolder
+      .add(config, 'maxShadowSteps', 8, 64, 4)
+      .name('Max Shadow Steps');
+    raymarchFolder
+      .add(config, 'usePrecomputedNormals')
+      .name('Precomputed Normals');
+
     const extinctionFolder = raymarchFolder.addFolder(
       'Extinction (Absorption)'
     );

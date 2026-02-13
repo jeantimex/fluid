@@ -118,8 +118,8 @@ export class RaymarchRenderer {
   /** Bind group for the raymarch pass (density texture + sampler + uniforms). */
   private bindGroup!: GPUBindGroup;
 
-  /** CPU-side typed array mirroring the uniform buffer contents (124 floats). */
-  private uniformData = new Float32Array(124);
+  /** CPU-side typed array mirroring the uniform buffer contents (128 floats = 512 bytes). */
+  private uniformData = new Float32Array(128);
 
   // ---------------------------------------------------------------------------
   // Blit / Half-Resolution Rendering
@@ -247,7 +247,7 @@ export class RaymarchRenderer {
     // Uniform Buffer
     // -------------------------------------------------------------------------
 
-    this.uniformData = new Float32Array(124); // 124 * 4 = 496 bytes
+    this.uniformData = new Float32Array(128); // 128 * 4 = 512 bytes
 
     this.uniformBuffer = this.device.createBuffer({
       size: this.uniformData.byteLength,
@@ -671,6 +671,11 @@ export class RaymarchRenderer {
 
     this.uniformData[108] = config.showFluidShadows ? 1.0 : 0.0;
     this.uniformData[109] = obstacleIsSphere ? 1.0 : 0.0;
+
+    // Performance tuning parameters
+    this.uniformData[110] = config.maxSurfaceSteps;
+    this.uniformData[111] = config.maxShadowSteps;
+    this.uniformData[112] = config.usePrecomputedNormals ? 1.0 : 0.0;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

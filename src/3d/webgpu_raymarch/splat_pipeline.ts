@@ -365,7 +365,7 @@ export class SplatPipeline {
 
     // Resolve params
     this.resolveParamsF32[0] = fixedPointScale;
-    this.resolveParamsF32[1] = 0;
+    this.resolveParamsF32[1] = config.usePrecomputedNormals ? 1.0 : 0.0; // computeNormals flag
     this.resolveParamsF32[2] = 0;
     this.resolveParamsF32[3] = 0;
     this.resolveParamsU32[4] = this.densityTextureSize.x;

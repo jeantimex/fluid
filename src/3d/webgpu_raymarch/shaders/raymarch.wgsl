@@ -105,11 +105,15 @@ struct RaymarchParams {
   shadowSoftness: f32,               // 107
   showFluidShadows: f32,             // 108
   obstacleShape: f32,                // 109
-  pad19: f32,                        // 110
-  pad20: f32,                        // 111
-  pad21: vec4<f32>,                  // 112-115
+  maxSurfaceSteps: f32,              // 110 - max iterations for surface finding
+  maxShadowSteps: f32,               // 111 - max iterations for shadow rays
+  usePrecomputedNormals: f32,        // 112 - 1.0 = use precomputed normals
+  pad19: f32,                        // 113
+  pad20: f32,                        // 114
+  pad21: f32,                        // 115
   pad22: vec4<f32>,                  // 116-119
   pad23: vec4<f32>,                  // 120-123
+  pad24: vec4<f32>,                  // 124-127
 };
 
 
@@ -336,25 +340,46 @@ fn calculateClosestFaceNormal(p: vec3<f32>) -> vec3<f32> {
   return normal;
 }
 
-/// Estimates the fluid surface normal at `pos` using central differences
-/// on the density field, then blends with the nearest box-face normal
-/// near the simulation boundary to avoid edge artifacts.
+/// Samples the precomputed normal from the density texture's GBA channels.
+/// Normals are stored as [0,1] and need to be remapped to [-1,1].
+fn samplePrecomputedNormal(pos: vec3<f32>) -> vec3<f32> {
+  let volumeSizeF = vec3<f32>(textureDimensions(densityTex, 0));
+  let worldToVoxel = params.voxelsPerUnit;
+  let uvw = (pos - params.minBounds) * worldToVoxel / (volumeSizeF - vec3<f32>(1.0));
+
+  // Sample the GBA channels which contain the encoded normal
+  let encoded = textureSampleLevel(densityTex, densitySampler, uvw, 0.0).gba;
+
+  // Remap from [0,1] to [-1,1]
+  return normalize(encoded * 2.0 - 1.0);
+}
+
+/// Estimates the fluid surface normal at `pos`.
+/// When usePrecomputedNormals is enabled, samples from the density texture's
+/// GBA channels (computed in the splat resolve pass).
+/// Otherwise, uses central differences on the density field (6 texture samples).
 ///
-/// The blending uses smoothstep on the distance-to-face, weighted by the
-/// vertical component of the volume normal, so that flat (horizontal)
-/// surfaces near walls get more face-normal influence.
+/// Always blends with the nearest box-face normal near the simulation boundary
+/// to avoid edge artifacts.
 fn calculateNormal(pos: vec3<f32>) -> vec3<f32> {
-  // Central differences with step size 0.1
-  let s = 0.1;
-  let offsetX = vec3<f32>(s, 0.0, 0.0);
-  let offsetY = vec3<f32>(0.0, s, 0.0);
-  let offsetZ = vec3<f32>(0.0, 0.0, s);
+  var volumeNormal: vec3<f32>;
 
-  let dx = sampleDensity(pos - offsetX) - sampleDensity(pos + offsetX);
-  let dy = sampleDensity(pos - offsetY) - sampleDensity(pos + offsetY);
-  let dz = sampleDensity(pos - offsetZ) - sampleDensity(pos + offsetZ);
+  if (params.usePrecomputedNormals > 0.5) {
+    // Fast path: sample precomputed normal (1 texture sample)
+    volumeNormal = samplePrecomputedNormal(pos);
+  } else {
+    // Slow path: central differences (6 texture samples)
+    let s = 0.1;
+    let offsetX = vec3<f32>(s, 0.0, 0.0);
+    let offsetY = vec3<f32>(0.0, s, 0.0);
+    let offsetZ = vec3<f32>(0.0, 0.0, s);
 
-  let volumeNormal = normalize(vec3<f32>(dx, dy, dz));
+    let dx = sampleDensity(pos - offsetX) - sampleDensity(pos + offsetX);
+    let dy = sampleDensity(pos - offsetY) - sampleDensity(pos + offsetY);
+    let dz = sampleDensity(pos - offsetZ) - sampleDensity(pos + offsetZ);
+
+    volumeNormal = normalize(vec3<f32>(dx, dy, dz));
+  }
 
   // Smoothly blend toward face normal near the simulation boundary
   let minDiff = pos - params.minBounds;
@@ -444,8 +469,9 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
   var prevDst = 0.0;
   var consecutiveEmpty = 0u;
 
+  let maxSteps = u32(params.maxSurfaceSteps);
   var dst = 0.0;
-  for (var i = 0u; i < 512u; i = i + 1u) {
+  for (var i = 0u; i < maxSteps; i = i + 1u) {
     if (dst >= dstToTest) { break; }
 
     let currentStep = select(stepSize, stepSize * COARSE_MULTIPLIER, useCoarseStep);
@@ -634,10 +660,11 @@ fn calculateDensityForShadow(rayPos: vec3<f32>, rayDir: vec3<f32>, maxDst: f32) 
     if (tStart >= tEnd) { return 0.0; }
 
     var opticalDepth = 0.0;
-    let shadowStep = params.lightStepSize * (2.0 + params.shadowSoftness); 
+    let shadowStep = params.lightStepSize * (2.0 + params.shadowSoftness);
     var t = tStart;
+    let maxSteps = i32(params.maxShadowSteps);
 
-    for (var i = 0; i < 32; i++) {
+    for (var i = 0; i < maxSteps; i++) {
         if (t >= tEnd) { break; }
         let pos = rayPos + rayDir * t;
         let d = max(0.0, sampleDensityRaw(pos));
