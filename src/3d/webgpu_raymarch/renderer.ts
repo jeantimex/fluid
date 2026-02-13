@@ -671,6 +671,18 @@ export class RaymarchRenderer {
 
     this.uniformData[108] = config.showFluidShadows ? 1.0 : 0.0;
     this.uniformData[109] = obstacleIsSphere ? 1.0 : 0.0;
+    this.uniformData[110] = 0.0;
+    this.uniformData[111] = 0.0;
+
+    // Precompute reciprocal voxel span (size-1) to avoid textureDimensions in hot shader paths.
+    const voxelsPerUnit = config.densityTextureRes / 20;
+    const spanX = Math.max(1, Math.ceil(config.boundsSize.x * voxelsPerUnit));
+    const spanY = Math.max(1, Math.ceil(config.boundsSize.y * voxelsPerUnit));
+    const spanZ = Math.max(1, Math.ceil(config.boundsSize.z * voxelsPerUnit));
+    this.uniformData[112] = 1 / spanX;
+    this.uniformData[113] = 1 / spanY;
+    this.uniformData[114] = 1 / spanZ;
+    this.uniformData[115] = 0.0;
 
     // Upload uniforms to GPU
     this.device.queue.writeBuffer(this.uniformBuffer, 0, this.uniformData);

@@ -107,7 +107,8 @@ struct RaymarchParams {
   obstacleShape: f32,                // 109
   pad19: f32,                        // 110
   pad20: f32,                        // 111
-  pad21: vec4<f32>,                  // 112-115
+  invVolumeSpan: vec3<f32>,          // 112-114
+  pad21: f32,                        // 115
   pad22: vec4<f32>,                  // 116-119
   pad23: vec4<f32>,                  // 120-123
 };
@@ -287,9 +288,8 @@ fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> ObstacleHit {
 /// Converts world coords to UVW [0,1]³ and subtracts the density offset.
 /// Negative results indicate the point is below the iso-surface (outside fluid).
 fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
-  let volumeSizeF = vec3<f32>(textureDimensions(densityTex, 0));
   let worldToVoxel = params.voxelsPerUnit;
-  let uvw = (pos - params.minBounds) * worldToVoxel / (volumeSizeF - vec3<f32>(1.0));
+  let uvw = (pos - params.minBounds) * worldToVoxel * params.invVolumeSpan;
   return textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r - params.densityOffset;
 }
 
@@ -297,9 +297,8 @@ fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
 /// Returns -densityOffset for positions at or beyond the volume edges,
 /// preventing edge artifacts where the texture wraps or clamps.
 fn sampleDensity(pos: vec3<f32>) -> f32 {
-  let volumeSizeF = vec3<f32>(textureDimensions(densityTex, 0));
   let worldToVoxel = params.voxelsPerUnit;
-  let uvw = (pos - params.minBounds) * worldToVoxel / (volumeSizeF - vec3<f32>(1.0));
+  let uvw = (pos - params.minBounds) * worldToVoxel * params.invVolumeSpan;
   let epsilon = 0.0001;
   if (any(uvw >= vec3<f32>(1.0 - epsilon)) || any(uvw <= vec3<f32>(epsilon))) {
     return -params.densityOffset;
@@ -445,7 +444,8 @@ fn findNextSurface(origin: vec3<f32>, rayDir: vec3<f32>, findNextFluidEntryPoint
   var consecutiveEmpty = 0u;
 
   var dst = 0.0;
-  for (var i = 0u; i < 512u; i = i + 1u) {
+  let maxMarchSteps = max(1u, u32(params.maxSteps));
+  for (var i = 0u; i < maxMarchSteps; i = i + 1u) {
     if (dst >= dstToTest) { break; }
 
     let currentStep = select(stepSize, stepSize * COARSE_MULTIPLIER, useCoarseStep);
