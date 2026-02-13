@@ -215,13 +215,19 @@ export class FluidSimulation {
 
     // Update interaction point via GPU picking
     let pickingDispatched = false;
+    const shouldRunPicking =
+      this.state.input.pull ||
+      this.state.input.push ||
+      this.state.input.rayDirty === true;
     if (
       !this.isPicking &&
+      shouldRunPicking &&
       this.state.input.rayOrigin &&
       this.state.input.rayDir
     ) {
       this.isPicking = true;
       pickingDispatched = true;
+      this.state.input.rayDirty = false;
       this.pickingSystem.dispatch(
         encoder,
         this.state.input.rayOrigin,

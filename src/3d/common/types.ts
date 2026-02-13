@@ -64,6 +64,7 @@ export interface InputState {
   push: boolean;
   rayOrigin?: Vec3;
   rayDir?: Vec3;
+  rayDirty?: boolean;
   isHoveringFluid?: boolean;
 }
 

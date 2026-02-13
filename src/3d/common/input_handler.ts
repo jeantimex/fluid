@@ -223,6 +223,7 @@ export function setupInputHandlers(
     const ray = getRay(event.clientX, event.clientY);
     input.rayOrigin = ray.origin;
     input.rayDir = ray.dir;
+    input.rayDirty = true;
 
     const point = getBoxIntersection(ray) ?? getPlaneIntersection(ray);
 
@@ -265,6 +266,7 @@ export function setupInputHandlers(
     // Update ray immediately on pointerdown
     input.rayOrigin = ray.origin;
     input.rayDir = ray.dir;
+    input.rayDirty = true;
 
     // Logic:
     // 1. Right click OR Shift + Left Click inside box -> Always push
@@ -307,6 +309,7 @@ export function setupInputHandlers(
     const ray = getRay(e.clientX, e.clientY);
     input.rayOrigin = ray.origin;
     input.rayDir = ray.dir;
+    input.rayDirty = true;
 
     if (isInteractingParticle) {
       // Update the 3D position for particle forces
