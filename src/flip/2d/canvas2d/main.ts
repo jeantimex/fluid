@@ -3,14 +3,31 @@ import { setupGui } from './gui';
 
 const canvas = document.getElementById("myCanvas") as HTMLCanvasElement;
 const gl = canvas.getContext("webgl")!;
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
 
 canvas.focus();
 
-const simHeight = 3.0;
-const cScale = canvas.height / simHeight;
-const simWidth = canvas.width / cScale;
+let simHeight = 3.0;
+let cScale = 1.0;
+let simWidth = 1.0;
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+
+  gl.viewport(0, 0, canvas.width, canvas.height);
+
+  cScale = canvas.height / simHeight;
+  simWidth = canvas.width / cScale;
+
+  // Re-setup the scene to match the new aspect ratio
+  setupScene();
+}
 
 const FLUID_CELL = 0;
 const AIR_CELL = 1;
@@ -1085,9 +1102,10 @@ let mouseDown = false;
 
 function startDrag(x: number, y: number) {
   const bounds = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
 
-  const mx = x - bounds.left - canvas.clientLeft;
-  const my = y - bounds.top - canvas.clientTop;
+  const mx = (x - bounds.left) * dpr;
+  const my = (y - bounds.top) * dpr;
   mouseDown = true;
 
   const x_world = mx / cScale;
@@ -1100,8 +1118,10 @@ function startDrag(x: number, y: number) {
 function drag(x: number, y: number) {
   if (mouseDown) {
     const bounds = canvas.getBoundingClientRect();
-    const mx = x - bounds.left - canvas.clientLeft;
-    const my = y - bounds.top - canvas.clientTop;
+    const dpr = window.devicePixelRatio || 1;
+
+    const mx = (x - bounds.left) * dpr;
+    const my = (y - bounds.top) * dpr;
     const x_world = mx / cScale;
     const y_world = (canvas.height - my) / cScale;
     setObstacle(x_world, y_world, false);
@@ -1213,4 +1233,6 @@ function update() {
 }
 
 setupScene();
+resize();
+window.addEventListener("resize", resize);
 update();
