@@ -400,7 +400,10 @@ export function setupGui(
   stats.dom.style.bottom = '10px';
   stats.dom.style.left = '10px';
   stats.dom.style.zIndex = '10000';
+  stats.dom.style.display = 'none';
   document.body.appendChild(stats.dom);
+
+  const uiState = { showStats: false };
 
   const displayFolder = gui.addFolder('Display');
   displayFolder.add(scene, 'showParticles').name('Particles');
@@ -416,6 +419,14 @@ export function setupGui(
   solverFolder.add(scene, 'numPressureIters', 1, 200, 1).name('Pressure Iters');
   solverFolder.add(scene, 'numParticleIters', 1, 5, 1).name('Particle Iters');
   solverFolder.add(scene, 'overRelaxation', 1, 2, 0.01).name('Over Relaxation');
+
+  const performanceFolder = gui.addFolder('Performance');
+  performanceFolder
+    .add(uiState, 'showStats')
+    .name('Show FPS')
+    .onChange((value: boolean) => {
+      stats.dom.style.display = value ? 'block' : 'none';
+    });
 
   return { gui, stats };
 }

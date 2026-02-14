@@ -1240,6 +1240,7 @@ function update() {
   simulate();
   draw();
   stats.end();
+  stats.update();
   requestAnimationFrame(update);
 }
 
