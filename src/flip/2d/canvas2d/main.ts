@@ -698,7 +698,7 @@ const scene: Scene = {
   obstacleX: 0.0,
   obstacleY: 0.0,
   obstacleRadius: 0.15,
-  paused: true,
+  paused: false,
   obstacleVelX: 0.0,
   obstacleVelY: 0.0,
   showParticles: true,
@@ -1178,10 +1178,21 @@ document.addEventListener("keydown", (event) => {
 });
 
 // === GUI Setup ===
+let pauseController: any;
+const guiState = {
+  togglePause: () => {
+    scene.paused = !scene.paused;
+    if (pauseController) {
+      pauseController.name(scene.paused ? 'Resume' : 'Pause');
+    }
+  },
+  reset: () => setupScene(),
+};
+
 const { stats, gui } = setupGui(
   scene,
   {
-    onReset: () => setupScene(),
+    onReset: guiState.reset,
   },
   {
     title: 'Canvas 2D FLIP Fluid',
@@ -1202,8 +1213,8 @@ const { stats, gui } = setupGui(
   }
 );
 
-gui.add(scene, 'paused').name('Paused').listen();
-gui.add({ reset: () => setupScene() }, 'reset').name('Reset Simulation');
+pauseController = gui.add(guiState, 'togglePause').name(scene.paused ? 'Resume' : 'Pause');
+gui.add(guiState, 'reset').name('Reset Simulation');
 
 // main -------------------------------------------------------
 
