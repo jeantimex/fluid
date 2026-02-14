@@ -1,4 +1,5 @@
 import './style.css';
+import { setupGui } from './gui';
 
 const canvas = document.getElementById("myCanvas") as HTMLCanvasElement;
 const gl = canvas.getContext("webgl")!;
@@ -1156,22 +1157,33 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-// UI elements listeners
-document.getElementById('showParticles')!.onchange = function(e) {
-    scene.showParticles = (e.target as HTMLInputElement).checked;
-};
-document.getElementById('showGrid')!.onchange = function(e) {
-    scene.showGrid = (e.target as HTMLInputElement).checked;
-};
-document.getElementById('compensateDrift')!.onchange = function(e) {
-    scene.compensateDrift = (e.target as HTMLInputElement).checked;
-};
-document.getElementById('separateParticles')!.onchange = function(e) {
-    scene.separateParticles = (e.target as HTMLInputElement).checked;
-};
-document.getElementById('flipRatio')!.onchange = function(e) {
-    scene.flipRatio = 0.1 * parseFloat((e.target as HTMLInputElement).value);
-};
+// === GUI Setup ===
+const { stats, gui } = setupGui(
+  scene,
+  {
+    onReset: () => setupScene(),
+  },
+  {
+    title: 'Canvas 2D FLIP Fluid',
+    subtitle: 'Hybrid FLIP/PIC Fluid Simulation',
+    features: [
+      'FLIP/PIC Hybrid Solver',
+      'Staggered MAC Grid',
+      'Incompressible Pressure Solver',
+      'Interactive Obstacle',
+      'Particle Drift Compensation'
+    ],
+    interactions: [
+      'Click & Drag: Move Obstacle',
+      'P: Pause/Resume',
+      'M: Step Simulation'
+    ],
+    githubUrl: 'https://github.com/jeantimex/fluid',
+  }
+);
+
+gui.add(scene, 'paused').name('Paused').listen();
+gui.add({ reset: () => setupScene() }, 'reset').name('Reset Simulation');
 
 // main -------------------------------------------------------
 
@@ -1193,8 +1205,10 @@ function simulate() {
 }
 
 function update() {
+  stats.begin();
   simulate();
   draw();
+  stats.end();
   requestAnimationFrame(update);
 }
 
