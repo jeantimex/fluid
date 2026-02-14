@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FLIP Fluid</title>
+  </head>
+  <body>
+    <div id="ui-container">
+      <input type="checkbox" checked id="showParticles" />Particles &nbsp;
+      <input type="checkbox" id="showGrid" />Grid &nbsp;
+      <input type="checkbox" checked id="compensateDrift" />Compensate Drift
+      &nbsp;
+      <input type="checkbox" checked id="separateParticles" />Separate Particles
+      &nbsp; PIC
+      <input
+        type="range"
+        min="0"
+        max="10"
+        value="9"
+        class="slider"
+        id="flipRatio"
+      />
+      FLIP
+    </div>
+    <canvas id="myCanvas"></canvas>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
