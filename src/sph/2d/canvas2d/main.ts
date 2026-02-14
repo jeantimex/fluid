@@ -67,7 +67,9 @@ const { stats, gui } = setupGui(
 );
 
 // Add Pause and Reset Buttons at the end
-pauseController = gui.add(guiState, 'togglePause').name(guiState.paused ? 'Resume' : 'Pause');
+pauseController = gui
+  .add(guiState, 'togglePause')
+  .name(guiState.paused ? 'Resume' : 'Pause');
 gui.add(guiState, 'reset').name('Reset Simulation');
 
 // === Animation Loop ===
