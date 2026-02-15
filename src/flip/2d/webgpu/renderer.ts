@@ -176,6 +176,9 @@ export class WebGPURenderer {
   particleColorBuffer: GPUBuffer | null = null;
   gridPosBuffer: GPUBuffer | null = null;
   gridColorBuffer: GPUBuffer | null = null;
+  particlePosReadbackBuffer: GPUBuffer | null = null;
+  particleVelReadbackBuffer: GPUBuffer | null = null;
+  readbackInFlight = false;
 
   constructor(device: GPUDevice, format: GPUTextureFormat) {
     this.device = device;
@@ -276,6 +279,15 @@ export class WebGPURenderer {
     return buffer;
   }
 
+  private ensureReadbackBuffer(existing: GPUBuffer | null, size: number): GPUBuffer {
+    if (existing && existing.size === size) return existing;
+    if (existing) existing.destroy();
+    return this.device.createBuffer({
+      size,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+  }
+
   private writeFloat32(target: GPUBuffer, offset: number, data: Float32Array) {
     this.device.queue.writeBuffer(
       target,
@@ -293,12 +305,12 @@ export class WebGPURenderer {
     this.particlePosBuffer = this.createOrUpdateBuffer(
       fluid.particlePos,
       this.particlePosBuffer,
-      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE
+      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
     this.particleVelBuffer = this.createOrUpdateBuffer(
       fluid.particleVel,
       this.particleVelBuffer,
-      GPUBufferUsage.STORAGE
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
 
     const obstacleRadius = scene.showObstacle ? scene.obstacleRadius : 0.0;
@@ -339,6 +351,36 @@ export class WebGPURenderer {
     pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
     pass.end();
     this.device.queue.submit([encoder.finish()]);
+  }
+
+  syncParticlesToCpu(scene: Scene) {
+    const fluid = scene.fluid;
+    if (!fluid || !this.particlePosBuffer || !this.particleVelBuffer || this.readbackInFlight) return;
+
+    this.particlePosReadbackBuffer = this.ensureReadbackBuffer(this.particlePosReadbackBuffer, fluid.particlePos.byteLength);
+    this.particleVelReadbackBuffer = this.ensureReadbackBuffer(this.particleVelReadbackBuffer, fluid.particleVel.byteLength);
+
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(this.particlePosBuffer, 0, this.particlePosReadbackBuffer, 0, fluid.particlePos.byteLength);
+    encoder.copyBufferToBuffer(this.particleVelBuffer, 0, this.particleVelReadbackBuffer, 0, fluid.particleVel.byteLength);
+    this.device.queue.submit([encoder.finish()]);
+
+    this.readbackInFlight = true;
+    Promise.all([
+      this.particlePosReadbackBuffer.mapAsync(GPUMapMode.READ),
+      this.particleVelReadbackBuffer.mapAsync(GPUMapMode.READ),
+    ])
+      .then(() => {
+        const posData = new Float32Array(this.particlePosReadbackBuffer!.getMappedRange());
+        const velData = new Float32Array(this.particleVelReadbackBuffer!.getMappedRange());
+        fluid.particlePos.set(posData);
+        fluid.particleVel.set(velData);
+        this.particlePosReadbackBuffer!.unmap();
+        this.particleVelReadbackBuffer!.unmap();
+      })
+      .finally(() => {
+        this.readbackInFlight = false;
+      });
   }
 
   draw(
@@ -396,7 +438,7 @@ export class WebGPURenderer {
         this.particlePosBuffer = this.createOrUpdateBuffer(
           fluid.particlePos,
           this.particlePosBuffer,
-          GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE
+          GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
         );
       }
       this.particleColorBuffer = this.createOrUpdateBuffer(fluid.particleColor, this.particleColorBuffer, GPUBufferUsage.VERTEX);
