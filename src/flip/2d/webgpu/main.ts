@@ -27,7 +27,7 @@ const runtime = {
   simulationBackend: 'gpu' as 'cpu' | 'gpu',
   gpuStatePrimed: false,
   gpuExperimental: true,
-  gpuFullStep: false,
+  gpuFullStep: false, // dev-only, intentionally hidden from GUI
   gpuDebugReadback: false,
   gpuParityMetrics: false,
   gpuParityLogEveryNFrames: 30,
@@ -262,16 +262,6 @@ async function init() {
   gui.add(runtime, 'gpuExperimental').name('GPU Experimental').onChange(() => {
     resetGpuDebugState();
   });
-  gui.add(runtime, 'gpuFullStep').name('GPU Full Step').onChange(() => {
-    resetGpuDebugState();
-  });
-  gui.add(runtime, 'gpuDebugReadback').name('GPU Debug Readback').onChange(() => {
-    resetGpuDebugState();
-  });
-  gui.add(runtime, 'gpuParityMetrics').name('GPU Parity Metrics').onChange(() => {
-    resetGpuDebugState();
-  });
-  gui.add(runtime, 'gpuParityLogEveryNFrames', 1, 300, 1).name('GPU Parity Log Every');
   gui.add(runtime, 'gpuPressureEnabled').name('GPU Pressure');
   gui.add(runtime, 'gpuPressureIters', 1, 200, 1).name('GPU Pressure Iters');
   gui.add(runtime, 'gpuP2GVelXEnabled').name('GPU P2G VelXY');

@@ -690,35 +690,38 @@ const clearPressureShaderWGSL = `
   }
 `;
 
-const pressureJacobiShaderWGSL = `
+const pressureDivergenceShaderWGSL = `
   struct PressureUniforms {
     numX: u32,
     numY: u32,
     _pad0: vec2u,
-    pressureScale: f32,
     overRelaxation: f32,
-    _pad1: vec2f,
+    compensateDrift: f32,
+    restDensity: f32,
+    _pad1: f32,
   }
 
   @group(0) @binding(0) var<uniform> uniforms: PressureUniforms;
   @group(0) @binding(1) var<storage, read> solidMask: array<f32>;
   @group(0) @binding(2) var<storage, read> cellType: array<i32>;
-  @group(0) @binding(3) var<storage, read> velocityXIn: array<f32>;
-  @group(0) @binding(4) var<storage, read> velocityYIn: array<f32>;
-  @group(0) @binding(5) var<storage, read_write> velocityXOut: array<f32>;
-  @group(0) @binding(6) var<storage, read_write> velocityYOut: array<f32>;
-  @group(0) @binding(7) var<storage, read_write> pressure: array<f32>;
+  @group(0) @binding(3) var<storage, read> velocityX: array<f32>;
+  @group(0) @binding(4) var<storage, read> velocityY: array<f32>;
+  @group(0) @binding(5) var<storage, read> particleDensity: array<f32>;
+  @group(0) @binding(6) var<storage, read_write> divergence: array<f32>;
 
   @compute @workgroup_size(8, 8, 1)
   fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
     let j = gid.y;
-    if (i <= 0u || i >= uniforms.numX - 1u || j <= 0u || j >= uniforms.numY - 1u) {
-      return;
-    }
     let nY = uniforms.numY;
     let center = i * nY + j;
+    if (i <= 0u || i >= uniforms.numX - 1u || j <= 0u || j >= uniforms.numY - 1u) {
+      divergence[center] = 0.0;
+      return;
+    }
+
     if (cellType[center] != 0) { // FLUID
+      divergence[center] = 0.0;
       return;
     }
 
@@ -733,18 +736,124 @@ const pressureJacobiShaderWGSL = `
     let sy1 = solidMask[top];
     let sSum = sx0 + sx1 + sy0 + sy1;
     if (sSum == 0.0) {
+      divergence[center] = 0.0;
       return;
     }
 
-    let divergence = velocityXIn[right] - velocityXIn[center] + velocityYIn[top] - velocityYIn[center];
-    let p = -divergence / sSum;
-    let relaxedP = p * uniforms.overRelaxation;
+    var div = velocityX[right] - velocityX[center] + velocityY[top] - velocityY[center];
+    if (uniforms.compensateDrift > 0.5 && uniforms.restDensity > 0.0) {
+      let compression = particleDensity[center] - uniforms.restDensity;
+      if (compression > 0.0) {
+        div = div - compression;
+      }
+    }
+    divergence[center] = div;
+  }
+`;
 
-    pressure[center] = pressure[center] + uniforms.pressureScale * relaxedP;
-    velocityXOut[center] = velocityXIn[center] - sx0 * relaxedP;
-    velocityXOut[right] = velocityXIn[right] + sx1 * relaxedP;
-    velocityYOut[center] = velocityYIn[center] - sy0 * relaxedP;
-    velocityYOut[top] = velocityYIn[top] + sy1 * relaxedP;
+const pressureJacobiShaderWGSL = `
+  struct PressureUniforms {
+    numX: u32,
+    numY: u32,
+    _pad0: vec2u,
+    overRelaxation: f32,
+    compensateDrift: f32,
+    restDensity: f32,
+    _pad1: f32,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: PressureUniforms;
+  @group(0) @binding(1) var<storage, read> solidMask: array<f32>;
+  @group(0) @binding(2) var<storage, read> cellType: array<i32>;
+  @group(0) @binding(3) var<storage, read> divergence: array<f32>;
+  @group(0) @binding(4) var<storage, read> pressureIn: array<f32>;
+  @group(0) @binding(5) var<storage, read_write> pressureOut: array<f32>;
+
+  @compute @workgroup_size(8, 8, 1)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    let j = gid.y;
+    let nY = uniforms.numY;
+    let center = i * nY + j;
+    if (i <= 0u || i >= uniforms.numX - 1u || j <= 0u || j >= uniforms.numY - 1u) {
+      pressureOut[center] = 0.0;
+      return;
+    }
+    if (cellType[center] != 0) { // FLUID
+      pressureOut[center] = 0.0;
+      return;
+    }
+
+    let left = (i - 1u) * nY + j;
+    let right = (i + 1u) * nY + j;
+    let bottom = i * nY + (j - 1u);
+    let top = i * nY + (j + 1u);
+
+    let sx0 = solidMask[left];
+    let sx1 = solidMask[right];
+    let sy0 = solidMask[bottom];
+    let sy1 = solidMask[top];
+    let sSum = sx0 + sx1 + sy0 + sy1;
+    if (sSum == 0.0) {
+      pressureOut[center] = 0.0;
+      return;
+    }
+
+    let neighborP =
+      sx0 * pressureIn[left] +
+      sx1 * pressureIn[right] +
+      sy0 * pressureIn[bottom] +
+      sy1 * pressureIn[top];
+    pressureOut[center] = (neighborP - divergence[center]) / sSum;
+  }
+`;
+
+const pressureProjectShaderWGSL = `
+  struct PressureUniforms {
+    numX: u32,
+    numY: u32,
+    _pad0: vec2u,
+    overRelaxation: f32,
+    compensateDrift: f32,
+    restDensity: f32,
+    _pad1: f32,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: PressureUniforms;
+  @group(0) @binding(1) var<storage, read> solidMask: array<f32>;
+  @group(0) @binding(2) var<storage, read> cellType: array<i32>;
+  @group(0) @binding(3) var<storage, read> pressure: array<f32>;
+  @group(0) @binding(4) var<storage, read> velocityXIn: array<f32>;
+  @group(0) @binding(5) var<storage, read> velocityYIn: array<f32>;
+  @group(0) @binding(6) var<storage, read_write> velocityXOut: array<f32>;
+  @group(0) @binding(7) var<storage, read_write> velocityYOut: array<f32>;
+
+  @compute @workgroup_size(8, 8, 1)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    let j = gid.y;
+    let nY = uniforms.numY;
+    let center = i * nY + j;
+    if (i <= 0u || i >= uniforms.numX - 1u || j <= 0u || j >= uniforms.numY - 1u) {
+      velocityXOut[center] = velocityXIn[center];
+      velocityYOut[center] = velocityYIn[center];
+      return;
+    }
+    if (cellType[center] != 0) { // FLUID
+      velocityXOut[center] = velocityXIn[center];
+      velocityYOut[center] = velocityYIn[center];
+      return;
+    }
+
+    let left = (i - 1u) * nY + j;
+    let bottom = i * nY + (j - 1u);
+    let sx0 = solidMask[left];
+    let sy0 = solidMask[bottom];
+    let corrX = sx0 * uniforms.overRelaxation * (pressure[center] - pressure[left]);
+    let corrY = sy0 * uniforms.overRelaxation * (pressure[center] - pressure[bottom]);
+
+    velocityXOut[center] = velocityXIn[center] - corrX;
+    velocityYOut[center] = velocityYIn[center] - corrY;
   }
 `;
 
@@ -767,6 +876,8 @@ export class WebGPURenderer {
   p2gVelocityXScatterPipeline: GPUComputePipeline;
   p2gVelocityXNormalizePipeline: GPUComputePipeline;
   p2gVelocityYScatterPipeline: GPUComputePipeline;
+  pressureDivergencePipeline: GPUComputePipeline;
+  pressureProjectPipeline: GPUComputePipeline;
   clearPressurePipeline: GPUComputePipeline;
   pressureJacobiPipeline: GPUComputePipeline;
   
@@ -800,6 +911,8 @@ export class WebGPURenderer {
   velocityXScratchBuffer: GPUBuffer | null = null;
   velocityYScratchBuffer: GPUBuffer | null = null;
   pressureBuffer: GPUBuffer | null = null;
+  pressureScratchBuffer: GPUBuffer | null = null;
+  divergenceBuffer: GPUBuffer | null = null;
   particleDensityBuffer: GPUBuffer | null = null;
   firstCellParticleBuffer: GPUBuffer | null = null;
   cellParticleIdsBuffer: GPUBuffer | null = null;
@@ -969,6 +1082,22 @@ export class WebGPURenderer {
       layout: 'auto',
       compute: {
         module: p2gVelocityYScatterModule,
+        entryPoint: 'main',
+      },
+    });
+    const pressureDivergenceModule = device.createShaderModule({ code: pressureDivergenceShaderWGSL });
+    this.pressureDivergencePipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: pressureDivergenceModule,
+        entryPoint: 'main',
+      },
+    });
+    const pressureProjectModule = device.createShaderModule({ code: pressureProjectShaderWGSL });
+    this.pressureProjectPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: pressureProjectModule,
         entryPoint: 'main',
       },
     });
@@ -1389,6 +1518,16 @@ export class WebGPURenderer {
       this.pressureBuffer,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
+    this.pressureScratchBuffer = this.createOrUpdateBuffer(
+      fluid.pressure,
+      this.pressureScratchBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.divergenceBuffer = this.createOrUpdateBuffer(
+      new Float32Array(fluid.totalCells),
+      this.divergenceBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
   }
 
   buildVelocitiesFromParticles(scene: Scene, options: { useGpuState?: boolean } = {}) {
@@ -1547,64 +1686,139 @@ export class WebGPURenderer {
       !this.pressureBuffer
     ) return;
     if (!this.solidMaskBuffer || !this.cellTypeBuffer) return;
+    this.pressureScratchBuffer = this.createOrUpdateBuffer(
+      new Float32Array(fluid.totalCells),
+      this.pressureScratchBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.divergenceBuffer = this.createOrUpdateBuffer(
+      new Float32Array(fluid.totalCells),
+      this.divergenceBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    if (!this.particleDensityBuffer || this.particleDensityBuffer.size !== fluid.particleDensity.byteLength) {
+      this.particleDensityBuffer = this.createOrUpdateBuffer(
+        fluid.particleDensity,
+        this.particleDensityBuffer,
+        GPUBufferUsage.STORAGE
+      );
+    }
 
     const clearUniform = new Uint32Array(4);
     clearUniform[0] = fluid.totalCells;
     this.device.queue.writeBuffer(this.clearPressureUniformBuffer, 0, clearUniform);
 
-    const clearBindGroup = this.device.createBindGroup({
+    const clearPressureBindGroup = this.device.createBindGroup({
       layout: this.clearPressurePipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.clearPressureUniformBuffer } },
         { binding: 1, resource: { buffer: this.pressureBuffer } },
       ],
     });
+    const clearScratchBindGroup = this.device.createBindGroup({
+      layout: this.clearPressurePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.clearPressureUniformBuffer } },
+        { binding: 1, resource: { buffer: this.pressureScratchBuffer } },
+      ],
+    });
 
-    const pressureScale = (fluid.density * fluid.cellSize) / scene.dt;
     const pressureUniform = new Float32Array(8);
     pressureUniform[0] = fluid.numX;
     pressureUniform[1] = fluid.numY;
-    pressureUniform[4] = pressureScale;
-    pressureUniform[5] = scene.overRelaxation;
+    pressureUniform[4] = scene.overRelaxation;
+    pressureUniform[5] = scene.compensateDrift ? 1.0 : 0.0;
+    pressureUniform[6] = fluid.particleRestDensity;
     this.writeFloat32(this.pressureUniformBuffer, 0, pressureUniform);
-    const solidMaskBuffer = this.solidMaskBuffer!;
-    const cellTypeBuffer = this.cellTypeBuffer!;
+
+    const divergenceBindGroup = this.device.createBindGroup({
+      layout: this.pressureDivergencePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.pressureUniformBuffer } },
+        { binding: 1, resource: { buffer: this.solidMaskBuffer } },
+        { binding: 2, resource: { buffer: this.cellTypeBuffer } },
+        { binding: 3, resource: { buffer: this.velocityXBuffer } },
+        { binding: 4, resource: { buffer: this.velocityYBuffer } },
+        { binding: 5, resource: { buffer: this.particleDensityBuffer } },
+        { binding: 6, resource: { buffer: this.divergenceBuffer } },
+      ],
+    });
+
+    const pressureIters = Math.max(1, Math.floor(iterations ?? scene.numPressureIters));
+    const jacobiBindGroups: GPUBindGroup[] = [];
+    for (let iter = 0; iter < pressureIters; iter++) {
+      const pressureIn = iter % 2 === 0 ? this.pressureBuffer : this.pressureScratchBuffer;
+      const pressureOut = iter % 2 === 0 ? this.pressureScratchBuffer : this.pressureBuffer;
+      jacobiBindGroups.push(this.device.createBindGroup({
+        layout: this.pressureJacobiPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.pressureUniformBuffer } },
+          { binding: 1, resource: { buffer: this.solidMaskBuffer } },
+          { binding: 2, resource: { buffer: this.cellTypeBuffer } },
+          { binding: 3, resource: { buffer: this.divergenceBuffer } },
+          { binding: 4, resource: { buffer: pressureIn! } },
+          { binding: 5, resource: { buffer: pressureOut! } },
+        ],
+      }));
+    }
+
+    const finalPressureBuffer = pressureIters % 2 === 0 ? this.pressureBuffer : this.pressureScratchBuffer;
+    const projectBindGroup = this.device.createBindGroup({
+      layout: this.pressureProjectPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.pressureUniformBuffer } },
+        { binding: 1, resource: { buffer: this.solidMaskBuffer } },
+        { binding: 2, resource: { buffer: this.cellTypeBuffer } },
+        { binding: 3, resource: { buffer: finalPressureBuffer! } },
+        { binding: 4, resource: { buffer: this.velocityXBuffer } },
+        { binding: 5, resource: { buffer: this.velocityYBuffer } },
+        { binding: 6, resource: { buffer: this.velocityXScratchBuffer } },
+        { binding: 7, resource: { buffer: this.velocityYScratchBuffer } },
+      ],
+    });
 
     const encoder = this.device.createCommandEncoder();
     const clearPass = encoder.beginComputePass();
     clearPass.setPipeline(this.clearPressurePipeline);
-    clearPass.setBindGroup(0, clearBindGroup);
+    clearPass.setBindGroup(0, clearPressureBindGroup);
+    clearPass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
+    clearPass.setBindGroup(0, clearScratchBindGroup);
     clearPass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
     clearPass.end();
 
+    const divPass = encoder.beginComputePass();
+    divPass.setPipeline(this.pressureDivergencePipeline);
+    divPass.setBindGroup(0, divergenceBindGroup);
+    divPass.dispatchWorkgroups(Math.ceil(fluid.numX / 8), Math.ceil(fluid.numY / 8));
+    divPass.end();
+
     const jacobiPass = encoder.beginComputePass();
     jacobiPass.setPipeline(this.pressureJacobiPipeline);
-    const pressureIters = Math.max(1, Math.floor(iterations ?? scene.numPressureIters));
     for (let iter = 0; iter < pressureIters; iter++) {
-      const jacobiBindGroup = this.device.createBindGroup({
-        layout: this.pressureJacobiPipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: this.pressureUniformBuffer } },
-          { binding: 1, resource: { buffer: solidMaskBuffer } },
-          { binding: 2, resource: { buffer: cellTypeBuffer } },
-          { binding: 3, resource: { buffer: this.velocityXBuffer } },
-          { binding: 4, resource: { buffer: this.velocityYBuffer } },
-          { binding: 5, resource: { buffer: this.velocityXScratchBuffer } },
-          { binding: 6, resource: { buffer: this.velocityYScratchBuffer } },
-          { binding: 7, resource: { buffer: this.pressureBuffer } },
-        ],
-      });
-      jacobiPass.setBindGroup(0, jacobiBindGroup);
+      jacobiPass.setBindGroup(0, jacobiBindGroups[iter]);
       jacobiPass.dispatchWorkgroups(Math.ceil(fluid.numX / 8), Math.ceil(fluid.numY / 8));
-      const vxTmp: GPUBuffer | null = this.velocityXBuffer;
-      this.velocityXBuffer = this.velocityXScratchBuffer;
-      this.velocityXScratchBuffer = vxTmp;
-      const vyTmp: GPUBuffer | null = this.velocityYBuffer;
-      this.velocityYBuffer = this.velocityYScratchBuffer;
-      this.velocityYScratchBuffer = vyTmp;
     }
     jacobiPass.end();
+
+    const projectPass = encoder.beginComputePass();
+    projectPass.setPipeline(this.pressureProjectPipeline);
+    projectPass.setBindGroup(0, projectBindGroup);
+    projectPass.dispatchWorkgroups(Math.ceil(fluid.numX / 8), Math.ceil(fluid.numY / 8));
+    projectPass.end();
+
     this.device.queue.submit([encoder.finish()]);
+
+    const vxTmp: GPUBuffer | null = this.velocityXBuffer;
+    this.velocityXBuffer = this.velocityXScratchBuffer;
+    this.velocityXScratchBuffer = vxTmp;
+    const vyTmp: GPUBuffer | null = this.velocityYBuffer;
+    this.velocityYBuffer = this.velocityYScratchBuffer;
+    this.velocityYScratchBuffer = vyTmp;
+    if (finalPressureBuffer && this.pressureBuffer !== finalPressureBuffer) {
+      const pTmp: GPUBuffer | null = this.pressureBuffer;
+      this.pressureBuffer = finalPressureBuffer;
+      this.pressureScratchBuffer = pTmp;
+    }
   }
 
   applyBoundaryCollision(
