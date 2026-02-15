@@ -379,14 +379,11 @@ async function main(): Promise<void> {
     // Run GPU integration
     gpuSim.runIntegrate();
 
-    // Read back positions and velocities (async, but we'll handle it synchronously for now)
-    // For Phase 1, we'll use a simpler approach: just run CPU integration as fallback
-    // and verify GPU works by comparing. For now, run CPU version:
+    // GPU Collision handling (Phase 2)
+    gpuSim.updateObstacle(obstacleX, obstacleY, obstacleVelX, obstacleVelY, obstacleRadius);
+    gpuSim.runCollisions();
 
-    // Actually for simplicity, let's do hybrid: GPU integration, then copy back for CPU steps
-    // But readback is async... For Phase 1, let's just run CPU simulation and verify GPU later
-
-    // Run full CPU simulation for now (we'll verify GPU separately)
+    // Run full CPU simulation (includes color updates)
     fluid.simulate(
       dt, gravity, flipRatio,
       numPressureIters, numParticleIters,
@@ -394,6 +391,13 @@ async function main(): Promise<void> {
       obstacleX, obstacleY, obstacleRadius,
       obstacleVelX, obstacleVelY
     );
+
+    // GPU Color Update (Phase 2 verification)
+    // Upload density computed by CPU, then run GPU color shader
+    gpuSim.uploadGridDensity(fluid.particleDensity);
+    gpuSim.getBuffers().uploadParticlePos(fluid.particlePos, fluid.numParticles);
+    gpuSim.getBuffers().uploadParticleColor(fluid.particleColor, fluid.numParticles);
+    gpuSim.runUpdateColors();
   }
 
   // ============ MAIN LOOP ============

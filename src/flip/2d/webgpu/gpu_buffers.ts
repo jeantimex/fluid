@@ -299,7 +299,14 @@ export class GPUSimulationBuffers {
    * Upload grid solid flags from CPU.
    */
   uploadGridS(data: Float32Array): void {
-    this.device.queue.writeBuffer(this.gridS, 0, data);
+    this.device.queue.writeBuffer(this.gridS, 0, data.buffer, data.byteOffset, data.byteLength);
+  }
+
+  /**
+   * Upload grid density from CPU.
+   */
+  uploadGridDensity(data: Float32Array): void {
+    this.device.queue.writeBuffer(this.gridDensity, 0, data.buffer, data.byteOffset, data.byteLength);
   }
 
   /**

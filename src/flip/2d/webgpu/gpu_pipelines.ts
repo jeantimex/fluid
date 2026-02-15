@@ -6,15 +6,21 @@
 
 import { GPUSimulationBuffers } from './gpu_buffers';
 import integrateShader from './shaders/integrate.wgsl?raw';
+import updateColorsShader from './shaders/update_colors.wgsl?raw';
+import collisionsShader from './shaders/collisions.wgsl?raw';
 
 export class GPUComputePipelines {
   private device: GPUDevice;
 
   // Pipelines
   integratePipeline: GPUComputePipeline;
+  updateColorsPipeline: GPUComputePipeline;
+  collisionsPipeline: GPUComputePipeline;
 
   // Bind groups
   integrateBindGroup: GPUBindGroup;
+  updateColorsBindGroup: GPUBindGroup;
+  collisionsBindGroup: GPUBindGroup;
 
   // Workgroup size
   readonly workgroupSize = 256;
@@ -47,6 +53,58 @@ export class GPUComputePipelines {
         { binding: 2, resource: { buffer: buffers.simParams } },
       ],
     });
+
+    // Create update colors pipeline
+    const updateColorsModule = device.createShaderModule({
+      label: 'update colors shader',
+      code: updateColorsShader,
+    });
+
+    this.updateColorsPipeline = device.createComputePipeline({
+      label: 'update colors pipeline',
+      layout: 'auto',
+      compute: {
+        module: updateColorsModule,
+        entryPoint: 'main',
+      },
+    });
+
+    this.updateColorsBindGroup = device.createBindGroup({
+      label: 'update colors bind group',
+      layout: this.updateColorsPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.particlePos } },
+        { binding: 1, resource: { buffer: buffers.particleColor } },
+        { binding: 2, resource: { buffer: buffers.gridDensity } },
+        { binding: 3, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    // Create collisions pipeline
+    const collisionsModule = device.createShaderModule({
+      label: 'collisions shader',
+      code: collisionsShader,
+    });
+
+    this.collisionsPipeline = device.createComputePipeline({
+      label: 'collisions pipeline',
+      layout: 'auto',
+      compute: {
+        module: collisionsModule,
+        entryPoint: 'main',
+      },
+    });
+
+    this.collisionsBindGroup = device.createBindGroup({
+      label: 'collisions bind group',
+      layout: this.collisionsPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.particlePos } },
+        { binding: 1, resource: { buffer: buffers.particleVel } },
+        { binding: 2, resource: { buffer: buffers.simParams } },
+        { binding: 3, resource: { buffer: buffers.obstacleParams } },
+      ],
+    });
   }
 
   /**
@@ -60,6 +118,28 @@ export class GPUComputePipelines {
         { binding: 0, resource: { buffer: buffers.particlePos } },
         { binding: 1, resource: { buffer: buffers.particleVel } },
         { binding: 2, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    this.updateColorsBindGroup = this.device.createBindGroup({
+      label: 'update colors bind group',
+      layout: this.updateColorsPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.particlePos } },
+        { binding: 1, resource: { buffer: buffers.particleColor } },
+        { binding: 2, resource: { buffer: buffers.gridDensity } },
+        { binding: 3, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    this.collisionsBindGroup = this.device.createBindGroup({
+      label: 'collisions bind group',
+      layout: this.collisionsPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.particlePos } },
+        { binding: 1, resource: { buffer: buffers.particleVel } },
+        { binding: 2, resource: { buffer: buffers.simParams } },
+        { binding: 3, resource: { buffer: buffers.obstacleParams } },
       ],
     });
   }

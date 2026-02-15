@@ -74,6 +74,13 @@ export class GPUFluidSimulation {
   }
 
   /**
+   * Upload grid density from CPU.
+   */
+  uploadGridDensity(data: Float32Array): void {
+    this.buffers.uploadGridDensity(data);
+  }
+
+  /**
    * Run particle integration on GPU.
    * Returns a command encoder that can be submitted or extended with more passes.
    */
@@ -97,6 +104,40 @@ export class GPUFluidSimulation {
    */
   runIntegrate(): void {
     const encoder = this.integrate();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  /**
+   * Run particle color update on GPU.
+   */
+  runUpdateColors(): void {
+    const encoder = this.device.createCommandEncoder();
+    const computePass = encoder.beginComputePass();
+
+    computePass.setPipeline(this.pipelines.updateColorsPipeline);
+    computePass.setBindGroup(0, this.pipelines.updateColorsBindGroup);
+
+    const workgroups = Math.ceil(this.params.numParticles / this.pipelines.workgroupSize);
+    computePass.dispatchWorkgroups(workgroups);
+
+    computePass.end();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  /**
+   * Run particle collision handling on GPU.
+   */
+  runCollisions(): void {
+    const encoder = this.device.createCommandEncoder();
+    const computePass = encoder.beginComputePass();
+
+    computePass.setPipeline(this.pipelines.collisionsPipeline);
+    computePass.setBindGroup(0, this.pipelines.collisionsBindGroup);
+
+    const workgroups = Math.ceil(this.params.numParticles / this.pipelines.workgroupSize);
+    computePass.dispatchWorkgroups(workgroups);
+
+    computePass.end();
     this.device.queue.submit([encoder.finish()]);
   }
 
