@@ -263,8 +263,8 @@ const particleSeparationShaderWGSL = `
   @group(0) @binding(0) var<uniform> uniforms: SeparationUniforms;
   @group(0) @binding(1) var<storage, read> positionsIn: array<vec2f>;
   @group(0) @binding(2) var<storage, read_write> positionsOut: array<vec2f>;
-  @group(0) @binding(3) var<storage, read> firstCellParticle: array<i32>;
-  @group(0) @binding(4) var<storage, read> cellParticleIds: array<i32>;
+  @group(0) @binding(3) var<storage, read> firstCellParticle: array<u32>;
+  @group(0) @binding(4) var<storage, read> cellParticleIds: array<u32>;
 
   @compute @workgroup_size(64)
   fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -283,15 +283,15 @@ const particleSeparationShaderWGSL = `
 
     for (var xi = x0; xi <= x1; xi = xi + 1) {
       for (var yi = y0; yi <= y1; yi = yi + 1) {
-        let cellNr = xi * i32(uniforms.gridNumY) + yi;
-        let firstIdx = firstCellParticle[u32(cellNr)];
-        let lastIdx = firstCellParticle[u32(cellNr + 1)];
-        for (var j = firstIdx; j < lastIdx; j = j + 1) {
-          let id = cellParticleIds[u32(j)];
-          if (id == i32(i)) {
+        let cellNr = u32(xi * i32(uniforms.gridNumY) + yi);
+        let firstIdx = firstCellParticle[cellNr];
+        let lastIdx = firstCellParticle[cellNr + 1u];
+        for (var j = firstIdx; j < lastIdx; j = j + 1u) {
+          let id = cellParticleIds[j];
+          if (id == i) {
             continue;
           }
-          let q = positionsIn[u32(id)];
+          let q = positionsIn[id];
           let dx = q.x - p.x;
           let dy = q.y - p.y;
           let d2 = dx * dx + dy * dy;
@@ -311,6 +311,64 @@ const particleSeparationShaderWGSL = `
   }
 `;
 
+const hashCountShaderWGSL = `
+  struct HashCountUniforms {
+    numParticles: u32,
+    gridNumX: u32,
+    gridNumY: u32,
+    _pad0: u32,
+    invSpacing: f32,
+    _pad1: vec3f,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: HashCountUniforms;
+  @group(0) @binding(1) var<storage, read> positions: array<vec2f>;
+  @group(0) @binding(2) var<storage, read_write> cellCounts: array<atomic<u32>>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= uniforms.numParticles) {
+      return;
+    }
+    let p = positions[i];
+    let xi = clamp(u32(floor(p.x * uniforms.invSpacing)), 0u, uniforms.gridNumX - 1u);
+    let yi = clamp(u32(floor(p.y * uniforms.invSpacing)), 0u, uniforms.gridNumY - 1u);
+    let cellNr = xi * uniforms.gridNumY + yi;
+    atomicAdd(&cellCounts[cellNr], 1u);
+  }
+`;
+
+const hashFillShaderWGSL = `
+  struct HashFillUniforms {
+    numParticles: u32,
+    gridNumX: u32,
+    gridNumY: u32,
+    _pad0: u32,
+    invSpacing: f32,
+    _pad1: vec3f,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: HashFillUniforms;
+  @group(0) @binding(1) var<storage, read> positions: array<vec2f>;
+  @group(0) @binding(2) var<storage, read_write> cellOffsets: array<atomic<u32>>;
+  @group(0) @binding(3) var<storage, read_write> cellParticleIds: array<u32>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= uniforms.numParticles) {
+      return;
+    }
+    let p = positions[i];
+    let xi = clamp(u32(floor(p.x * uniforms.invSpacing)), 0u, uniforms.gridNumX - 1u);
+    let yi = clamp(u32(floor(p.y * uniforms.invSpacing)), 0u, uniforms.gridNumY - 1u);
+    let cellNr = xi * uniforms.gridNumY + yi;
+    let dst = atomicAdd(&cellOffsets[cellNr], 1u);
+    cellParticleIds[dst] = i;
+  }
+`;
+
 export class WebGPURenderer {
   device: GPUDevice;
   format: GPUTextureFormat;
@@ -322,6 +380,8 @@ export class WebGPURenderer {
   particleColorFadePipeline: GPUComputePipeline;
   particleSurfaceTintPipeline: GPUComputePipeline;
   particleSeparationPipeline: GPUComputePipeline;
+  hashCountPipeline: GPUComputePipeline;
+  hashFillPipeline: GPUComputePipeline;
   
   uniformBuffer: GPUBuffer;
   meshUniformBuffer: GPUBuffer;
@@ -330,6 +390,8 @@ export class WebGPURenderer {
   particleColorFadeUniformBuffer: GPUBuffer;
   particleSurfaceTintUniformBuffer: GPUBuffer;
   particleSeparationUniformBuffer: GPUBuffer;
+  hashCountUniformBuffer: GPUBuffer;
+  hashFillUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   meshBindGroup: GPUBindGroup;
   
@@ -341,6 +403,10 @@ export class WebGPURenderer {
   particleDensityBuffer: GPUBuffer | null = null;
   firstCellParticleBuffer: GPUBuffer | null = null;
   cellParticleIdsBuffer: GPUBuffer | null = null;
+  hashCountsBuffer: GPUBuffer | null = null;
+  hashOffsetsBuffer: GPUBuffer | null = null;
+  hashCountsReadbackBuffer: GPUBuffer | null = null;
+  hashBuildInFlight = false;
   particlePosScratchBuffer: GPUBuffer | null = null;
   particlePosReadbackBuffer: GPUBuffer | null = null;
   particleVelReadbackBuffer: GPUBuffer | null = null;
@@ -435,6 +501,22 @@ export class WebGPURenderer {
         entryPoint: 'main',
       },
     });
+    const hashCountModule = device.createShaderModule({ code: hashCountShaderWGSL });
+    this.hashCountPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: hashCountModule,
+        entryPoint: 'main',
+      },
+    });
+    const hashFillModule = device.createShaderModule({ code: hashFillShaderWGSL });
+    this.hashFillPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: hashFillModule,
+        entryPoint: 'main',
+      },
+    });
 
     // --- Uniforms ---
     this.uniformBuffer = device.createBuffer({
@@ -463,6 +545,14 @@ export class WebGPURenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.particleSeparationUniformBuffer = device.createBuffer({
+      size: 32,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.hashCountUniformBuffer = device.createBuffer({
+      size: 32,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.hashFillUniformBuffer = device.createBuffer({
       size: 32,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -533,6 +623,130 @@ export class WebGPURenderer {
     new Int32Array(buffer.getMappedRange()).set(data);
     buffer.unmap();
     return buffer;
+  }
+
+  private createOrUpdateUintBuffer(data: Uint32Array, existingBuffer: GPUBuffer | null, usage: GPUBufferUsageFlags): GPUBuffer {
+    if (existingBuffer && existingBuffer.size === data.byteLength) {
+      this.device.queue.writeBuffer(
+        existingBuffer,
+        0,
+        data.buffer as ArrayBuffer,
+        data.byteOffset,
+        data.byteLength
+      );
+      return existingBuffer;
+    }
+    if (existingBuffer) existingBuffer.destroy();
+    const buffer = this.device.createBuffer({
+      size: data.byteLength,
+      usage: usage | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Uint32Array(buffer.getMappedRange()).set(data);
+    buffer.unmap();
+    return buffer;
+  }
+
+  async buildSpatialHashHybrid(scene: Scene, options: { useGpuState?: boolean } = {}) {
+    const fluid = scene.fluid;
+    if (!fluid || fluid.numParticles === 0 || this.hashBuildInFlight) return;
+    const useGpuState = options.useGpuState ?? false;
+
+    const canReuseGpuState =
+      useGpuState &&
+      this.particlePosBuffer != null &&
+      this.particlePosBuffer.size === fluid.particlePos.byteLength;
+
+    if (!canReuseGpuState) {
+      this.particlePosBuffer = this.createOrUpdateBuffer(
+        fluid.particlePos,
+        this.particlePosBuffer,
+        GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+    }
+
+    const gridCells = fluid.spatialGridTotalCells;
+    const numParticles = fluid.numParticles;
+    const countsSize = gridCells * Uint32Array.BYTES_PER_ELEMENT;
+    this.hashCountsBuffer = this.createOrUpdateUintBuffer(
+      new Uint32Array(gridCells),
+      this.hashCountsBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.hashCountsReadbackBuffer = this.ensureReadbackBuffer(this.hashCountsReadbackBuffer, countsSize);
+
+    const hashUniformData = new Float32Array(8);
+    hashUniformData[0] = numParticles;
+    hashUniformData[1] = fluid.spatialGridNumX;
+    hashUniformData[2] = fluid.spatialGridNumY;
+    hashUniformData[4] = fluid.spatialGridInvSpacing;
+    this.writeFloat32(this.hashCountUniformBuffer, 0, hashUniformData);
+    this.writeFloat32(this.hashFillUniformBuffer, 0, hashUniformData);
+
+    const countBindGroup = this.device.createBindGroup({
+      layout: this.hashCountPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.hashCountUniformBuffer } },
+        { binding: 1, resource: { buffer: this.particlePosBuffer! } },
+        { binding: 2, resource: { buffer: this.hashCountsBuffer } },
+      ],
+    });
+
+    const countEncoder = this.device.createCommandEncoder();
+    const countPass = countEncoder.beginComputePass();
+    countPass.setPipeline(this.hashCountPipeline);
+    countPass.setBindGroup(0, countBindGroup);
+    countPass.dispatchWorkgroups(Math.ceil(numParticles / 64));
+    countPass.end();
+    countEncoder.copyBufferToBuffer(this.hashCountsBuffer, 0, this.hashCountsReadbackBuffer, 0, countsSize);
+    this.device.queue.submit([countEncoder.finish()]);
+
+    this.hashBuildInFlight = true;
+    try {
+      await this.hashCountsReadbackBuffer.mapAsync(GPUMapMode.READ);
+      const counts = new Uint32Array(this.hashCountsReadbackBuffer.getMappedRange());
+      const starts = new Uint32Array(gridCells + 1);
+      for (let i = 0; i < gridCells; i++) {
+        starts[i + 1] = starts[i] + counts[i];
+      }
+      this.hashCountsReadbackBuffer.unmap();
+
+      this.firstCellParticleBuffer = this.createOrUpdateUintBuffer(
+        starts,
+        this.firstCellParticleBuffer,
+        GPUBufferUsage.STORAGE
+      );
+      this.hashOffsetsBuffer = this.createOrUpdateUintBuffer(
+        starts.subarray(0, gridCells),
+        this.hashOffsetsBuffer,
+        GPUBufferUsage.STORAGE
+      );
+      this.cellParticleIdsBuffer = this.createOrUpdateUintBuffer(
+        new Uint32Array(numParticles),
+        this.cellParticleIdsBuffer,
+        GPUBufferUsage.STORAGE
+      );
+
+      const fillBindGroup = this.device.createBindGroup({
+        layout: this.hashFillPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.hashFillUniformBuffer } },
+          { binding: 1, resource: { buffer: this.particlePosBuffer! } },
+          { binding: 2, resource: { buffer: this.hashOffsetsBuffer } },
+          { binding: 3, resource: { buffer: this.cellParticleIdsBuffer } },
+        ],
+      });
+
+      const fillEncoder = this.device.createCommandEncoder();
+      const fillPass = fillEncoder.beginComputePass();
+      fillPass.setPipeline(this.hashFillPipeline);
+      fillPass.setBindGroup(0, fillBindGroup);
+      fillPass.dispatchWorkgroups(Math.ceil(numParticles / 64));
+      fillPass.end();
+      this.device.queue.submit([fillEncoder.finish()]);
+    } finally {
+      this.hashBuildInFlight = false;
+    }
   }
 
   applyBoundaryCollision(

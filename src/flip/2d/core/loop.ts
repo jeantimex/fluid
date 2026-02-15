@@ -1,5 +1,5 @@
 interface AnimationLoopOptions {
-  frame: () => void;
+  frame: () => void | Promise<void>;
   immediateStart?: boolean;
 }
 
@@ -7,8 +7,9 @@ export function startAnimationLoop(options: AnimationLoopOptions) {
   const { frame, immediateStart = false } = options;
 
   function tick() {
-    frame();
-    requestAnimationFrame(tick);
+    Promise.resolve(frame()).finally(() => {
+      requestAnimationFrame(tick);
+    });
   }
 
   if (immediateStart) {

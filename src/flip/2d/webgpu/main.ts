@@ -73,7 +73,7 @@ const guiState = createGuiState({
 
 let pauseController: any;
 
-function simulate() {
+async function simulate() {
   if (runtime.simulationBackend === 'cpu') {
     simulateScene(sim.scene);
     return;
@@ -88,7 +88,7 @@ function simulate() {
     enableParticleSeparation: false,
   });
   renderer.applyIntegrateParticles(sim.scene, { mirrorCpuState: true });
-  sim.scene.fluid?.buildSpatialHash();
+  await renderer.buildSpatialHashHybrid(sim.scene, { useGpuState: true });
   renderer.applyParticleSeparation(sim.scene, sim.scene.numParticleIters);
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
     useGpuState: true,
@@ -125,9 +125,9 @@ async function init() {
   bootstrapWithResize({ resize });
 
   startAnimationLoop({
-    frame: () => {
+    frame: async () => {
       stats.begin();
-      simulate();
+      await simulate();
       renderer.draw(sim.scene, sim.simWidth, sim.simHeight, context, {
         useGpuParticles: runtime.simulationBackend === 'gpu',
         useGpuParticleColors: runtime.simulationBackend === 'gpu',
