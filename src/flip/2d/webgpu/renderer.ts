@@ -418,6 +418,38 @@ const cellCountsToDensityShaderWGSL = `
   }
 `;
 
+const buildCellTypesShaderWGSL = `
+  struct CellTypeUniforms {
+    totalCells: u32,
+    _pad0: vec3u,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: CellTypeUniforms;
+  @group(0) @binding(1) var<storage, read> solidMask: array<f32>;
+  @group(0) @binding(2) var<storage, read_write> cellCounts: array<atomic<u32>>;
+  @group(0) @binding(3) var<storage, read_write> cellType: array<i32>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= uniforms.totalCells) {
+      return;
+    }
+
+    if (solidMask[i] == 0.0) {
+      cellType[i] = 2; // SOLID
+      return;
+    }
+
+    let count = atomicLoad(&cellCounts[i]);
+    if (count > 0u) {
+      cellType[i] = 0; // FLUID
+    } else {
+      cellType[i] = 1; // AIR
+    }
+  }
+`;
+
 export class WebGPURenderer {
   device: GPUDevice;
   format: GPUTextureFormat;
@@ -433,6 +465,7 @@ export class WebGPURenderer {
   hashFillPipeline: GPUComputePipeline;
   p2gCellCountPipeline: GPUComputePipeline;
   cellCountsToDensityPipeline: GPUComputePipeline;
+  buildCellTypesPipeline: GPUComputePipeline;
   
   uniformBuffer: GPUBuffer;
   meshUniformBuffer: GPUBuffer;
@@ -445,6 +478,7 @@ export class WebGPURenderer {
   hashFillUniformBuffer: GPUBuffer;
   p2gUniformBuffer: GPUBuffer;
   densityUniformBuffer: GPUBuffer;
+  cellTypesUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   meshBindGroup: GPUBindGroup;
   
@@ -460,6 +494,8 @@ export class WebGPURenderer {
   hashOffsetsBuffer: GPUBuffer | null = null;
   hashCountsReadbackBuffer: GPUBuffer | null = null;
   gridCellCountsBuffer: GPUBuffer | null = null;
+  solidMaskBuffer: GPUBuffer | null = null;
+  cellTypeBuffer: GPUBuffer | null = null;
   hashBuildInFlight = false;
   particlePosScratchBuffer: GPUBuffer | null = null;
   particlePosReadbackBuffer: GPUBuffer | null = null;
@@ -587,6 +623,14 @@ export class WebGPURenderer {
         entryPoint: 'main',
       },
     });
+    const buildCellTypesModule = device.createShaderModule({ code: buildCellTypesShaderWGSL });
+    this.buildCellTypesPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: buildCellTypesModule,
+        entryPoint: 'main',
+      },
+    });
 
     // --- Uniforms ---
     this.uniformBuffer = device.createBuffer({
@@ -631,6 +675,10 @@ export class WebGPURenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.densityUniformBuffer = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.cellTypesUniformBuffer = device.createBuffer({
       size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -896,6 +944,44 @@ export class WebGPURenderer {
     densityPass.setBindGroup(0, densityBindGroup);
     densityPass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
     densityPass.end();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  buildCellTypes(scene: Scene) {
+    const fluid = scene.fluid;
+    if (!fluid || !this.gridCellCountsBuffer) return;
+
+    this.solidMaskBuffer = this.createOrUpdateBuffer(
+      fluid.solidMask,
+      this.solidMaskBuffer,
+      GPUBufferUsage.STORAGE
+    );
+    this.cellTypeBuffer = this.createOrUpdateIntBuffer(
+      fluid.cellType,
+      this.cellTypeBuffer,
+      GPUBufferUsage.STORAGE
+    );
+
+    const uniformData = new Uint32Array(4);
+    uniformData[0] = fluid.totalCells;
+    this.device.queue.writeBuffer(this.cellTypesUniformBuffer, 0, uniformData);
+
+    const bindGroup = this.device.createBindGroup({
+      layout: this.buildCellTypesPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.cellTypesUniformBuffer } },
+        { binding: 1, resource: { buffer: this.solidMaskBuffer } },
+        { binding: 2, resource: { buffer: this.gridCellCountsBuffer } },
+        { binding: 3, resource: { buffer: this.cellTypeBuffer } },
+      ],
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.buildCellTypesPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
+    pass.end();
     this.device.queue.submit([encoder.finish()]);
   }
 
