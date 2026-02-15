@@ -1,8 +1,7 @@
 import './style.css';
 import { setupGui } from '../canvas2d/gui';
-import { Scene } from '../canvas2d/types';
 import { WebGPURenderer } from './renderer';
-import { applyObstacleToScene, createDefaultScene, setupFluidScene } from '../core/scene';
+import { createSetObstacle, setupFluidScene } from '../core/scene';
 import { bindObstaclePointerControls } from '../core/interaction';
 import { bindSimulationKeyboardControls } from '../core/keyboard';
 import { simulateScene } from '../core/simulation';
@@ -11,6 +10,10 @@ import { createGuiState } from '../core/gui';
 import { createFluidGuiOptions } from '../core/gui-options';
 import { startAnimationLoop } from '../core/loop';
 import { createFluidGuiCallbacks } from '../core/gui-callbacks';
+import { resetGridRenderer } from '../core/render';
+import { bootstrapWithResize } from '../core/bootstrap';
+import { addPauseResetControls } from '../core/gui-controls';
+import { createSimulationContext } from '../core/context';
 
 const canvas = document.getElementById("webgpuCanvas") as HTMLCanvasElement;
 let device: GPUDevice;
@@ -18,19 +21,15 @@ let context: GPUCanvasContext;
 let renderer: WebGPURenderer;
 let presentationFormat: GPUTextureFormat;
 
-let simHeight = 3.0;
-let cScale = 300.0;
-let simWidth = 1.0;
-
-const scene: Scene = createDefaultScene();
+const sim = createSimulationContext();
+const setObstacleFn = createSetObstacle(sim.scene);
+const runtime = {
+  simulationBackend: 'cpu' as 'cpu' | 'gpu',
+};
 
 function setupScene() {
-  if (renderer) renderer.resetGridBuffer();
-  setupFluidScene(scene, simWidth, simHeight);
-}
-
-function setObstacle(x: number, y: number, reset: boolean) {
-  applyObstacleToScene(scene, x, y, reset);
+  resetGridRenderer(renderer);
+  setupFluidScene(sim.scene, sim.simWidth, sim.simHeight);
 }
 
 function resize() {
@@ -43,21 +42,21 @@ function resize() {
     });
   }
 
-  cScale = size.cScale;
-  simHeight = size.simHeight;
-  simWidth = size.simWidth;
+  sim.cScale = size.cScale;
+  sim.simHeight = size.simHeight;
+  sim.simWidth = size.simWidth;
   setupScene();
 }
 
 bindObstaclePointerControls({
   canvas,
-  scene,
-  getScale: () => cScale,
-  setObstacle,
+  scene: sim.scene,
+  getScale: () => sim.cScale,
+  setObstacle: setObstacleFn,
 });
 
 bindSimulationKeyboardControls({
-  scene,
+  scene: sim.scene,
   simulate,
   onPauseStateChanged: (paused) => {
     pauseController?.name(paused ? 'Resume' : 'Pause');
@@ -65,7 +64,7 @@ bindSimulationKeyboardControls({
 });
 
 const guiState = createGuiState({
-  scene,
+  scene: sim.scene,
   onReset: setupScene,
   onPauseStateChanged: (paused) => {
     if (pauseController) pauseController.name(paused ? 'Resume' : 'Pause');
@@ -75,7 +74,13 @@ const guiState = createGuiState({
 let pauseController: any;
 
 function simulate() {
-  simulateScene(scene);
+  if (runtime.simulationBackend === 'cpu') {
+    simulateScene(sim.scene);
+    return;
+  }
+
+  // GPU path stub: keep behavior stable until compute kernels land.
+  simulateScene(sim.scene);
 }
 
 async function init() {
@@ -90,8 +95,8 @@ async function init() {
   renderer = new WebGPURenderer(device, presentationFormat);
 
   const { stats, gui } = setupGui(
-    scene,
-    createFluidGuiCallbacks({ scene, onReset: guiState.reset, setObstacle }),
+    sim.scene,
+    createFluidGuiCallbacks({ scene: sim.scene, onReset: guiState.reset, setObstacle: setObstacleFn }),
     createFluidGuiOptions({
       title: 'WebGPU FLIP Fluid',
       subtitle: 'Hybrid FLIP/PIC (GPU Render)',
@@ -99,17 +104,16 @@ async function init() {
     })
   );
 
-  pauseController = gui.add(guiState, 'togglePause').name(scene.paused ? 'Resume' : 'Pause');
-  gui.add(guiState, 'reset').name('Reset Simulation');
+  pauseController = addPauseResetControls(gui, guiState, sim.scene);
+  gui.add(runtime, 'simulationBackend', ['cpu', 'gpu']).name('Sim Backend');
 
-  resize();
-  window.addEventListener("resize", resize);
+  bootstrapWithResize({ resize });
 
   startAnimationLoop({
     frame: () => {
       stats.begin();
       simulate();
-      renderer.draw(scene, simWidth, simHeight, context);
+      renderer.draw(sim.scene, sim.simWidth, sim.simHeight, context);
       stats.end();
     },
   });

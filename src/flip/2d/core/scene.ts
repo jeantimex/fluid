@@ -60,6 +60,12 @@ export function applyObstacleToScene(scene: Scene, x: number, y: number, reset: 
   scene.obstacleVelY = vy;
 }
 
+export function createSetObstacle(scene: Scene) {
+  return (x: number, y: number, reset: boolean) => {
+    applyObstacleToScene(scene, x, y, reset);
+  };
+}
+
 export function setupFluidScene(scene: Scene, simWidth: number, simHeight: number) {
   scene.obstacleRadius = 0.15;
   scene.overRelaxation = 1.9;
