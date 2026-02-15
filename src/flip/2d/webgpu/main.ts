@@ -79,8 +79,8 @@ function simulate() {
     return;
   }
 
-  // GPU path stub: keep behavior stable until compute kernels land.
   simulateScene(sim.scene);
+  renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight);
 }
 
 async function init() {
@@ -113,7 +113,9 @@ async function init() {
     frame: () => {
       stats.begin();
       simulate();
-      renderer.draw(sim.scene, sim.simWidth, sim.simHeight, context);
+      renderer.draw(sim.scene, sim.simWidth, sim.simHeight, context, {
+        useGpuParticles: runtime.simulationBackend === 'gpu',
+      });
       stats.end();
     },
   });

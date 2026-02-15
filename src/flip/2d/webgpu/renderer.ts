@@ -101,19 +101,78 @@ const meshShaderWGSL = `
   }
 `;
 
+const boundaryCollisionShaderWGSL = `
+  struct BoundaryUniforms {
+    domainSize: vec2f,
+    particleRadius: f32,
+    numParticles: f32,
+    obstaclePos: vec2f,
+    obstacleRadius: f32,
+    _pad0: f32,
+    obstacleVel: vec2f,
+    minX: f32,
+    maxX: f32,
+    minY: f32,
+    maxY: f32,
+    _pad1: vec2f,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: BoundaryUniforms;
+  @group(0) @binding(1) var<storage, read_write> positions: array<vec2f>;
+  @group(0) @binding(2) var<storage, read_write> velocities: array<vec2f>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u32(uniforms.numParticles)) {
+      return;
+    }
+
+    var p = positions[i];
+    var v = velocities[i];
+
+    if (uniforms.obstacleRadius > 0.0) {
+      let dx = p.x - uniforms.obstaclePos.x;
+      let dy = p.y - uniforms.obstaclePos.y;
+      let d2 = dx * dx + dy * dy;
+      let minDist = uniforms.obstacleRadius + uniforms.particleRadius;
+      let minDist2 = minDist * minDist;
+
+      if (d2 < minDist2 && d2 > 1e-12) {
+        let d = sqrt(d2);
+        let s = (minDist - d) / d;
+        p.x = p.x + dx * s;
+        p.y = p.y + dy * s;
+        v = uniforms.obstacleVel;
+      }
+    }
+
+    if (p.x < uniforms.minX) { p.x = uniforms.minX; v.x = 0.0; }
+    if (p.x > uniforms.maxX) { p.x = uniforms.maxX; v.x = 0.0; }
+    if (p.y < uniforms.minY) { p.y = uniforms.minY; v.y = 0.0; }
+    if (p.y > uniforms.maxY) { p.y = uniforms.maxY; v.y = 0.0; }
+
+    positions[i] = p;
+    velocities[i] = v;
+  }
+`;
+
 export class WebGPURenderer {
   device: GPUDevice;
   format: GPUTextureFormat;
   
   particlePipeline: GPURenderPipeline;
   meshPipeline: GPURenderPipeline;
+  boundaryCollisionPipeline: GPUComputePipeline;
   
   uniformBuffer: GPUBuffer;
   meshUniformBuffer: GPUBuffer;
+  boundaryUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   meshBindGroup: GPUBindGroup;
   
   particlePosBuffer: GPUBuffer | null = null;
+  particleVelBuffer: GPUBuffer | null = null;
   particleColorBuffer: GPUBuffer | null = null;
   gridPosBuffer: GPUBuffer | null = null;
   gridColorBuffer: GPUBuffer | null = null;
@@ -166,6 +225,15 @@ export class WebGPURenderer {
       primitive: { topology: 'triangle-list' },
     });
 
+    const boundaryModule = device.createShaderModule({ code: boundaryCollisionShaderWGSL });
+    this.boundaryCollisionPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: boundaryModule,
+        entryPoint: 'main',
+      },
+    });
+
     // --- Uniforms ---
     this.uniformBuffer = device.createBuffer({
       size: 16, // domainSize(8), pointSize(4), drawDisk(4)
@@ -174,6 +242,10 @@ export class WebGPURenderer {
 
     this.meshUniformBuffer = device.createBuffer({
       size: 48, // domainSize(8), pad(8), color(12), pad(4), translation(8), scale(4), pad(4)
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.boundaryUniformBuffer = device.createBuffer({
+      size: 64,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -214,9 +286,71 @@ export class WebGPURenderer {
     );
   }
 
-  draw(scene: Scene, simWidth: number, simHeight: number, context: GPUCanvasContext) {
+  applyBoundaryCollision(scene: Scene, simWidth: number, simHeight: number) {
+    const fluid = scene.fluid!;
+    if (!fluid || fluid.numParticles === 0) return;
+
+    this.particlePosBuffer = this.createOrUpdateBuffer(
+      fluid.particlePos,
+      this.particlePosBuffer,
+      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE
+    );
+    this.particleVelBuffer = this.createOrUpdateBuffer(
+      fluid.particleVel,
+      this.particleVelBuffer,
+      GPUBufferUsage.STORAGE
+    );
+
+    const obstacleRadius = scene.showObstacle ? scene.obstacleRadius : 0.0;
+    const minX = fluid.cellSize + fluid.particleRadius;
+    const maxX = (fluid.numX - 1) * fluid.cellSize - fluid.particleRadius;
+    const minY = fluid.cellSize + fluid.particleRadius;
+    const maxY = (fluid.numY - 1) * fluid.cellSize - fluid.particleRadius;
+
+    const boundaryData = new Float32Array(16);
+    boundaryData[0] = simWidth;
+    boundaryData[1] = simHeight;
+    boundaryData[2] = fluid.particleRadius;
+    boundaryData[3] = fluid.numParticles;
+    boundaryData[4] = scene.obstacleX;
+    boundaryData[5] = scene.obstacleY;
+    boundaryData[6] = obstacleRadius;
+    boundaryData[8] = scene.obstacleVelX;
+    boundaryData[9] = scene.obstacleVelY;
+    boundaryData[10] = minX;
+    boundaryData[11] = maxX;
+    boundaryData[12] = minY;
+    boundaryData[13] = maxY;
+    this.writeFloat32(this.boundaryUniformBuffer, 0, boundaryData);
+
+    const boundaryBindGroup = this.device.createBindGroup({
+      layout: this.boundaryCollisionPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.boundaryUniformBuffer } },
+        { binding: 1, resource: { buffer: this.particlePosBuffer } },
+        { binding: 2, resource: { buffer: this.particleVelBuffer } },
+      ],
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.boundaryCollisionPipeline);
+    pass.setBindGroup(0, boundaryBindGroup);
+    pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  draw(
+    scene: Scene,
+    simWidth: number,
+    simHeight: number,
+    context: GPUCanvasContext,
+    options: { useGpuParticles?: boolean } = {}
+  ) {
     const fluid = scene.fluid!;
     if (!fluid) return;
+    const useGpuParticles = options.useGpuParticles ?? false;
 
     // 1. Update Uniforms
     this.writeFloat32(this.uniformBuffer, 0, new Float32Array([simWidth, simHeight]));
@@ -258,7 +392,13 @@ export class WebGPURenderer {
 
     // 3. Draw Particles
     if (scene.showParticles) {
-      this.particlePosBuffer = this.createOrUpdateBuffer(fluid.particlePos, this.particlePosBuffer, GPUBufferUsage.VERTEX);
+      if (!useGpuParticles || this.particlePosBuffer == null || this.particlePosBuffer.size !== fluid.particlePos.byteLength) {
+        this.particlePosBuffer = this.createOrUpdateBuffer(
+          fluid.particlePos,
+          this.particlePosBuffer,
+          GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE
+        );
+      }
       this.particleColorBuffer = this.createOrUpdateBuffer(fluid.particleColor, this.particleColorBuffer, GPUBufferUsage.VERTEX);
 
       const pSize = fluid.particleRadius * 2.0;
