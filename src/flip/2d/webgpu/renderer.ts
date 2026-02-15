@@ -209,6 +209,45 @@ const particleColorFadeShaderWGSL = `
   }
 `;
 
+const particleSurfaceTintShaderWGSL = `
+  struct SurfaceTintUniforms {
+    numParticles: f32,
+    invCellSize: f32,
+    restDensity: f32,
+    threshold: f32,
+    bright: f32,
+    numX: f32,
+    numY: f32,
+    _pad0: f32,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: SurfaceTintUniforms;
+  @group(0) @binding(1) var<storage, read_write> colors: array<vec3f>;
+  @group(0) @binding(2) var<storage, read> positions: array<vec2f>;
+  @group(0) @binding(3) var<storage, read> density: array<f32>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u32(uniforms.numParticles)) {
+      return;
+    }
+    if (uniforms.restDensity <= 0.0) {
+      return;
+    }
+
+    let p = positions[i];
+    let xi = clamp(i32(floor(p.x * uniforms.invCellSize)), 1, i32(uniforms.numX) - 1);
+    let yi = clamp(i32(floor(p.y * uniforms.invCellSize)), 1, i32(uniforms.numY) - 1);
+    let cellNr = xi * i32(uniforms.numY) + yi;
+    let relDensity = density[u32(cellNr)] / uniforms.restDensity;
+
+    if (relDensity < uniforms.threshold) {
+      colors[i] = vec3f(uniforms.bright, uniforms.bright, 1.0);
+    }
+  }
+`;
+
 export class WebGPURenderer {
   device: GPUDevice;
   format: GPUTextureFormat;
@@ -218,12 +257,14 @@ export class WebGPURenderer {
   boundaryCollisionPipeline: GPUComputePipeline;
   integrateParticlesPipeline: GPUComputePipeline;
   particleColorFadePipeline: GPUComputePipeline;
+  particleSurfaceTintPipeline: GPUComputePipeline;
   
   uniformBuffer: GPUBuffer;
   meshUniformBuffer: GPUBuffer;
   boundaryUniformBuffer: GPUBuffer;
   integrateUniformBuffer: GPUBuffer;
   particleColorFadeUniformBuffer: GPUBuffer;
+  particleSurfaceTintUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   meshBindGroup: GPUBindGroup;
   
@@ -232,6 +273,7 @@ export class WebGPURenderer {
   particleColorBuffer: GPUBuffer | null = null;
   gridPosBuffer: GPUBuffer | null = null;
   gridColorBuffer: GPUBuffer | null = null;
+  particleDensityBuffer: GPUBuffer | null = null;
   particlePosReadbackBuffer: GPUBuffer | null = null;
   particleVelReadbackBuffer: GPUBuffer | null = null;
   particleColorReadbackBuffer: GPUBuffer | null = null;
@@ -309,6 +351,14 @@ export class WebGPURenderer {
         entryPoint: 'main',
       },
     });
+    const surfaceTintModule = device.createShaderModule({ code: particleSurfaceTintShaderWGSL });
+    this.particleSurfaceTintPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: surfaceTintModule,
+        entryPoint: 'main',
+      },
+    });
 
     // --- Uniforms ---
     this.uniformBuffer = device.createBuffer({
@@ -330,6 +380,10 @@ export class WebGPURenderer {
     });
     this.particleColorFadeUniformBuffer = device.createBuffer({
       size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.particleSurfaceTintUniformBuffer = device.createBuffer({
+      size: 32,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -520,6 +574,55 @@ export class WebGPURenderer {
     const pass = encoder.beginComputePass();
     pass.setPipeline(this.particleColorFadePipeline);
     pass.setBindGroup(0, colorFadeBindGroup);
+    pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  applyParticleSurfaceTint(scene: Scene, threshold: number = 0.7, bright: number = 0.8) {
+    const fluid = scene.fluid!;
+    if (!fluid || fluid.numParticles === 0 || fluid.particleRestDensity <= 0.0) return;
+
+    this.particleColorBuffer = this.createOrUpdateBuffer(
+      fluid.particleColor,
+      this.particleColorBuffer,
+      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.particlePosBuffer = this.createOrUpdateBuffer(
+      fluid.particlePos,
+      this.particlePosBuffer,
+      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.particleDensityBuffer = this.createOrUpdateBuffer(
+      fluid.particleDensity,
+      this.particleDensityBuffer,
+      GPUBufferUsage.STORAGE
+    );
+
+    const surfaceTintData = new Float32Array(8);
+    surfaceTintData[0] = fluid.numParticles;
+    surfaceTintData[1] = fluid.invCellSize;
+    surfaceTintData[2] = fluid.particleRestDensity;
+    surfaceTintData[3] = threshold;
+    surfaceTintData[4] = bright;
+    surfaceTintData[5] = fluid.numX;
+    surfaceTintData[6] = fluid.numY;
+    this.writeFloat32(this.particleSurfaceTintUniformBuffer, 0, surfaceTintData);
+
+    const tintBindGroup = this.device.createBindGroup({
+      layout: this.particleSurfaceTintPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.particleSurfaceTintUniformBuffer } },
+        { binding: 1, resource: { buffer: this.particleColorBuffer! } },
+        { binding: 2, resource: { buffer: this.particlePosBuffer! } },
+        { binding: 3, resource: { buffer: this.particleDensityBuffer! } },
+      ],
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.particleSurfaceTintPipeline);
+    pass.setBindGroup(0, tintBindGroup);
     pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
     pass.end();
     this.device.queue.submit([encoder.finish()]);

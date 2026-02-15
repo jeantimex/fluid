@@ -84,12 +84,14 @@ function simulate() {
     enableWallCollision: false,
     enableParticleIntegration: false,
     enableParticleColorAgeFade: false,
+    enableParticleColorSurfaceTint: false,
   });
   renderer.applyIntegrateParticles(sim.scene);
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
     useGpuState: true,
   });
   renderer.applyParticleColorFade(sim.scene);
+  renderer.applyParticleSurfaceTint(sim.scene);
   renderer.syncParticlesToCpu(sim.scene, { includeColor: true });
 }
 

@@ -5,6 +5,7 @@ interface SimulateSceneOptions {
   enableWallCollision?: boolean;
   enableParticleIntegration?: boolean;
   enableParticleColorAgeFade?: boolean;
+  enableParticleColorSurfaceTint?: boolean;
 }
 
 export function simulateScene(scene: Scene, options: SimulateSceneOptions = {}) {
@@ -14,6 +15,7 @@ export function simulateScene(scene: Scene, options: SimulateSceneOptions = {}) 
   const enableWallCollision = options.enableWallCollision ?? true;
   const enableParticleIntegration = options.enableParticleIntegration ?? true;
   const enableParticleColorAgeFade = options.enableParticleColorAgeFade ?? true;
+  const enableParticleColorSurfaceTint = options.enableParticleColorSurfaceTint ?? true;
   const obstacleRadius = enableObstacleCollision && scene.showObstacle ? scene.obstacleRadius : 0;
   const obstacleVelX = enableObstacleCollision ? scene.obstacleVelX : 0.0;
   const obstacleVelY = enableObstacleCollision ? scene.obstacleVelY : 0.0;
@@ -34,7 +36,8 @@ export function simulateScene(scene: Scene, options: SimulateSceneOptions = {}) 
     obstacleVelY,
     enableWallCollision,
     enableParticleIntegration,
-    enableParticleColorAgeFade
+    enableParticleColorAgeFade,
+    enableParticleColorSurfaceTint
   );
 }
 

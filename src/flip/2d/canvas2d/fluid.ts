@@ -467,7 +467,7 @@ export class FlipFluid {
   /**
    * Updates particle visual colors based on age/density.
    */
-  updateParticleColors(enableAgeFade: boolean = true) {
+  updateParticleColors(enableAgeFade: boolean = true, enableSurfaceTint: boolean = true) {
     const hInv = this.invCellSize;
     for (let i = 0; i < this.numParticles; i++) {
       if (enableAgeFade) {
@@ -484,7 +484,7 @@ export class FlipFluid {
       const cellNr = xi * this.numY + yi;
       const d0 = this.particleRestDensity;
 
-      if (d0 > 0.0) {
+      if (enableSurfaceTint && d0 > 0.0) {
         const relDensity = this.particleDensity[cellNr] / d0;
         if (relDensity < 0.7) { // Identify "surface" particles
           const bright = 0.8;
@@ -531,7 +531,8 @@ export class FlipFluid {
     obstacleVelY: number,
     enableWallCollisions: boolean = true,
     enableParticleIntegration: boolean = true,
-    enableParticleColorAgeFade: boolean = true
+    enableParticleColorAgeFade: boolean = true,
+    enableParticleColorSurfaceTint: boolean = true
   ) {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
@@ -566,7 +567,7 @@ export class FlipFluid {
       this.transferVelocities(false, flipRatio);
     }
 
-    this.updateParticleColors(enableParticleColorAgeFade);
+    this.updateParticleColors(enableParticleColorAgeFade, enableParticleColorSurfaceTint);
     this.updateCellColors();
   }
 }
