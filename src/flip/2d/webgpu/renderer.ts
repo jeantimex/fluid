@@ -378,7 +378,9 @@ const p2gCellCountShaderWGSL = `
     gridNumY: u32,
     _pad0: u32,
     invCellSize: f32,
-    _pad1: vec3f,
+    cellSize: f32,
+    scale: f32,
+    _pad1: f32,
   }
 
   @group(0) @binding(0) var<uniform> uniforms: P2GUniforms;
@@ -392,31 +394,71 @@ const p2gCellCountShaderWGSL = `
       return;
     }
 
-    let p = positions[i];
-    let xi = clamp(u32(floor(p.x * uniforms.invCellSize)), 0u, uniforms.gridNumX - 1u);
-    let yi = clamp(u32(floor(p.y * uniforms.invCellSize)), 0u, uniforms.gridNumY - 1u);
-    let cellNr = xi * uniforms.gridNumY + yi;
-    atomicAdd(&cellCounts[cellNr], 1u);
+    let h = uniforms.cellSize;
+    let hInv = uniforms.invCellSize;
+    let h2 = 0.5 * h;
+    var x = positions[i].x;
+    var y = positions[i].y;
+    x = clamp(x, h, (f32(uniforms.gridNumX) - 1.0) * h);
+    y = clamp(y, h, (f32(uniforms.gridNumY) - 1.0) * h);
+
+    let x0f = floor((x - h2) * hInv);
+    let y0f = floor((y - h2) * hInv);
+    let x0 = i32(x0f);
+    let y0 = i32(y0f);
+    let tx = (x - h2 - f32(x0) * h) * hInv;
+    let ty = (y - h2 - f32(y0) * h) * hInv;
+    let x1 = min(x0 + 1, i32(uniforms.gridNumX) - 2);
+    let y1 = min(y0 + 1, i32(uniforms.gridNumY) - 2);
+    let sx = 1.0 - tx;
+    let sy = 1.0 - ty;
+
+    let d0 = sx * sy;
+    let d1 = tx * sy;
+    let d2 = tx * ty;
+    let d3 = sx * ty;
+
+    let nr0 = u32(x0) * uniforms.gridNumY + u32(y0);
+    let nr1 = u32(x1) * uniforms.gridNumY + u32(y0);
+    let nr2 = u32(x1) * uniforms.gridNumY + u32(y1);
+    let nr3 = u32(x0) * uniforms.gridNumY + u32(y1);
+
+    let w0 = u32(round(d0 * uniforms.scale));
+    let w1 = u32(round(d1 * uniforms.scale));
+    let w2 = u32(round(d2 * uniforms.scale));
+    let w3 = u32(round(d3 * uniforms.scale));
+
+    atomicAdd(&cellCounts[nr0], w0);
+    atomicAdd(&cellCounts[nr1], w1);
+    atomicAdd(&cellCounts[nr2], w2);
+    atomicAdd(&cellCounts[nr3], w3);
   }
 `;
 
 const cellCountsToDensityShaderWGSL = `
-  struct DensityUniforms {
-    totalCells: u32,
-    _pad0: vec3u,
+  struct P2GUniforms {
+    numParticles: u32,
+    gridNumX: u32,
+    gridNumY: u32,
+    _pad0: u32,
+    invCellSize: f32,
+    cellSize: f32,
+    scale: f32,
+    _pad1: f32,
   }
 
-  @group(0) @binding(0) var<uniform> uniforms: DensityUniforms;
+  @group(0) @binding(0) var<uniform> uniforms: P2GUniforms;
   @group(0) @binding(1) var<storage, read_write> cellCounts: array<atomic<u32>>;
   @group(0) @binding(2) var<storage, read_write> density: array<f32>;
 
   @compute @workgroup_size(64)
   fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
-    if (i >= uniforms.totalCells) {
+    let totalCells = uniforms.gridNumX * uniforms.gridNumY;
+    if (i >= totalCells) {
       return;
     }
-    density[i] = f32(atomicLoad(&cellCounts[i]));
+    density[i] = f32(atomicLoad(&cellCounts[i])) / uniforms.scale;
   }
 `;
 
@@ -555,6 +597,80 @@ const p2gVelocityXNormalizeShaderWGSL = `
   }
 `;
 
+const p2gVelocityYScatterShaderWGSL = `
+  struct P2GVelocityYScatterUniforms {
+    numParticles: u32,
+    numX: u32,
+    numY: u32,
+    _pad0: u32,
+    invCellSize: f32,
+    cellSize: f32,
+    scale: f32,
+    _pad1: f32,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: P2GVelocityYScatterUniforms;
+  @group(0) @binding(1) var<storage, read> positions: array<vec2f>;
+  @group(0) @binding(2) var<storage, read> velocities: array<vec2f>;
+  @group(0) @binding(3) var<storage, read_write> velAccum: array<atomic<i32>>;
+  @group(0) @binding(4) var<storage, read_write> weightAccum: array<atomic<u32>>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let p = gid.x;
+    if (p >= uniforms.numParticles) {
+      return;
+    }
+
+    let h = uniforms.cellSize;
+    let hInv = uniforms.invCellSize;
+    let h2 = 0.5 * h;
+    var x = positions[p].x;
+    var y = positions[p].y;
+    x = clamp(x, h, (f32(uniforms.numX) - 1.0) * h);
+    y = clamp(y, h, (f32(uniforms.numY) - 1.0) * h);
+
+    let x0f = floor((x - h2) * hInv);
+    let y0f = floor((y - 0.0) * hInv);
+    let x0 = min(i32(x0f), i32(uniforms.numX) - 2);
+    let y0 = min(i32(y0f), i32(uniforms.numY) - 2);
+    let tx = (x - h2 - f32(x0) * h) * hInv;
+    let ty = (y - f32(y0) * h) * hInv;
+    let x1 = min(x0 + 1, i32(uniforms.numX) - 2);
+    let y1 = min(y0 + 1, i32(uniforms.numY) - 2);
+    let sx = 1.0 - tx;
+    let sy = 1.0 - ty;
+    let d0 = sx * sy;
+    let d1 = tx * sy;
+    let d2 = tx * ty;
+    let d3 = sx * ty;
+    let nY = uniforms.numY;
+    let nr0 = u32(x0) * nY + u32(y0);
+    let nr1 = u32(x1) * nY + u32(y0);
+    let nr2 = u32(x1) * nY + u32(y1);
+    let nr3 = u32(x0) * nY + u32(y1);
+
+    let pvy = velocities[p].y;
+    let w0 = u32(round(d0 * uniforms.scale));
+    let w1 = u32(round(d1 * uniforms.scale));
+    let w2 = u32(round(d2 * uniforms.scale));
+    let w3 = u32(round(d3 * uniforms.scale));
+    let v0 = i32(round(pvy * d0 * uniforms.scale));
+    let v1 = i32(round(pvy * d1 * uniforms.scale));
+    let v2 = i32(round(pvy * d2 * uniforms.scale));
+    let v3 = i32(round(pvy * d3 * uniforms.scale));
+
+    atomicAdd(&weightAccum[nr0], w0);
+    atomicAdd(&weightAccum[nr1], w1);
+    atomicAdd(&weightAccum[nr2], w2);
+    atomicAdd(&weightAccum[nr3], w3);
+    atomicAdd(&velAccum[nr0], v0);
+    atomicAdd(&velAccum[nr1], v1);
+    atomicAdd(&velAccum[nr2], v2);
+    atomicAdd(&velAccum[nr3], v3);
+  }
+`;
+
 const clearPressureShaderWGSL = `
   struct ClearPressureUniforms {
     totalCells: u32,
@@ -650,6 +766,7 @@ export class WebGPURenderer {
   buildCellTypesPipeline: GPUComputePipeline;
   p2gVelocityXScatterPipeline: GPUComputePipeline;
   p2gVelocityXNormalizePipeline: GPUComputePipeline;
+  p2gVelocityYScatterPipeline: GPUComputePipeline;
   clearPressurePipeline: GPUComputePipeline;
   pressureJacobiPipeline: GPUComputePipeline;
   
@@ -667,6 +784,7 @@ export class WebGPURenderer {
   cellTypesUniformBuffer: GPUBuffer;
   p2gVelocityXUniformBuffer: GPUBuffer;
   p2gVelocityXNormalizeUniformBuffer: GPUBuffer;
+  p2gVelocityYUniformBuffer: GPUBuffer;
   clearPressureUniformBuffer: GPUBuffer;
   pressureUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
@@ -691,6 +809,8 @@ export class WebGPURenderer {
   gridCellCountsBuffer: GPUBuffer | null = null;
   p2gVelocityXAccumBuffer: GPUBuffer | null = null;
   p2gVelocityXWeightBuffer: GPUBuffer | null = null;
+  p2gVelocityYAccumBuffer: GPUBuffer | null = null;
+  p2gVelocityYWeightBuffer: GPUBuffer | null = null;
   solidMaskBuffer: GPUBuffer | null = null;
   cellTypeBuffer: GPUBuffer | null = null;
   hashBuildInFlight = false;
@@ -844,6 +964,14 @@ export class WebGPURenderer {
         entryPoint: 'main',
       },
     });
+    const p2gVelocityYScatterModule = device.createShaderModule({ code: p2gVelocityYScatterShaderWGSL });
+    this.p2gVelocityYScatterPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: p2gVelocityYScatterModule,
+        entryPoint: 'main',
+      },
+    });
     const clearPressureModule = device.createShaderModule({ code: clearPressureShaderWGSL });
     this.clearPressurePipeline = device.createComputePipeline({
       layout: 'auto',
@@ -916,6 +1044,10 @@ export class WebGPURenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.p2gVelocityXNormalizeUniformBuffer = device.createBuffer({
+      size: 48,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.p2gVelocityYUniformBuffer = device.createBuffer({
       size: 48,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -1153,11 +1285,9 @@ export class WebGPURenderer {
     p2gData[1] = fluid.numX;
     p2gData[2] = fluid.numY;
     p2gData[4] = fluid.invCellSize;
+    p2gData[5] = fluid.cellSize;
+    p2gData[6] = 65536.0;
     this.writeFloat32(this.p2gUniformBuffer, 0, p2gData);
-
-    const densityData = new Uint32Array(4);
-    densityData[0] = fluid.totalCells;
-    this.device.queue.writeBuffer(this.densityUniformBuffer, 0, densityData);
 
     const countBindGroup = this.device.createBindGroup({
       layout: this.p2gCellCountPipeline.getBindGroupLayout(0),
@@ -1171,7 +1301,7 @@ export class WebGPURenderer {
     const densityBindGroup = this.device.createBindGroup({
       layout: this.cellCountsToDensityPipeline.getBindGroupLayout(0),
       entries: [
-        { binding: 0, resource: { buffer: this.densityUniformBuffer } },
+        { binding: 0, resource: { buffer: this.p2gUniformBuffer } },
         { binding: 1, resource: { buffer: this.gridCellCountsBuffer } },
         { binding: 2, resource: { buffer: this.particleDensityBuffer } },
       ],
@@ -1261,7 +1391,7 @@ export class WebGPURenderer {
     );
   }
 
-  buildVelocityXFromParticles(scene: Scene, options: { useGpuState?: boolean } = {}) {
+  buildVelocitiesFromParticles(scene: Scene, options: { useGpuState?: boolean } = {}) {
     const fluid = scene.fluid;
     if (!fluid || fluid.numParticles === 0) return;
     const useGpuState = options.useGpuState ?? false;
@@ -1290,6 +1420,11 @@ export class WebGPURenderer {
       this.velocityXBuffer,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
+    this.velocityYBuffer = this.createOrUpdateBuffer(
+      new Float32Array(fluid.totalCells),
+      this.velocityYBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
     this.p2gVelocityXAccumBuffer = this.createOrUpdateIntBuffer(
       new Int32Array(fluid.totalCells),
       this.p2gVelocityXAccumBuffer,
@@ -1300,16 +1435,34 @@ export class WebGPURenderer {
       this.p2gVelocityXWeightBuffer,
       GPUBufferUsage.STORAGE
     );
+    this.p2gVelocityYAccumBuffer = this.createOrUpdateIntBuffer(
+      new Int32Array(fluid.totalCells),
+      this.p2gVelocityYAccumBuffer,
+      GPUBufferUsage.STORAGE
+    );
+    this.p2gVelocityYWeightBuffer = this.createOrUpdateUintBuffer(
+      new Uint32Array(fluid.totalCells),
+      this.p2gVelocityYWeightBuffer,
+      GPUBufferUsage.STORAGE
+    );
 
     const scale = 65536.0;
-    const scatterData = new Float32Array(8);
-    scatterData[0] = fluid.numParticles;
-    scatterData[1] = fluid.numX;
-    scatterData[2] = fluid.numY;
-    scatterData[4] = fluid.invCellSize;
-    scatterData[5] = fluid.cellSize;
-    scatterData[6] = scale;
-    this.writeFloat32(this.p2gVelocityXUniformBuffer, 0, scatterData);
+    const scatterXData = new Float32Array(8);
+    scatterXData[0] = fluid.numParticles;
+    scatterXData[1] = fluid.numX;
+    scatterXData[2] = fluid.numY;
+    scatterXData[4] = fluid.invCellSize;
+    scatterXData[5] = fluid.cellSize;
+    scatterXData[6] = scale;
+    this.writeFloat32(this.p2gVelocityXUniformBuffer, 0, scatterXData);
+    const scatterYData = new Float32Array(8);
+    scatterYData[0] = fluid.numParticles;
+    scatterYData[1] = fluid.numX;
+    scatterYData[2] = fluid.numY;
+    scatterYData[4] = fluid.invCellSize;
+    scatterYData[5] = fluid.cellSize;
+    scatterYData[6] = scale;
+    this.writeFloat32(this.p2gVelocityYUniformBuffer, 0, scatterYData);
 
     const normalizeData = new Float32Array(8);
     normalizeData[0] = fluid.totalCells;
@@ -1326,8 +1479,18 @@ export class WebGPURenderer {
         { binding: 4, resource: { buffer: this.p2gVelocityXWeightBuffer } },
       ],
     });
+    const scatterYBindGroup = this.device.createBindGroup({
+      layout: this.p2gVelocityYScatterPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.p2gVelocityYUniformBuffer } },
+        { binding: 1, resource: { buffer: this.particlePosBuffer! } },
+        { binding: 2, resource: { buffer: this.particleVelBuffer! } },
+        { binding: 3, resource: { buffer: this.p2gVelocityYAccumBuffer! } },
+        { binding: 4, resource: { buffer: this.p2gVelocityYWeightBuffer! } },
+      ],
+    });
 
-    const normalizeBindGroup = this.device.createBindGroup({
+    const normalizeXBindGroup = this.device.createBindGroup({
       layout: this.p2gVelocityXNormalizePipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.p2gVelocityXNormalizeUniformBuffer } },
@@ -1336,19 +1499,40 @@ export class WebGPURenderer {
         { binding: 3, resource: { buffer: this.velocityXBuffer } },
       ],
     });
+    const normalizeYBindGroup = this.device.createBindGroup({
+      layout: this.p2gVelocityXNormalizePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.p2gVelocityXNormalizeUniformBuffer } },
+        { binding: 1, resource: { buffer: this.p2gVelocityYAccumBuffer! } },
+        { binding: 2, resource: { buffer: this.p2gVelocityYWeightBuffer! } },
+        { binding: 3, resource: { buffer: this.velocityYBuffer! } },
+      ],
+    });
 
     const encoder = this.device.createCommandEncoder();
-    const scatterPass = encoder.beginComputePass();
-    scatterPass.setPipeline(this.p2gVelocityXScatterPipeline);
-    scatterPass.setBindGroup(0, scatterBindGroup);
-    scatterPass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
-    scatterPass.end();
+    const scatterXPass = encoder.beginComputePass();
+    scatterXPass.setPipeline(this.p2gVelocityXScatterPipeline);
+    scatterXPass.setBindGroup(0, scatterBindGroup);
+    scatterXPass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+    scatterXPass.end();
 
-    const normalizePass = encoder.beginComputePass();
-    normalizePass.setPipeline(this.p2gVelocityXNormalizePipeline);
-    normalizePass.setBindGroup(0, normalizeBindGroup);
-    normalizePass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
-    normalizePass.end();
+    const normalizeXPass = encoder.beginComputePass();
+    normalizeXPass.setPipeline(this.p2gVelocityXNormalizePipeline);
+    normalizeXPass.setBindGroup(0, normalizeXBindGroup);
+    normalizeXPass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
+    normalizeXPass.end();
+
+    const scatterYPass = encoder.beginComputePass();
+    scatterYPass.setPipeline(this.p2gVelocityYScatterPipeline);
+    scatterYPass.setBindGroup(0, scatterYBindGroup);
+    scatterYPass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+    scatterYPass.end();
+
+    const normalizeYPass = encoder.beginComputePass();
+    normalizeYPass.setPipeline(this.p2gVelocityXNormalizePipeline);
+    normalizeYPass.setBindGroup(0, normalizeYBindGroup);
+    normalizeYPass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
+    normalizeYPass.end();
     this.device.queue.submit([encoder.finish()]);
   }
 
