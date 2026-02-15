@@ -4,6 +4,7 @@ import { Scene } from './types';
 import { Renderer } from './renderer';
 import { applyObstacleToScene, createDefaultScene, setupFluidScene } from '../core/scene';
 import { bindObstaclePointerControls } from '../core/interaction';
+import { bindSimulationKeyboardControls } from '../core/keyboard';
 
 const canvas = document.getElementById("myCanvas") as HTMLCanvasElement;
 const gl = canvas.getContext("webgl")!;
@@ -48,10 +49,7 @@ bindObstaclePointerControls({
   setObstacle,
 });
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "p") scene.paused = !scene.paused;
-  if (e.key === "m") { scene.paused = false; simulate(); scene.paused = true; }
-});
+bindSimulationKeyboardControls({ scene, simulate });
 
 const guiState = {
   togglePause: () => {

@@ -4,6 +4,7 @@ import { Scene } from '../canvas2d/types';
 import { WebGPURenderer } from './renderer';
 import { applyObstacleToScene, createDefaultScene, setupFluidScene } from '../core/scene';
 import { bindObstaclePointerControls } from '../core/interaction';
+import { bindSimulationKeyboardControls } from '../core/keyboard';
 
 const canvas = document.getElementById("webgpuCanvas") as HTMLCanvasElement;
 let device: GPUDevice;
@@ -55,17 +56,12 @@ bindObstaclePointerControls({
   setObstacle,
 });
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "p") {
-    scene.paused = !scene.paused;
-    pauseController?.name(scene.paused ? 'Resume' : 'Pause');
-  }
-  if (e.key === "m") {
-    scene.paused = false;
-    simulate();
-    scene.paused = true;
-    pauseController?.name('Resume');
-  }
+bindSimulationKeyboardControls({
+  scene,
+  simulate,
+  onPauseStateChanged: (paused) => {
+    pauseController?.name(paused ? 'Resume' : 'Pause');
+  },
 });
 
 const guiState = {
