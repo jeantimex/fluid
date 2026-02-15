@@ -760,10 +760,17 @@ function setupScene() {
 
   f_sim.numParticles = maxParticles;
   let p_idx = 0;
+
+  // Calculate offsets to center the block
+  const blockWidth = (numX - 1) * dx_spawn;
+  const blockHeight = (numY - 1) * dy_spawn;
+  const offsetX = (tankWidth - blockWidth) / 2;
+  const offsetY = (tankHeight - blockHeight) / 2;
+
   for (let i = 0; i < numX; i++) {
     for (let j = 0; j < numY; j++) {
-      f_sim.particlePos[p_idx++] = h + r + dx_spawn * i + (j % 2 === 0 ? 0.0 : r);
-      f_sim.particlePos[p_idx++] = h + r + dy_spawn * j;
+      f_sim.particlePos[p_idx++] = offsetX + dx_spawn * i + (j % 2 === 0 ? 0.0 : r);
+      f_sim.particlePos[p_idx++] = offsetY + dy_spawn * j;
     }
   }
 
