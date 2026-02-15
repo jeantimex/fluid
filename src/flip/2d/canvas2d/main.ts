@@ -7,7 +7,7 @@ const gl = canvas.getContext("webgl")!;
 canvas.focus();
 
 let simHeight = 3.0;
-let cScale = 1.0;
+let cScale = 300.0;
 let simWidth = 1.0;
 
 function resize() {
@@ -22,7 +22,9 @@ function resize() {
 
   gl.viewport(0, 0, canvas.width, canvas.height);
 
-  cScale = canvas.height / simHeight;
+  // Use a fixed scale (pixels per meter) to keep object sizes consistent
+  cScale = 300.0 * dpr;
+  simHeight = canvas.height / cScale;
   simWidth = canvas.width / cScale;
 
   // Re-setup the scene to match the new aspect ratio
@@ -714,11 +716,14 @@ function setupScene() {
   scene.numPressureIters = 50;
   scene.numParticleIters = 2;
 
-  const res = 100;
+  // Force grid buffer to be re-initialized since the grid size might have changed
+  gridVertBuffer = null;
+
+  // Use a fixed grid spacing to keep simulation detail consistent
+  const h = 0.05;
 
   const tankHeight = 1.0 * simHeight;
   const tankWidth = 1.0 * simWidth;
-  const h = tankHeight / res;
   const density = 1000.0;
 
   const relWaterHeight = 0.8;
@@ -732,12 +737,9 @@ function setupScene() {
   const dx_spawn = 2.0 * r;
   const dy_spawn = (Math.sqrt(3.0) / 2.0) * dx_spawn;
 
-  const numX = Math.floor(
-    (relWaterWidth * tankWidth - 2.0 * h - 2.0 * r) / dx_spawn
-  );
-  const numY = Math.floor(
-    (relWaterHeight * tankHeight - 2.0 * h - 2.0 * r) / dy_spawn
-  );
+  // Use fixed particle counts for consistency
+  const numX = 40;
+  const numY = 80;
   const maxParticles = numX * numY;
 
   // create fluid
@@ -754,7 +756,7 @@ function setupScene() {
 
   // create particles
 
-  f_sim.numParticles = numX * numY;
+  f_sim.numParticles = maxParticles;
   let p_idx = 0;
   for (let i = 0; i < numX; i++) {
     for (let j = 0; j < numY; j++) {
@@ -775,7 +777,7 @@ function setupScene() {
     }
   }
 
-  setObstacle(3.0, 2.0, true);
+  setObstacle(simWidth * 0.75, simHeight * 0.5, true);
 }
 
 // draw -------------------------------------------------------
