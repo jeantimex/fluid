@@ -407,8 +407,31 @@ async function main(): Promise<void> {
     const sdt = 1.0 / 60.0; // sub-timestep for pressure solve
     fluid.solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
 
-    // G2P transfer (CPU)
+    // ===== GPU: G2P Transfer =====
+    // Upload grid data needed for G2P (after pressure solver)
+    gpuSim.uploadGridDataForG2P(
+      fluid.u,
+      fluid.v,
+      fluid.prevU,
+      fluid.prevV,
+      fluid.cellType
+    );
+    // Upload particle positions (needed for interpolation)
+    gpuSim.getBuffers().uploadParticlePos(fluid.particlePos, fluid.numParticles);
+    // Upload particle velocities BEFORE G2P (these will be modified by G2P)
+    gpuSim.getBuffers().uploadParticleVel(fluid.particleVel, fluid.numParticles);
+    // Update flipRatio in params
+    gpuSim.updateParams({ flipRatio });
+
+    // Run GPU G2P
+    gpuSim.runG2P();
+
+    // G2P transfer (CPU) - keep for comparison
     fluid.transferVelocities(false, flipRatio);
+
+    // Read back GPU velocities and use them (overwrite CPU results)
+    const gpuVelAfterG2P = await gpuSim.readParticleVelocities(fluid.numParticles);
+    fluid.particleVel.set(gpuVelAfterG2P);
 
     // ===== GPU: Color Update =====
     // Sync particleRestDensity from CPU (computed in updateParticleDensity)

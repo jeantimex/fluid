@@ -310,6 +310,41 @@ export class GPUSimulationBuffers {
   }
 
   /**
+   * Upload grid U velocities from CPU.
+   */
+  uploadGridU(data: Float32Array): void {
+    this.device.queue.writeBuffer(this.gridU, 0, data.buffer, data.byteOffset, data.byteLength);
+  }
+
+  /**
+   * Upload grid V velocities from CPU.
+   */
+  uploadGridV(data: Float32Array): void {
+    this.device.queue.writeBuffer(this.gridV, 0, data.buffer, data.byteOffset, data.byteLength);
+  }
+
+  /**
+   * Upload previous U velocities from CPU.
+   */
+  uploadPrevU(data: Float32Array): void {
+    this.device.queue.writeBuffer(this.gridPrevU, 0, data.buffer, data.byteOffset, data.byteLength);
+  }
+
+  /**
+   * Upload previous V velocities from CPU.
+   */
+  uploadPrevV(data: Float32Array): void {
+    this.device.queue.writeBuffer(this.gridPrevV, 0, data.buffer, data.byteOffset, data.byteLength);
+  }
+
+  /**
+   * Upload cell types from CPU.
+   */
+  uploadCellType(data: Int32Array): void {
+    this.device.queue.writeBuffer(this.gridCellType, 0, data.buffer, data.byteOffset, data.byteLength);
+  }
+
+  /**
    * Clean up GPU resources.
    */
   destroy(): void {

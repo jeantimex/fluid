@@ -8,6 +8,7 @@ import { GPUSimulationBuffers } from './gpu_buffers';
 import integrateShader from './shaders/integrate.wgsl?raw';
 import updateColorsShader from './shaders/update_colors.wgsl?raw';
 import collisionsShader from './shaders/collisions.wgsl?raw';
+import g2pShader from './shaders/g2p.wgsl?raw';
 
 export class GPUComputePipelines {
   private device: GPUDevice;
@@ -16,11 +17,13 @@ export class GPUComputePipelines {
   integratePipeline: GPUComputePipeline;
   updateColorsPipeline: GPUComputePipeline;
   collisionsPipeline: GPUComputePipeline;
+  g2pPipeline: GPUComputePipeline;
 
   // Bind groups
   integrateBindGroup: GPUBindGroup;
   updateColorsBindGroup: GPUBindGroup;
   collisionsBindGroup: GPUBindGroup;
+  g2pBindGroup: GPUBindGroup;
 
   // Workgroup size
   readonly workgroupSize = 256;
@@ -105,6 +108,36 @@ export class GPUComputePipelines {
         { binding: 3, resource: { buffer: buffers.obstacleParams } },
       ],
     });
+
+    // Create G2P pipeline
+    const g2pModule = device.createShaderModule({
+      label: 'g2p shader',
+      code: g2pShader,
+    });
+
+    this.g2pPipeline = device.createComputePipeline({
+      label: 'g2p pipeline',
+      layout: 'auto',
+      compute: {
+        module: g2pModule,
+        entryPoint: 'main',
+      },
+    });
+
+    this.g2pBindGroup = device.createBindGroup({
+      label: 'g2p bind group',
+      layout: this.g2pPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.particlePos } },
+        { binding: 1, resource: { buffer: buffers.particleVel } },
+        { binding: 2, resource: { buffer: buffers.gridU } },
+        { binding: 3, resource: { buffer: buffers.gridV } },
+        { binding: 4, resource: { buffer: buffers.gridPrevU } },
+        { binding: 5, resource: { buffer: buffers.gridPrevV } },
+        { binding: 6, resource: { buffer: buffers.gridCellType } },
+        { binding: 7, resource: { buffer: buffers.simParams } },
+      ],
+    });
   }
 
   /**
@@ -140,6 +173,21 @@ export class GPUComputePipelines {
         { binding: 1, resource: { buffer: buffers.particleVel } },
         { binding: 2, resource: { buffer: buffers.simParams } },
         { binding: 3, resource: { buffer: buffers.obstacleParams } },
+      ],
+    });
+
+    this.g2pBindGroup = this.device.createBindGroup({
+      label: 'g2p bind group',
+      layout: this.g2pPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.particlePos } },
+        { binding: 1, resource: { buffer: buffers.particleVel } },
+        { binding: 2, resource: { buffer: buffers.gridU } },
+        { binding: 3, resource: { buffer: buffers.gridV } },
+        { binding: 4, resource: { buffer: buffers.gridPrevU } },
+        { binding: 5, resource: { buffer: buffers.gridPrevV } },
+        { binding: 6, resource: { buffer: buffers.gridCellType } },
+        { binding: 7, resource: { buffer: buffers.simParams } },
       ],
     });
   }

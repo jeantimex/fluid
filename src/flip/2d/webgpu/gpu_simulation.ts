@@ -142,6 +142,40 @@ export class GPUFluidSimulation {
   }
 
   /**
+   * Run G2P (Grid to Particle) velocity transfer on GPU.
+   */
+  runG2P(): void {
+    const encoder = this.device.createCommandEncoder();
+    const computePass = encoder.beginComputePass();
+
+    computePass.setPipeline(this.pipelines.g2pPipeline);
+    computePass.setBindGroup(0, this.pipelines.g2pBindGroup);
+
+    const workgroups = Math.ceil(this.params.numParticles / this.pipelines.workgroupSize);
+    computePass.dispatchWorkgroups(workgroups);
+
+    computePass.end();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  /**
+   * Upload grid data needed for G2P transfer.
+   */
+  uploadGridDataForG2P(
+    u: Float32Array,
+    v: Float32Array,
+    prevU: Float32Array,
+    prevV: Float32Array,
+    cellType: Int32Array
+  ): void {
+    this.buffers.uploadGridU(u);
+    this.buffers.uploadGridV(v);
+    this.buffers.uploadPrevU(prevU);
+    this.buffers.uploadPrevV(prevV);
+    this.buffers.uploadCellType(cellType);
+  }
+
+  /**
    * Read particle positions back from GPU to CPU.
    * This is async and blocks until data is ready.
    */
