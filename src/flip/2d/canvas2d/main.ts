@@ -189,7 +189,12 @@ const { stats, gui } = setupGui(scene, { onReset: guiState.reset }, {
   title: 'Canvas 2D FLIP Fluid',
   subtitle: 'Hybrid FLIP/PIC Fluid Simulation',
   features: ['FLIP/PIC Hybrid Solver', 'Staggered MAC Grid', 'Incompressible Pressure Solver', 'Interactive Obstacle', 'Particle Drift Compensation'],
-  interactions: ['Click & Drag: Move Obstacle', 'P: Pause/Resume', 'M: Step Simulation', 'Click Reset to apply Fluid Setup'],
+      interactions: [
+        'Click & Drag: Move Obstacle',
+        'P: Pause/Resume',
+        'M: Step Simulation',
+        'Click Reset to apply Fluid > Setup'
+      ],
   githubUrl: 'https://github.com/jeantimex/fluid',
 });
 

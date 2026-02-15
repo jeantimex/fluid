@@ -405,22 +405,15 @@ export function setupGui(
 
   const uiState = { showStats: false };
 
-  const displayFolder = gui.addFolder('Display');
+  const fluidFolder = gui.addFolder('Fluid');
+  
+  // Display
+  const displayFolder = fluidFolder.addFolder('Display');
   displayFolder.add(scene, 'showParticles').name('Particles');
   displayFolder.add(scene, 'showGrid').name('Grid');
-
-  const simulationFolder = gui.addFolder('Simulation');
-  simulationFolder.add(scene, 'compensateDrift').name('Compensate Drift');
-  simulationFolder.add(scene, 'separateParticles').name('Separate Particles');
-  simulationFolder.add(scene, 'flipRatio', 0, 1, 0.1).name('FLIP Ratio');
-  simulationFolder.add(scene, 'gravity', -20, 20, 0.01).name('Gravity');
-
-  const solverFolder = gui.addFolder('Solver');
-  solverFolder.add(scene, 'numPressureIters', 1, 200, 1).name('Pressure Iters');
-  solverFolder.add(scene, 'numParticleIters', 1, 5, 1).name('Particle Iters');
-  solverFolder.add(scene, 'overRelaxation', 1, 2, 0.01).name('Over Relaxation');
-
-  const setupFolder = gui.addFolder('Fluid Setup');
+  
+  // Setup (requires reset)
+  const setupFolder = fluidFolder.addFolder('Setup');
   setupFolder
     .add(scene, 'particleCount', 100, 25000, 100)
     .name('Particle Count')
@@ -433,6 +426,19 @@ export function setupGui(
     .onChange(() => {
       if (callbacks.onReset) callbacks.onReset();
     });
+
+  // Simulation
+  const simulationFolder = fluidFolder.addFolder('Simulation');
+  simulationFolder.add(scene, 'gravity', -20, 20, 0.01).name('Gravity');
+  simulationFolder.add(scene, 'flipRatio', 0, 1, 0.1).name('FLIP Ratio');
+  simulationFolder.add(scene, 'compensateDrift').name('Compensate Drift');
+  simulationFolder.add(scene, 'separateParticles').name('Separate Particles');
+
+  // Solver
+  const solverFolder = fluidFolder.addFolder('Solver');
+  solverFolder.add(scene, 'numPressureIters', 1, 200, 1).name('Pressure Iters');
+  solverFolder.add(scene, 'numParticleIters', 1, 5, 1).name('Particle Iters');
+  solverFolder.add(scene, 'overRelaxation', 1, 2, 0.01).name('Over Relaxation');
 
   const performanceFolder = gui.addFolder('Performance');
   performanceFolder
