@@ -29,6 +29,7 @@ const runtime = {
   gpuExperimental: true,
   gpuPressureEnabled: true,
   gpuPressureIters: 50,
+  gpuP2GVelXEnabled: false,
 };
 
 function setupScene() {
@@ -95,6 +96,9 @@ async function simulate() {
     renderer.buildGridDensity(sim.scene, { useGpuState: true });
     renderer.buildCellTypes(sim.scene);
     renderer.prepareGridSolverState(sim.scene);
+    if (runtime.gpuP2GVelXEnabled) {
+      renderer.buildVelocityXFromParticles(sim.scene, { useGpuState: true });
+    }
     if (runtime.gpuPressureEnabled) {
       renderer.applyPressureSkeleton(sim.scene, runtime.gpuPressureIters);
     }
@@ -146,6 +150,7 @@ async function init() {
   });
   gui.add(runtime, 'gpuPressureEnabled').name('GPU Pressure');
   gui.add(runtime, 'gpuPressureIters', 1, 200, 1).name('GPU Pressure Iters');
+  gui.add(runtime, 'gpuP2GVelXEnabled').name('GPU P2G VelX');
 
   bootstrapWithResize({ resize });
 
