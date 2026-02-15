@@ -25,11 +25,13 @@ const sim = createSimulationContext();
 const setObstacleFn = createSetObstacle(sim.scene);
 const runtime = {
   simulationBackend: 'cpu' as 'cpu' | 'gpu',
+  gpuStatePrimed: false,
 };
 
 function setupScene() {
   resetGridRenderer(renderer);
   setupFluidScene(sim.scene, sim.simWidth, sim.simHeight);
+  runtime.gpuStatePrimed = false;
 }
 
 function resize() {
@@ -76,26 +78,20 @@ let pauseController: any;
 async function simulate() {
   if (runtime.simulationBackend === 'cpu') {
     simulateScene(sim.scene);
+    runtime.gpuStatePrimed = false;
     return;
   }
 
-  simulateScene(sim.scene, {
-    enableObstacleCollision: false,
-    enableWallCollision: false,
-    enableParticleIntegration: false,
-    enableParticleColorAgeFade: false,
-    enableParticleColorSurfaceTint: false,
-    enableParticleSeparation: false,
-  });
-  renderer.applyIntegrateParticles(sim.scene);
+  const useGpuState = runtime.gpuStatePrimed;
+  renderer.applyIntegrateParticles(sim.scene, { useGpuState });
   await renderer.buildSpatialHashHybrid(sim.scene, { useGpuState: true });
-  renderer.applyParticleSeparation(sim.scene, sim.scene.numParticleIters);
+  renderer.applyParticleSeparation(sim.scene, sim.scene.numParticleIters, { useGpuState: true });
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
     useGpuState: true,
   });
-  renderer.applyParticleColorFade(sim.scene);
-  renderer.applyParticleSurfaceTint(sim.scene);
-  renderer.syncParticlesToCpu(sim.scene);
+  renderer.applyParticleColorFade(sim.scene, 0.01, { useGpuState: true });
+  renderer.applyParticleSurfaceTint(sim.scene, 0.7, 0.8, { useGpuState: true });
+  runtime.gpuStatePrimed = true;
 }
 
 async function init() {

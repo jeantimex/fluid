@@ -821,20 +821,30 @@ export class WebGPURenderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  applyIntegrateParticles(scene: Scene) {
+  applyIntegrateParticles(scene: Scene, options: { useGpuState?: boolean } = {}) {
     const fluid = scene.fluid!;
     if (!fluid || fluid.numParticles === 0) return;
+    const useGpuState = options.useGpuState ?? false;
 
-    this.particlePosBuffer = this.createOrUpdateBuffer(
-      fluid.particlePos,
-      this.particlePosBuffer,
-      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-    );
-    this.particleVelBuffer = this.createOrUpdateBuffer(
-      fluid.particleVel,
-      this.particleVelBuffer,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-    );
+    const canReuseGpuState =
+      useGpuState &&
+      this.particlePosBuffer != null &&
+      this.particleVelBuffer != null &&
+      this.particlePosBuffer.size === fluid.particlePos.byteLength &&
+      this.particleVelBuffer.size === fluid.particleVel.byteLength;
+
+    if (!canReuseGpuState) {
+      this.particlePosBuffer = this.createOrUpdateBuffer(
+        fluid.particlePos,
+        this.particlePosBuffer,
+        GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+      this.particleVelBuffer = this.createOrUpdateBuffer(
+        fluid.particleVel,
+        this.particleVelBuffer,
+        GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+    }
     const posBuffer = this.particlePosBuffer!;
     const velBuffer = this.particleVelBuffer!;
 
@@ -862,15 +872,23 @@ export class WebGPURenderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  applyParticleColorFade(scene: Scene, step: number = 0.01) {
+  applyParticleColorFade(scene: Scene, step: number = 0.01, options: { useGpuState?: boolean } = {}) {
     const fluid = scene.fluid!;
     if (!fluid || fluid.numParticles === 0) return;
+    const useGpuState = options.useGpuState ?? false;
 
-    this.particleColorBuffer = this.createOrUpdateBuffer(
-      fluid.particleColor,
-      this.particleColorBuffer,
-      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-    );
+    const canReuseGpuState =
+      useGpuState &&
+      this.particleColorBuffer != null &&
+      this.particleColorBuffer.size === fluid.particleColor.byteLength;
+
+    if (!canReuseGpuState) {
+      this.particleColorBuffer = this.createOrUpdateBuffer(
+        fluid.particleColor,
+        this.particleColorBuffer,
+        GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+    }
     const colorBuffer = this.particleColorBuffer!;
 
     const colorFadeData = new Float32Array(4);
@@ -895,20 +913,35 @@ export class WebGPURenderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  applyParticleSurfaceTint(scene: Scene, threshold: number = 0.7, bright: number = 0.8) {
+  applyParticleSurfaceTint(
+    scene: Scene,
+    threshold: number = 0.7,
+    bright: number = 0.8,
+    options: { useGpuState?: boolean } = {}
+  ) {
     const fluid = scene.fluid!;
     if (!fluid || fluid.numParticles === 0 || fluid.particleRestDensity <= 0.0) return;
+    const useGpuState = options.useGpuState ?? false;
 
-    this.particleColorBuffer = this.createOrUpdateBuffer(
-      fluid.particleColor,
-      this.particleColorBuffer,
-      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-    );
-    this.particlePosBuffer = this.createOrUpdateBuffer(
-      fluid.particlePos,
-      this.particlePosBuffer,
-      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-    );
+    const canReuseGpuState =
+      useGpuState &&
+      this.particlePosBuffer != null &&
+      this.particleColorBuffer != null &&
+      this.particlePosBuffer.size === fluid.particlePos.byteLength &&
+      this.particleColorBuffer.size === fluid.particleColor.byteLength;
+
+    if (!canReuseGpuState) {
+      this.particleColorBuffer = this.createOrUpdateBuffer(
+        fluid.particleColor,
+        this.particleColorBuffer,
+        GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+      this.particlePosBuffer = this.createOrUpdateBuffer(
+        fluid.particlePos,
+        this.particlePosBuffer,
+        GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+    }
     this.particleDensityBuffer = this.createOrUpdateBuffer(
       fluid.particleDensity,
       this.particleDensityBuffer,
@@ -944,15 +977,23 @@ export class WebGPURenderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  applyParticleSeparation(scene: Scene, numIters: number = 1) {
+  applyParticleSeparation(scene: Scene, numIters: number = 1, options: { useGpuState?: boolean } = {}) {
     const fluid = scene.fluid!;
     if (!fluid || fluid.numParticles === 0) return;
+    const useGpuState = options.useGpuState ?? false;
 
-    this.particlePosBuffer = this.createOrUpdateBuffer(
-      fluid.particlePos,
-      this.particlePosBuffer,
-      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-    );
+    const canReuseGpuState =
+      useGpuState &&
+      this.particlePosBuffer != null &&
+      this.particlePosBuffer.size === fluid.particlePos.byteLength;
+
+    if (!canReuseGpuState) {
+      this.particlePosBuffer = this.createOrUpdateBuffer(
+        fluid.particlePos,
+        this.particlePosBuffer,
+        GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+    }
     this.particlePosScratchBuffer = this.createOrUpdateBuffer(
       fluid.particlePos,
       this.particlePosScratchBuffer,
