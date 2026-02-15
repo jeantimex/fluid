@@ -28,12 +28,16 @@ export class FlipRenderer {
         entryPoint: 'vs_main',
         buffers: [
           {
-            arrayStride: 20, // pos(8) + color(12) = 20 bytes
+            // Position buffer
+            arrayStride: 8, // vec2<f32>
             stepMode: 'instance',
-            attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x2' }, // Position
-              { shaderLocation: 1, offset: 8, format: 'float32x3' }, // Color
-            ],
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }],
+          },
+          {
+            // Color buffer
+            arrayStride: 12, // vec3<f32>
+            stepMode: 'instance',
+            attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x3' }],
           },
         ],
       },
@@ -71,7 +75,12 @@ export class FlipRenderer {
     this.device.queue.writeBuffer(this.uniformBuffer, 0, data);
   }
 
-  render(context: GPUCanvasContext, particleBuffer: GPUBuffer, numParticles: number) {
+  render(
+    context: GPUCanvasContext,
+    posBuffer: GPUBuffer,
+    colorBuffer: GPUBuffer,
+    numParticles: number
+  ) {
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
       colorAttachments: [
@@ -86,7 +95,8 @@ export class FlipRenderer {
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
-    pass.setVertexBuffer(0, particleBuffer);
+    pass.setVertexBuffer(0, posBuffer);
+    pass.setVertexBuffer(1, colorBuffer);
     pass.draw(4, numParticles);
 
     pass.end();
