@@ -736,7 +736,7 @@ export class WebGPURenderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  applyParticleSeparation(scene: Scene) {
+  applyParticleSeparation(scene: Scene, numIters: number = 1) {
     const fluid = scene.fluid!;
     if (!fluid || fluid.numParticles === 0) return;
 
@@ -772,28 +772,33 @@ export class WebGPURenderer {
     separationData[5] = minDist * minDist;
     this.writeFloat32(this.particleSeparationUniformBuffer, 0, separationData);
 
-    const bindGroup = this.device.createBindGroup({
-      layout: this.particleSeparationPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.particleSeparationUniformBuffer } },
-        { binding: 1, resource: { buffer: this.particlePosBuffer! } },
-        { binding: 2, resource: { buffer: this.particlePosScratchBuffer! } },
-        { binding: 3, resource: { buffer: this.firstCellParticleBuffer! } },
-        { binding: 4, resource: { buffer: this.cellParticleIdsBuffer! } },
-      ],
-    });
-
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginComputePass();
     pass.setPipeline(this.particleSeparationPipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+
+    const iters = Math.max(1, Math.floor(numIters));
+    for (let iter = 0; iter < iters; iter++) {
+      const bindGroup = this.device.createBindGroup({
+        layout: this.particleSeparationPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.particleSeparationUniformBuffer } },
+          { binding: 1, resource: { buffer: this.particlePosBuffer! } },
+          { binding: 2, resource: { buffer: this.particlePosScratchBuffer! } },
+          { binding: 3, resource: { buffer: this.firstCellParticleBuffer! } },
+          { binding: 4, resource: { buffer: this.cellParticleIdsBuffer! } },
+        ],
+      });
+
+      pass.setBindGroup(0, bindGroup);
+      pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+
+      const posTmp: GPUBuffer | null = this.particlePosBuffer;
+      this.particlePosBuffer = this.particlePosScratchBuffer;
+      this.particlePosScratchBuffer = posTmp;
+    }
+
     pass.end();
     this.device.queue.submit([encoder.finish()]);
-
-    const posTmp = this.particlePosBuffer;
-    this.particlePosBuffer = this.particlePosScratchBuffer;
-    this.particlePosScratchBuffer = posTmp;
   }
 
   syncParticlesToCpu(scene: Scene, options: { includeColor?: boolean } = {}) {

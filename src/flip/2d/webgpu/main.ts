@@ -89,7 +89,7 @@ function simulate() {
   });
   renderer.applyIntegrateParticles(sim.scene, { mirrorCpuState: true });
   sim.scene.fluid?.buildSpatialHash();
-  renderer.applyParticleSeparation(sim.scene);
+  renderer.applyParticleSeparation(sim.scene, sim.scene.numParticleIters);
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
     useGpuState: true,
   });
