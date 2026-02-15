@@ -1,4 +1,5 @@
 import { Scene } from './types';
+import { createShader } from './utils';
 
 const pointVertexShader = `
 		attribute vec2 attrPosition;
@@ -82,29 +83,8 @@ export class Renderer {
 
   constructor(gl: WebGLRenderingContext) {
     this.gl = gl;
-    this.pointShader = this.createShader(pointVertexShader, pointFragmentShader);
-    this.meshShader = this.createShader(meshVertexShader, meshFragmentShader);
-  }
-
-  createShader(vsSource: string, fsSource: string) {
-    const gl = this.gl;
-    const vsShader = gl.createShader(gl.VERTEX_SHADER)!;
-    gl.shaderSource(vsShader, vsSource);
-    gl.compileShader(vsShader);
-    if (!gl.getShaderParameter(vsShader, gl.COMPILE_STATUS))
-      console.log("vertex shader compile error: " + gl.getShaderInfoLog(vsShader));
-
-    const fsShader = gl.createShader(gl.FRAGMENT_SHADER)!;
-    gl.shaderSource(fsShader, fsSource);
-    gl.compileShader(fsShader);
-    if (!gl.getShaderParameter(fsShader, gl.COMPILE_STATUS))
-      console.log("fragment shader compile error: " + gl.getShaderInfoLog(fsShader));
-
-    const shader_prog = gl.createProgram()!;
-    gl.attachShader(shader_prog, vsShader);
-    gl.attachShader(shader_prog, fsShader);
-    gl.linkProgram(shader_prog);
-    return shader_prog;
+    this.pointShader = createShader(gl, pointVertexShader, pointFragmentShader);
+    this.meshShader = createShader(gl, meshVertexShader, meshFragmentShader);
   }
 
   resetGridBuffer() {

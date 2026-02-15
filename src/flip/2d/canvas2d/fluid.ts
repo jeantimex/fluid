@@ -1,13 +1,5 @@
 import { FLUID_CELL, AIR_CELL, SOLID_CELL } from './types';
-
-/**
- * Clamps a number between a minimum and maximum value.
- */
-export function clamp(x: number, min: number, max: number) {
-  if (x < min) return min;
-  else if (x > max) return max;
-  else return x;
-}
+import { clamp, getSciColor } from './utils';
 
 /**
  * FlipFluid implements a hybrid FLIP (Fluid-Implicit Particle) and 
@@ -499,32 +491,6 @@ export class FlipFluid {
     }
   }
 
-  /**
-   * Maps a value to a scientific color scale (blue to red).
-   */
-  setSciColor(cellNr: number, val: number, minVal: number, maxVal: number) {
-    val = Math.min(Math.max(val, minVal), maxVal - 0.0001);
-    const range = maxVal - minVal;
-    val = range === 0.0 ? 0.5 : (val - minVal) / range;
-    const m = 0.25;
-    const num = Math.floor(val / m);
-    const s = (val - num * m) / m;
-    let r, g, b;
-    switch (num) {
-      case 0: r = 0.0; g = s; b = 1.0; break;
-      case 1: r = 0.0; g = 1.0; b = 1.0 - s; break;
-      case 2: r = s; g = 1.0; b = 0.0; break;
-      case 3: r = 1.0; g = 1.0 - s; b = 0.0; break;
-      default: r = 0.0; g = 0.0; b = 0.0;
-    }
-    this.cellColor[3 * cellNr] = r;
-    this.cellColor[3 * cellNr + 1] = g;
-    this.cellColor[3 * cellNr + 2] = b;
-  }
-
-  /**
-   * Updates grid cell colors for debugging (density visualization).
-   */
   updateCellColors() {
     this.cellColor.fill(0.0);
     for (let i = 0; i < this.totalCells; i++) {
@@ -533,7 +499,10 @@ export class FlipFluid {
       } else if (this.cellType[i] === FLUID_CELL) {
         let d = this.particleDensity[i];
         if (this.particleRestDensity > 0.0) d /= this.particleRestDensity;
-        this.setSciColor(i, d, 0.0, 2.0);
+        const [r, g, b] = getSciColor(d, 0.0, 2.0);
+        this.cellColor[3 * i] = r;
+        this.cellColor[3 * i + 1] = g;
+        this.cellColor[3 * i + 2] = b;
       }
     }
   }
