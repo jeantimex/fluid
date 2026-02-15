@@ -24,9 +24,11 @@ let presentationFormat: GPUTextureFormat;
 const sim = createSimulationContext();
 const setObstacleFn = createSetObstacle(sim.scene);
 const runtime = {
-  simulationBackend: 'cpu' as 'cpu' | 'gpu',
+  simulationBackend: 'gpu' as 'cpu' | 'gpu',
   gpuStatePrimed: false,
+  gpuExperimental: true,
   gpuPressureEnabled: true,
+  gpuPressureIters: 50,
 };
 
 function setupScene() {
@@ -88,6 +90,16 @@ async function simulate() {
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
     useGpuState: true,
   });
+
+  if (runtime.gpuExperimental) {
+    renderer.buildGridDensity(sim.scene, { useGpuState: true });
+    renderer.buildCellTypes(sim.scene);
+    renderer.prepareGridSolverState(sim.scene);
+    if (runtime.gpuPressureEnabled) {
+      renderer.applyPressureSkeleton(sim.scene, runtime.gpuPressureIters);
+    }
+  }
+
   await renderer.syncParticlesToCpu(sim.scene);
   simulateScene(sim.scene, {
     enableObstacleCollision: false,
@@ -126,8 +138,14 @@ async function init() {
   );
 
   pauseController = addPauseResetControls(gui, guiState, sim.scene);
-  gui.add(runtime, 'simulationBackend', ['cpu', 'gpu']).name('Sim Backend');
+  gui.add(runtime, 'simulationBackend', ['cpu', 'gpu']).name('Sim Backend').onChange(() => {
+    runtime.gpuStatePrimed = false;
+  });
+  gui.add(runtime, 'gpuExperimental').name('GPU Experimental').onChange(() => {
+    runtime.gpuStatePrimed = false;
+  });
   gui.add(runtime, 'gpuPressureEnabled').name('GPU Pressure');
+  gui.add(runtime, 'gpuPressureIters', 1, 200, 1).name('GPU Pressure Iters');
 
   bootstrapWithResize({ resize });
 

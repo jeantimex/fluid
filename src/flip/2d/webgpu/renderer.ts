@@ -484,9 +484,11 @@ const pressureJacobiShaderWGSL = `
   @group(0) @binding(0) var<uniform> uniforms: PressureUniforms;
   @group(0) @binding(1) var<storage, read> solidMask: array<f32>;
   @group(0) @binding(2) var<storage, read> cellType: array<i32>;
-  @group(0) @binding(3) var<storage, read_write> velocityX: array<f32>;
-  @group(0) @binding(4) var<storage, read_write> velocityY: array<f32>;
-  @group(0) @binding(5) var<storage, read_write> pressure: array<f32>;
+  @group(0) @binding(3) var<storage, read> velocityXIn: array<f32>;
+  @group(0) @binding(4) var<storage, read> velocityYIn: array<f32>;
+  @group(0) @binding(5) var<storage, read_write> velocityXOut: array<f32>;
+  @group(0) @binding(6) var<storage, read_write> velocityYOut: array<f32>;
+  @group(0) @binding(7) var<storage, read_write> pressure: array<f32>;
 
   @compute @workgroup_size(8, 8, 1)
   fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -515,15 +517,15 @@ const pressureJacobiShaderWGSL = `
       return;
     }
 
-    let divergence = velocityX[right] - velocityX[center] + velocityY[top] - velocityY[center];
+    let divergence = velocityXIn[right] - velocityXIn[center] + velocityYIn[top] - velocityYIn[center];
     let p = -divergence / sSum;
     let relaxedP = p * uniforms.overRelaxation;
 
     pressure[center] = pressure[center] + uniforms.pressureScale * relaxedP;
-    velocityX[center] = velocityX[center] - sx0 * relaxedP;
-    velocityX[right] = velocityX[right] + sx1 * relaxedP;
-    velocityY[center] = velocityY[center] - sy0 * relaxedP;
-    velocityY[top] = velocityY[top] + sy1 * relaxedP;
+    velocityXOut[center] = velocityXIn[center] - sx0 * relaxedP;
+    velocityXOut[right] = velocityXIn[right] + sx1 * relaxedP;
+    velocityYOut[center] = velocityYIn[center] - sy0 * relaxedP;
+    velocityYOut[top] = velocityYIn[top] + sy1 * relaxedP;
   }
 `;
 
@@ -570,6 +572,8 @@ export class WebGPURenderer {
   gridColorBuffer: GPUBuffer | null = null;
   velocityXBuffer: GPUBuffer | null = null;
   velocityYBuffer: GPUBuffer | null = null;
+  velocityXScratchBuffer: GPUBuffer | null = null;
+  velocityYScratchBuffer: GPUBuffer | null = null;
   pressureBuffer: GPUBuffer | null = null;
   particleDensityBuffer: GPUBuffer | null = null;
   firstCellParticleBuffer: GPUBuffer | null = null;
@@ -1107,6 +1111,16 @@ export class WebGPURenderer {
       this.velocityYBuffer,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
+    this.velocityXScratchBuffer = this.createOrUpdateBuffer(
+      fluid.velocityX,
+      this.velocityXScratchBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.velocityYScratchBuffer = this.createOrUpdateBuffer(
+      fluid.velocityY,
+      this.velocityYScratchBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
     this.pressureBuffer = this.createOrUpdateBuffer(
       fluid.pressure,
       this.pressureBuffer,
@@ -1114,9 +1128,16 @@ export class WebGPURenderer {
     );
   }
 
-  applyPressureSkeleton(scene: Scene) {
+  applyPressureSkeleton(scene: Scene, iterations?: number) {
     const fluid = scene.fluid;
-    if (!fluid || !this.velocityXBuffer || !this.velocityYBuffer || !this.pressureBuffer) return;
+    if (
+      !fluid ||
+      !this.velocityXBuffer ||
+      !this.velocityYBuffer ||
+      !this.velocityXScratchBuffer ||
+      !this.velocityYScratchBuffer ||
+      !this.pressureBuffer
+    ) return;
     if (!this.solidMaskBuffer || !this.cellTypeBuffer) return;
 
     const clearUniform = new Uint32Array(4);
@@ -1138,18 +1159,8 @@ export class WebGPURenderer {
     pressureUniform[4] = pressureScale;
     pressureUniform[5] = scene.overRelaxation;
     this.writeFloat32(this.pressureUniformBuffer, 0, pressureUniform);
-
-    const jacobiBindGroup = this.device.createBindGroup({
-      layout: this.pressureJacobiPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.pressureUniformBuffer } },
-        { binding: 1, resource: { buffer: this.solidMaskBuffer } },
-        { binding: 2, resource: { buffer: this.cellTypeBuffer } },
-        { binding: 3, resource: { buffer: this.velocityXBuffer } },
-        { binding: 4, resource: { buffer: this.velocityYBuffer } },
-        { binding: 5, resource: { buffer: this.pressureBuffer } },
-      ],
-    });
+    const solidMaskBuffer = this.solidMaskBuffer!;
+    const cellTypeBuffer = this.cellTypeBuffer!;
 
     const encoder = this.device.createCommandEncoder();
     const clearPass = encoder.beginComputePass();
@@ -1160,10 +1171,29 @@ export class WebGPURenderer {
 
     const jacobiPass = encoder.beginComputePass();
     jacobiPass.setPipeline(this.pressureJacobiPipeline);
-    jacobiPass.setBindGroup(0, jacobiBindGroup);
-    const pressureIters = Math.max(1, Math.floor(scene.numPressureIters));
+    const pressureIters = Math.max(1, Math.floor(iterations ?? scene.numPressureIters));
     for (let iter = 0; iter < pressureIters; iter++) {
+      const jacobiBindGroup = this.device.createBindGroup({
+        layout: this.pressureJacobiPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.pressureUniformBuffer } },
+          { binding: 1, resource: { buffer: solidMaskBuffer } },
+          { binding: 2, resource: { buffer: cellTypeBuffer } },
+          { binding: 3, resource: { buffer: this.velocityXBuffer } },
+          { binding: 4, resource: { buffer: this.velocityYBuffer } },
+          { binding: 5, resource: { buffer: this.velocityXScratchBuffer } },
+          { binding: 6, resource: { buffer: this.velocityYScratchBuffer } },
+          { binding: 7, resource: { buffer: this.pressureBuffer } },
+        ],
+      });
+      jacobiPass.setBindGroup(0, jacobiBindGroup);
       jacobiPass.dispatchWorkgroups(Math.ceil(fluid.numX / 8), Math.ceil(fluid.numY / 8));
+      const vxTmp: GPUBuffer | null = this.velocityXBuffer;
+      this.velocityXBuffer = this.velocityXScratchBuffer;
+      this.velocityXScratchBuffer = vxTmp;
+      const vyTmp: GPUBuffer | null = this.velocityYBuffer;
+      this.velocityYBuffer = this.velocityYScratchBuffer;
+      this.velocityYScratchBuffer = vyTmp;
     }
     jacobiPass.end();
     this.device.queue.submit([encoder.finish()]);
