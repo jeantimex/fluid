@@ -607,7 +607,7 @@ export class WebGPURenderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  applyIntegrateParticles(scene: Scene) {
+  applyIntegrateParticles(scene: Scene, options: { mirrorCpuState?: boolean } = {}) {
     const fluid = scene.fluid!;
     if (!fluid || fluid.numParticles === 0) return;
 
@@ -646,6 +646,12 @@ export class WebGPURenderer {
     pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
     pass.end();
     this.device.queue.submit([encoder.finish()]);
+
+    if (options.mirrorCpuState) {
+      // Temporary bridge: keep CPU arrays in step so CPU-built spatial hash
+      // can use post-integrated positions before hash migration to GPU.
+      fluid.integrateParticles(scene.dt, scene.gravity);
+    }
   }
 
   applyParticleColorFade(scene: Scene, step: number = 0.01) {
