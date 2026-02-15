@@ -122,12 +122,12 @@ export class Renderer {
     // --- Grid ---
     if (this.gridVertBuffer == null) {
       this.gridVertBuffer = gl.createBuffer();
-      const cellCenters = new Float32Array(2 * fluid.fNumCells);
+      const cellCenters = new Float32Array(2 * fluid.totalCells);
       let p_idx = 0;
-      for (let i = 0; i < fluid.fNumX; i++) {
-        for (let j = 0; j < fluid.fNumY; j++) {
-          cellCenters[p_idx++] = (i + 0.5) * fluid.h;
-          cellCenters[p_idx++] = (j + 0.5) * fluid.h;
+      for (let i = 0; i < fluid.numX; i++) {
+        for (let j = 0; j < fluid.numY; j++) {
+          cellCenters[p_idx++] = (i + 0.5) * fluid.cellSize;
+          cellCenters[p_idx++] = (j + 0.5) * fluid.cellSize;
         }
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, this.gridVertBuffer);
@@ -138,7 +138,7 @@ export class Renderer {
     if (this.gridColorBuffer == null) this.gridColorBuffer = gl.createBuffer();
 
     if (scene.showGrid) {
-      const pointSize = (0.9 * fluid.h) / simWidth * canvas.width;
+      const pointSize = (0.9 * fluid.cellSize) / simWidth * canvas.width;
       gl.useProgram(this.pointShader);
       gl.uniform2f(gl.getUniformLocation(this.pointShader, "domainSize"), simWidth, simHeight);
       gl.uniform1f(gl.getUniformLocation(this.pointShader, "pointSize"), pointSize);
@@ -155,7 +155,7 @@ export class Renderer {
       gl.enableVertexAttribArray(colorLoc);
       gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
 
-      gl.drawArrays(gl.POINTS, 0, fluid.fNumCells);
+      gl.drawArrays(gl.POINTS, 0, fluid.totalCells);
       gl.disableVertexAttribArray(posLoc);
       gl.disableVertexAttribArray(colorLoc);
     }

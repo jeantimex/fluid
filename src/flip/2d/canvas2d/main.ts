@@ -45,11 +45,11 @@ function setupScene() {
 
   renderer.resetGridBuffer();
 
-  const h = 0.03;
+  const cellSize = 0.03;
   const tankHeight = 1.0 * simHeight;
   const tankWidth = 1.0 * simWidth;
   const density = 1000.0;
-  const r = scene.particleRadiusScale * h;
+  const r = scene.particleRadiusScale * cellSize;
   const dx_spawn = 2.0 * r;
   const dy_spawn = (Math.sqrt(3.0) / 2.0) * dx_spawn;
 
@@ -57,7 +57,7 @@ function setupScene() {
   const numY = Math.floor(scene.particleCount / numX);
   const maxParticles = numX * numY;
 
-  const f_sim = new FlipFluid(density, tankWidth, tankHeight, h, r, maxParticles);
+  const f_sim = new FlipFluid(density, tankWidth, tankHeight, cellSize, r, maxParticles);
   scene.fluid = f_sim;
   f_sim.numParticles = maxParticles;
   let p_idx = 0;
@@ -74,12 +74,12 @@ function setupScene() {
     }
   }
 
-  const n_cells_y = f_sim.fNumY;
-  for (let i = 0; i < f_sim.fNumX; i++) {
-    for (let j = 0; j < f_sim.fNumY; j++) {
+  const n_cells_y = f_sim.numY;
+  for (let i = 0; i < f_sim.numX; i++) {
+    for (let j = 0; j < f_sim.numY; j++) {
       let s_val = 1.0;
-      if (i === 0 || i === f_sim.fNumX - 1 || j === 0) s_val = 0.0;
-      f_sim.s[i * n_cells_y + j] = s_val;
+      if (i === 0 || i === f_sim.numX - 1 || j === 0) s_val = 0.0;
+      f_sim.solidMask[i * n_cells_y + j] = s_val;
     }
   }
   setObstacle(simWidth * 0.75, simHeight * 0.5, true);
@@ -96,19 +96,19 @@ function setObstacle(x: number, y: number, reset: boolean) {
   scene.obstacleY = y;
   const r_obstacle = scene.obstacleRadius;
   const f_val = scene.fluid!;
-  const n_y = f_val.fNumY;
+  const n_y = f_val.numY;
 
-  for (let i = 1; i < f_val.fNumX - 2; i++) {
-    for (let j = 1; j < f_val.fNumY - 2; j++) {
-      f_val.s[i * n_y + j] = 1.0;
-      const dx = (i + 0.5) * f_val.h - x;
-      const dy = (j + 0.5) * f_val.h - y;
+  for (let i = 1; i < f_val.numX - 2; i++) {
+    for (let j = 1; j < f_val.numY - 2; j++) {
+      f_val.solidMask[i * n_y + j] = 1.0;
+      const dx = (i + 0.5) * f_val.cellSize - x;
+      const dy = (j + 0.5) * f_val.cellSize - y;
       if (dx * dx + dy * dy < r_obstacle * r_obstacle) {
-        f_val.s[i * n_y + j] = 0.0;
-        f_val.u[i * n_y + j] = vx;
-        f_val.u[(i + 1) * n_y + j] = vx;
-        f_val.v[i * n_y + j] = vy;
-        f_val.v[i * n_y + j + 1] = vy;
+        f_val.solidMask[i * n_y + j] = 0.0;
+        f_val.velocityX[i * n_y + j] = vx;
+        f_val.velocityX[(i + 1) * n_y + j] = vx;
+        f_val.velocityY[i * n_y + j] = vy;
+        f_val.velocityY[i * n_y + j + 1] = vy;
       }
     }
   }
