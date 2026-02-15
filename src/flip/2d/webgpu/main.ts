@@ -5,6 +5,12 @@ import { WebGPURenderer } from './renderer';
 import { applyObstacleToScene, createDefaultScene, setupFluidScene } from '../core/scene';
 import { bindObstaclePointerControls } from '../core/interaction';
 import { bindSimulationKeyboardControls } from '../core/keyboard';
+import { simulateScene } from '../core/simulation';
+import { resizeSimulationCanvas } from '../core/resize';
+import { createGuiState } from '../core/gui';
+import { createFluidGuiOptions } from '../core/gui-options';
+import { startAnimationLoop } from '../core/loop';
+import { createFluidGuiCallbacks } from '../core/gui-callbacks';
 
 const canvas = document.getElementById("webgpuCanvas") as HTMLCanvasElement;
 let device: GPUDevice;
@@ -28,13 +34,7 @@ function setObstacle(x: number, y: number, reset: boolean) {
 }
 
 function resize() {
-  const dpr = window.devicePixelRatio || 1;
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
-  canvas.style.width = width + 'px';
-  canvas.style.height = height + 'px';
+  const size = resizeSimulationCanvas(canvas);
   if (context) {
     context.configure({
       device,
@@ -42,10 +42,10 @@ function resize() {
       alphaMode: 'premultiplied',
     });
   }
-  
-  cScale = 300.0 * dpr;
-  simHeight = canvas.height / cScale;
-  simWidth = canvas.width / cScale;
+
+  cScale = size.cScale;
+  simHeight = size.simHeight;
+  simWidth = size.simWidth;
   setupScene();
 }
 
@@ -64,25 +64,18 @@ bindSimulationKeyboardControls({
   },
 });
 
-const guiState = {
-  togglePause: () => {
-    scene.paused = !scene.paused;
-    if (pauseController) pauseController.name(scene.paused ? 'Resume' : 'Pause');
+const guiState = createGuiState({
+  scene,
+  onReset: setupScene,
+  onPauseStateChanged: (paused) => {
+    if (pauseController) pauseController.name(paused ? 'Resume' : 'Pause');
   },
-  reset: () => setupScene(),
-};
+});
 
 let pauseController: any;
 
 function simulate() {
-  if (!scene.paused && scene.fluid) {
-    const r_obstacle = scene.showObstacle ? scene.obstacleRadius : 0;
-    scene.fluid.simulate(
-      scene.dt, scene.gravity, scene.flipRatio, scene.numPressureIters, scene.numParticleIters,
-      scene.overRelaxation, scene.compensateDrift, scene.separateParticles,
-      scene.obstacleX, scene.obstacleY, r_obstacle, scene.obstacleVelX, scene.obstacleVelY
-    );
-  }
+  simulateScene(scene);
 }
 
 async function init() {
@@ -98,17 +91,12 @@ async function init() {
 
   const { stats, gui } = setupGui(
     scene,
-    {
-      onReset: guiState.reset,
-      onToggleObstacle: () => setObstacle(scene.obstacleX, scene.obstacleY, true),
-    },
-    {
+    createFluidGuiCallbacks({ scene, onReset: guiState.reset, setObstacle }),
+    createFluidGuiOptions({
       title: 'WebGPU FLIP Fluid',
       subtitle: 'Hybrid FLIP/PIC (GPU Render)',
       features: ['WebGPU Renderer', 'FLIP/PIC Solver', 'Staggered MAC Grid', 'Interactive Obstacle'],
-      interactions: ['Click & Drag: Move Obstacle', 'P: Pause/Resume', 'M: Step Simulation', 'Click Reset to apply Fluid > Setup'],
-      githubUrl: 'https://github.com/jeantimex/fluid',
-    }
+    })
   );
 
   pauseController = gui.add(guiState, 'togglePause').name(scene.paused ? 'Resume' : 'Pause');
@@ -117,14 +105,14 @@ async function init() {
   resize();
   window.addEventListener("resize", resize);
 
-  function frame() {
-    stats.begin();
-    simulate();
-    renderer.draw(scene, simWidth, simHeight, context);
-    stats.end();
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
+  startAnimationLoop({
+    frame: () => {
+      stats.begin();
+      simulate();
+      renderer.draw(scene, simWidth, simHeight, context);
+      stats.end();
+    },
+  });
 }
 
 init().catch(err => {
