@@ -219,7 +219,8 @@ export class FlipFluid {
    */
   handleParticleCollisions(
     obsX: number, obsY: number, obsR: number, 
-    obsVelX: number, obsVelY: number
+    obsVelX: number, obsVelY: number,
+    enableWallCollisions: boolean = true
   ) {
     const r = this.particleRadius;
     const minDist = obsR + r;
@@ -248,11 +249,13 @@ export class FlipFluid {
         this.particleVel[2 * i + 1] = obsVelY;
       }
 
-      // Wall collisions (clamp position and kill perpendicular velocity)
-      if (x < minX) { x = minX; this.particleVel[2 * i] = 0.0; }
-      if (x > maxX) { x = maxX; this.particleVel[2 * i] = 0.0; }
-      if (y < minY) { y = minY; this.particleVel[2 * i + 1] = 0.0; }
-      if (y > maxY) { y = maxY; this.particleVel[2 * i + 1] = 0.0; }
+      if (enableWallCollisions) {
+        // Wall collisions (clamp position and kill perpendicular velocity)
+        if (x < minX) { x = minX; this.particleVel[2 * i] = 0.0; }
+        if (x > maxX) { x = maxX; this.particleVel[2 * i] = 0.0; }
+        if (y < minY) { y = minY; this.particleVel[2 * i + 1] = 0.0; }
+        if (y > maxY) { y = maxY; this.particleVel[2 * i + 1] = 0.0; }
+      }
       
       this.particlePos[2 * i] = x;
       this.particlePos[2 * i + 1] = y;
@@ -523,7 +526,8 @@ export class FlipFluid {
     obstacleY: number,
     obstacleRadius: number,
     obstacleVelX: number,
-    obstacleVelY: number
+    obstacleVelY: number,
+    enableWallCollisions: boolean = true
   ) {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
@@ -536,7 +540,14 @@ export class FlipFluid {
       if (separateParticles) this.pushParticlesApart(numParticleIters);
       
       // 3. Boundary handling
-      this.handleParticleCollisions(obstacleX, obstacleY, obstacleRadius, obstacleVelX, obstacleVelY);
+      this.handleParticleCollisions(
+        obstacleX,
+        obstacleY,
+        obstacleRadius,
+        obstacleVelX,
+        obstacleVelY,
+        enableWallCollisions
+      );
       
       // 4. Particle-to-Grid transfer
       this.transferVelocities(true);

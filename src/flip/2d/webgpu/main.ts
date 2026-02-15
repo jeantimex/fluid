@@ -4,7 +4,7 @@ import { WebGPURenderer } from './renderer';
 import { createSetObstacle, setupFluidScene } from '../core/scene';
 import { bindObstaclePointerControls } from '../core/interaction';
 import { bindSimulationKeyboardControls } from '../core/keyboard';
-import { simulateScene } from '../core/simulation';
+import { simulateScene, syncBoundaryCollisionToCpu } from '../core/simulation';
 import { resizeSimulationCanvas } from '../core/resize';
 import { createGuiState } from '../core/gui';
 import { createFluidGuiOptions } from '../core/gui-options';
@@ -79,8 +79,12 @@ function simulate() {
     return;
   }
 
-  simulateScene(sim.scene, { enableObstacleCollision: false });
+  simulateScene(sim.scene, {
+    enableObstacleCollision: false,
+    enableWallCollision: false,
+  });
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight);
+  syncBoundaryCollisionToCpu(sim.scene);
 }
 
 async function init() {
