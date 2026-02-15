@@ -368,42 +368,83 @@ async function main(): Promise<void> {
   });
 
   // ============ SIMULATION ============
-  function runSimStep(): void {
+  async function runSimStep(): Promise<void> {
     setObstacle(obstacleX, obstacleY, obstacleVelX, obstacleVelY);
 
-    // Step 1: GPU Integration - upload current state, run GPU, read back
+    // Update GPU params
     gpuSim.updateParams({ gravity, dt, numParticles: fluid.numParticles });
+    gpuSim.updateObstacle(obstacleX, obstacleY, obstacleVelX, obstacleVelY, obstacleRadius);
+
+    // Upload current state to GPU
     gpuSim.getBuffers().uploadParticlePos(fluid.particlePos, fluid.numParticles);
     gpuSim.getBuffers().uploadParticleVel(fluid.particleVel, fluid.numParticles);
 
-    // Run GPU integration
+    // ===== GPU: Integrate + Collisions =====
     gpuSim.runIntegrate();
-
-    // GPU Collision handling (Phase 2)
-    gpuSim.updateObstacle(obstacleX, obstacleY, obstacleVelX, obstacleVelY, obstacleRadius);
     gpuSim.runCollisions();
 
-    // Run full CPU simulation (includes color updates)
-    fluid.simulate(
-      dt, gravity, flipRatio,
-      numPressureIters, numParticleIters,
-      overRelaxation, compensateDrift, separateParticles,
-      obstacleX, obstacleY, obstacleRadius,
-      obstacleVelX, obstacleVelY
-    );
+    // Read back GPU results
+    const gpuPos = await gpuSim.readParticlePositions(fluid.numParticles);
+    const gpuVel = await gpuSim.readParticleVelocities(fluid.numParticles);
 
-    // GPU Color Update (Phase 2 verification)
-    // Upload density computed by CPU, then run GPU color shader
+    // Copy GPU results to CPU arrays
+    fluid.particlePos.set(gpuPos);
+    fluid.particleVel.set(gpuVel);
+
+    // ===== CPU: Remaining simulation steps =====
+    // Push particles apart (uses spatial hash - still on CPU)
+    if (separateParticles) {
+      fluid.pushParticlesApart(numParticleIters);
+    }
+
+    // P2G transfer (CPU)
+    fluid.transferVelocities(true, flipRatio);
+
+    // Update density (CPU)
+    fluid.updateParticleDensity();
+
+    // Pressure solver (CPU)
+    const sdt = 1.0 / 60.0; // sub-timestep for pressure solve
+    fluid.solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
+
+    // G2P transfer (CPU)
+    fluid.transferVelocities(false, flipRatio);
+
+    // ===== GPU: Color Update =====
+    // Sync particleRestDensity from CPU (computed in updateParticleDensity)
+    gpuSim.updateParams({ particleRestDensity: fluid.particleRestDensity });
+
+    // Upload density computed by CPU
     gpuSim.uploadGridDensity(fluid.particleDensity);
+    // Upload current colors and positions for the color shader
     gpuSim.getBuffers().uploadParticlePos(fluid.particlePos, fluid.numParticles);
     gpuSim.getBuffers().uploadParticleColor(fluid.particleColor, fluid.numParticles);
+
+    // Run GPU color update
     gpuSim.runUpdateColors();
+
+    // Read back GPU colors
+    const gpuColors = await gpuSim.readParticleColors(fluid.numParticles);
+
+    // Convert RGBA back to RGB and update CPU array
+    for (let i = 0; i < fluid.numParticles; i++) {
+      fluid.particleColor[i * 3 + 0] = gpuColors[i * 4 + 0];
+      fluid.particleColor[i * 3 + 1] = gpuColors[i * 4 + 1];
+      fluid.particleColor[i * 3 + 2] = gpuColors[i * 4 + 2];
+    }
+
+    // Update cell colors (CPU - for grid visualization)
+    fluid.updateCellColors();
   }
 
   // ============ MAIN LOOP ============
-  function update(): void {
-    if (!paused) {
-      runSimStep();
+  let isSimulating = false;
+
+  async function update(): Promise<void> {
+    if (!paused && !isSimulating) {
+      isSimulating = true;
+      await runSimStep();
+      isSimulating = false;
     }
 
     // Upload particle data for rendering

@@ -192,6 +192,29 @@ export class GPUFluidSimulation {
   }
 
   /**
+   * Read particle colors back from GPU to CPU (RGBA format).
+   */
+  async readParticleColors(count: number): Promise<Float32Array> {
+    const size = count * 4 * 4; // vec4<f32> per particle
+
+    const stagingBuffer = this.device.createBuffer({
+      size,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(this.buffers.particleColor, 0, stagingBuffer, 0, size);
+    this.device.queue.submit([encoder.finish()]);
+
+    await stagingBuffer.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+    stagingBuffer.unmap();
+    stagingBuffer.destroy();
+
+    return data;
+  }
+
+  /**
    * Clean up resources.
    */
   destroy(): void {
