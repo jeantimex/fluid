@@ -193,7 +193,7 @@ const particleColorFadeShaderWGSL = `
   }
 
   @group(0) @binding(0) var<uniform> uniforms: ColorFadeUniforms;
-  @group(0) @binding(1) var<storage, read_write> colors: array<vec3f>;
+  @group(0) @binding(1) var<storage, read_write> colors: array<f32>;
 
   @compute @workgroup_size(64)
   fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -201,11 +201,10 @@ const particleColorFadeShaderWGSL = `
     if (i >= u32(uniforms.numParticles)) {
       return;
     }
-    var c = colors[i];
-    c.r = clamp(c.r - uniforms.step, 0.0, 1.0);
-    c.g = clamp(c.g - uniforms.step, 0.0, 1.0);
-    c.b = clamp(c.b + uniforms.step, 0.0, 1.0);
-    colors[i] = c;
+    let base = i * 3u;
+    colors[base] = clamp(colors[base] - uniforms.step, 0.0, 1.0);
+    colors[base + 1u] = clamp(colors[base + 1u] - uniforms.step, 0.0, 1.0);
+    colors[base + 2u] = clamp(colors[base + 2u] + uniforms.step, 0.0, 1.0);
   }
 `;
 
@@ -222,7 +221,7 @@ const particleSurfaceTintShaderWGSL = `
   }
 
   @group(0) @binding(0) var<uniform> uniforms: SurfaceTintUniforms;
-  @group(0) @binding(1) var<storage, read_write> colors: array<vec3f>;
+  @group(0) @binding(1) var<storage, read_write> colors: array<f32>;
   @group(0) @binding(2) var<storage, read> positions: array<vec2f>;
   @group(0) @binding(3) var<storage, read> density: array<f32>;
 
@@ -243,7 +242,10 @@ const particleSurfaceTintShaderWGSL = `
     let relDensity = density[u32(cellNr)] / uniforms.restDensity;
 
     if (relDensity < uniforms.threshold) {
-      colors[i] = vec3f(uniforms.bright, uniforms.bright, 1.0);
+      let base = i * 3u;
+      colors[base] = uniforms.bright;
+      colors[base + 1u] = uniforms.bright;
+      colors[base + 2u] = 1.0;
     }
   }
 `;
