@@ -83,12 +83,14 @@ function simulate() {
     enableObstacleCollision: false,
     enableWallCollision: false,
     enableParticleIntegration: false,
+    enableParticleColorAgeFade: false,
   });
   renderer.applyIntegrateParticles(sim.scene);
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
     useGpuState: true,
   });
-  renderer.syncParticlesToCpu(sim.scene);
+  renderer.applyParticleColorFade(sim.scene);
+  renderer.syncParticlesToCpu(sim.scene, { includeColor: true });
 }
 
 async function init() {
@@ -123,6 +125,7 @@ async function init() {
       simulate();
       renderer.draw(sim.scene, sim.simWidth, sim.simHeight, context, {
         useGpuParticles: runtime.simulationBackend === 'gpu',
+        useGpuParticleColors: runtime.simulationBackend === 'gpu',
       });
       stats.end();
     },

@@ -185,6 +185,30 @@ const integrateParticlesShaderWGSL = `
   }
 `;
 
+const particleColorFadeShaderWGSL = `
+  struct ColorFadeUniforms {
+    numParticles: f32,
+    step: f32,
+    _pad0: vec2f,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: ColorFadeUniforms;
+  @group(0) @binding(1) var<storage, read_write> colors: array<vec3f>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u32(uniforms.numParticles)) {
+      return;
+    }
+    var c = colors[i];
+    c.r = clamp(c.r - uniforms.step, 0.0, 1.0);
+    c.g = clamp(c.g - uniforms.step, 0.0, 1.0);
+    c.b = clamp(c.b + uniforms.step, 0.0, 1.0);
+    colors[i] = c;
+  }
+`;
+
 export class WebGPURenderer {
   device: GPUDevice;
   format: GPUTextureFormat;
@@ -193,11 +217,13 @@ export class WebGPURenderer {
   meshPipeline: GPURenderPipeline;
   boundaryCollisionPipeline: GPUComputePipeline;
   integrateParticlesPipeline: GPUComputePipeline;
+  particleColorFadePipeline: GPUComputePipeline;
   
   uniformBuffer: GPUBuffer;
   meshUniformBuffer: GPUBuffer;
   boundaryUniformBuffer: GPUBuffer;
   integrateUniformBuffer: GPUBuffer;
+  particleColorFadeUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   meshBindGroup: GPUBindGroup;
   
@@ -208,6 +234,7 @@ export class WebGPURenderer {
   gridColorBuffer: GPUBuffer | null = null;
   particlePosReadbackBuffer: GPUBuffer | null = null;
   particleVelReadbackBuffer: GPUBuffer | null = null;
+  particleColorReadbackBuffer: GPUBuffer | null = null;
   readbackInFlight = false;
 
   constructor(device: GPUDevice, format: GPUTextureFormat) {
@@ -274,6 +301,14 @@ export class WebGPURenderer {
         entryPoint: 'main',
       },
     });
+    const colorFadeModule = device.createShaderModule({ code: particleColorFadeShaderWGSL });
+    this.particleColorFadePipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: colorFadeModule,
+        entryPoint: 'main',
+      },
+    });
 
     // --- Uniforms ---
     this.uniformBuffer = device.createBuffer({
@@ -290,6 +325,10 @@ export class WebGPURenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.integrateUniformBuffer = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.particleColorFadeUniformBuffer = device.createBuffer({
       size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -453,23 +492,66 @@ export class WebGPURenderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  syncParticlesToCpu(scene: Scene) {
+  applyParticleColorFade(scene: Scene, step: number = 0.01) {
+    const fluid = scene.fluid!;
+    if (!fluid || fluid.numParticles === 0) return;
+
+    this.particleColorBuffer = this.createOrUpdateBuffer(
+      fluid.particleColor,
+      this.particleColorBuffer,
+      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    const colorBuffer = this.particleColorBuffer!;
+
+    const colorFadeData = new Float32Array(4);
+    colorFadeData[0] = fluid.numParticles;
+    colorFadeData[1] = step;
+    this.writeFloat32(this.particleColorFadeUniformBuffer, 0, colorFadeData);
+
+    const colorFadeBindGroup = this.device.createBindGroup({
+      layout: this.particleColorFadePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.particleColorFadeUniformBuffer } },
+        { binding: 1, resource: { buffer: colorBuffer } },
+      ],
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.particleColorFadePipeline);
+    pass.setBindGroup(0, colorFadeBindGroup);
+    pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  syncParticlesToCpu(scene: Scene, options: { includeColor?: boolean } = {}) {
     const fluid = scene.fluid;
     if (!fluid || !this.particlePosBuffer || !this.particleVelBuffer || this.readbackInFlight) return;
+    const includeColor = options.includeColor ?? false;
+    if (includeColor && !this.particleColorBuffer) return;
 
     this.particlePosReadbackBuffer = this.ensureReadbackBuffer(this.particlePosReadbackBuffer, fluid.particlePos.byteLength);
     this.particleVelReadbackBuffer = this.ensureReadbackBuffer(this.particleVelReadbackBuffer, fluid.particleVel.byteLength);
+    if (includeColor) {
+      this.particleColorReadbackBuffer = this.ensureReadbackBuffer(this.particleColorReadbackBuffer, fluid.particleColor.byteLength);
+    }
 
     const encoder = this.device.createCommandEncoder();
     encoder.copyBufferToBuffer(this.particlePosBuffer, 0, this.particlePosReadbackBuffer, 0, fluid.particlePos.byteLength);
     encoder.copyBufferToBuffer(this.particleVelBuffer, 0, this.particleVelReadbackBuffer, 0, fluid.particleVel.byteLength);
+    if (includeColor) {
+      encoder.copyBufferToBuffer(this.particleColorBuffer!, 0, this.particleColorReadbackBuffer!, 0, fluid.particleColor.byteLength);
+    }
     this.device.queue.submit([encoder.finish()]);
 
     this.readbackInFlight = true;
-    Promise.all([
+    const maps: Promise<void>[] = [
       this.particlePosReadbackBuffer.mapAsync(GPUMapMode.READ),
       this.particleVelReadbackBuffer.mapAsync(GPUMapMode.READ),
-    ])
+    ];
+    if (includeColor) maps.push(this.particleColorReadbackBuffer!.mapAsync(GPUMapMode.READ));
+    Promise.all(maps)
       .then(() => {
         const posData = new Float32Array(this.particlePosReadbackBuffer!.getMappedRange());
         const velData = new Float32Array(this.particleVelReadbackBuffer!.getMappedRange());
@@ -477,6 +559,11 @@ export class WebGPURenderer {
         fluid.particleVel.set(velData);
         this.particlePosReadbackBuffer!.unmap();
         this.particleVelReadbackBuffer!.unmap();
+        if (includeColor) {
+          const colorData = new Float32Array(this.particleColorReadbackBuffer!.getMappedRange());
+          fluid.particleColor.set(colorData);
+          this.particleColorReadbackBuffer!.unmap();
+        }
       })
       .finally(() => {
         this.readbackInFlight = false;
@@ -488,11 +575,12 @@ export class WebGPURenderer {
     simWidth: number,
     simHeight: number,
     context: GPUCanvasContext,
-    options: { useGpuParticles?: boolean } = {}
+    options: { useGpuParticles?: boolean; useGpuParticleColors?: boolean } = {}
   ) {
     const fluid = scene.fluid!;
     if (!fluid) return;
     const useGpuParticles = options.useGpuParticles ?? false;
+    const useGpuParticleColors = options.useGpuParticleColors ?? false;
 
     // 1. Update Uniforms
     this.writeFloat32(this.uniformBuffer, 0, new Float32Array([simWidth, simHeight]));
@@ -541,7 +629,13 @@ export class WebGPURenderer {
           GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
         );
       }
-      this.particleColorBuffer = this.createOrUpdateBuffer(fluid.particleColor, this.particleColorBuffer, GPUBufferUsage.VERTEX);
+      if (!useGpuParticleColors || this.particleColorBuffer == null || this.particleColorBuffer.size !== fluid.particleColor.byteLength) {
+        this.particleColorBuffer = this.createOrUpdateBuffer(
+          fluid.particleColor,
+          this.particleColorBuffer,
+          GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+        );
+      }
 
       const pSize = fluid.particleRadius * 2.0;
       this.writeFloat32(this.uniformBuffer, 8, new Float32Array([pSize, 1.0])); // pointSize, drawDisk

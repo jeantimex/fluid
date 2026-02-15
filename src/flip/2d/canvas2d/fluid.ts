@@ -467,13 +467,15 @@ export class FlipFluid {
   /**
    * Updates particle visual colors based on age/density.
    */
-  updateParticleColors() {
+  updateParticleColors(enableAgeFade: boolean = true) {
     const hInv = this.invCellSize;
     for (let i = 0; i < this.numParticles; i++) {
-      const step = 0.01;
-      this.particleColor[3 * i] = clamp(this.particleColor[3 * i] - step, 0.0, 1.0);
-      this.particleColor[3 * i + 1] = clamp(this.particleColor[3 * i + 1] - step, 0.0, 1.0);
-      this.particleColor[3 * i + 2] = clamp(this.particleColor[3 * i + 2] + step, 0.0, 1.0);
+      if (enableAgeFade) {
+        const step = 0.01;
+        this.particleColor[3 * i] = clamp(this.particleColor[3 * i] - step, 0.0, 1.0);
+        this.particleColor[3 * i + 1] = clamp(this.particleColor[3 * i + 1] - step, 0.0, 1.0);
+        this.particleColor[3 * i + 2] = clamp(this.particleColor[3 * i + 2] + step, 0.0, 1.0);
+      }
 
       const x = this.particlePos[2 * i];
       const y = this.particlePos[2 * i + 1];
@@ -528,7 +530,8 @@ export class FlipFluid {
     obstacleVelX: number,
     obstacleVelY: number,
     enableWallCollisions: boolean = true,
-    enableParticleIntegration: boolean = true
+    enableParticleIntegration: boolean = true,
+    enableParticleColorAgeFade: boolean = true
   ) {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
@@ -563,7 +566,7 @@ export class FlipFluid {
       this.transferVelocities(false, flipRatio);
     }
 
-    this.updateParticleColors();
+    this.updateParticleColors(enableParticleColorAgeFade);
     this.updateCellColors();
   }
 }
