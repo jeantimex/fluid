@@ -85,7 +85,10 @@ function simulate() {
     enableParticleIntegration: false,
     enableParticleColorAgeFade: false,
     enableParticleColorSurfaceTint: false,
+    enableParticleSeparation: false,
   });
+  sim.scene.fluid?.buildSpatialHash();
+  renderer.applyParticleSeparation(sim.scene);
   renderer.applyIntegrateParticles(sim.scene);
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
     useGpuState: true,

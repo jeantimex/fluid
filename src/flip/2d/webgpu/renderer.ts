@@ -248,6 +248,69 @@ const particleSurfaceTintShaderWGSL = `
   }
 `;
 
+const particleSeparationShaderWGSL = `
+  struct SeparationUniforms {
+    numParticles: f32,
+    invSpacing: f32,
+    gridNumX: f32,
+    gridNumY: f32,
+    minDist: f32,
+    minDist2: f32,
+    _unused: f32,
+    _pad0: f32,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: SeparationUniforms;
+  @group(0) @binding(1) var<storage, read> positionsIn: array<vec2f>;
+  @group(0) @binding(2) var<storage, read_write> positionsOut: array<vec2f>;
+  @group(0) @binding(3) var<storage, read> firstCellParticle: array<i32>;
+  @group(0) @binding(4) var<storage, read> cellParticleIds: array<i32>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u32(uniforms.numParticles)) {
+      return;
+    }
+
+    var p = positionsIn[i];
+    let pxi = i32(floor(p.x * uniforms.invSpacing));
+    let pyi = i32(floor(p.y * uniforms.invSpacing));
+    let x0 = max(pxi - 1, 0);
+    let y0 = max(pyi - 1, 0);
+    let x1 = min(pxi + 1, i32(uniforms.gridNumX) - 1);
+    let y1 = min(pyi + 1, i32(uniforms.gridNumY) - 1);
+
+    for (var xi = x0; xi <= x1; xi = xi + 1) {
+      for (var yi = y0; yi <= y1; yi = yi + 1) {
+        let cellNr = xi * i32(uniforms.gridNumY) + yi;
+        let firstIdx = firstCellParticle[u32(cellNr)];
+        let lastIdx = firstCellParticle[u32(cellNr + 1)];
+        for (var j = firstIdx; j < lastIdx; j = j + 1) {
+          let id = cellParticleIds[u32(j)];
+          if (id == i32(i)) {
+            continue;
+          }
+          let q = positionsIn[u32(id)];
+          let dx = q.x - p.x;
+          let dy = q.y - p.y;
+          let d2 = dx * dx + dy * dy;
+          if (d2 > uniforms.minDist2 || d2 <= 1e-12) {
+            continue;
+          }
+          let d = sqrt(d2);
+          let correction = (0.5 * (uniforms.minDist - d)) / d;
+          p.x = p.x - dx * correction;
+          p.y = p.y - dy * correction;
+
+        }
+      }
+    }
+
+    positionsOut[i] = p;
+  }
+`;
+
 export class WebGPURenderer {
   device: GPUDevice;
   format: GPUTextureFormat;
@@ -258,6 +321,7 @@ export class WebGPURenderer {
   integrateParticlesPipeline: GPUComputePipeline;
   particleColorFadePipeline: GPUComputePipeline;
   particleSurfaceTintPipeline: GPUComputePipeline;
+  particleSeparationPipeline: GPUComputePipeline;
   
   uniformBuffer: GPUBuffer;
   meshUniformBuffer: GPUBuffer;
@@ -265,6 +329,7 @@ export class WebGPURenderer {
   integrateUniformBuffer: GPUBuffer;
   particleColorFadeUniformBuffer: GPUBuffer;
   particleSurfaceTintUniformBuffer: GPUBuffer;
+  particleSeparationUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   meshBindGroup: GPUBindGroup;
   
@@ -274,6 +339,9 @@ export class WebGPURenderer {
   gridPosBuffer: GPUBuffer | null = null;
   gridColorBuffer: GPUBuffer | null = null;
   particleDensityBuffer: GPUBuffer | null = null;
+  firstCellParticleBuffer: GPUBuffer | null = null;
+  cellParticleIdsBuffer: GPUBuffer | null = null;
+  particlePosScratchBuffer: GPUBuffer | null = null;
   particlePosReadbackBuffer: GPUBuffer | null = null;
   particleVelReadbackBuffer: GPUBuffer | null = null;
   particleColorReadbackBuffer: GPUBuffer | null = null;
@@ -359,6 +427,14 @@ export class WebGPURenderer {
         entryPoint: 'main',
       },
     });
+    const particleSeparationModule = device.createShaderModule({ code: particleSeparationShaderWGSL });
+    this.particleSeparationPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: particleSeparationModule,
+        entryPoint: 'main',
+      },
+    });
 
     // --- Uniforms ---
     this.uniformBuffer = device.createBuffer({
@@ -383,6 +459,10 @@ export class WebGPURenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.particleSurfaceTintUniformBuffer = device.createBuffer({
+      size: 32,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.particleSeparationUniformBuffer = device.createBuffer({
       size: 32,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -431,6 +511,28 @@ export class WebGPURenderer {
       data.byteOffset,
       data.byteLength
     );
+  }
+
+  private createOrUpdateIntBuffer(data: Int32Array, existingBuffer: GPUBuffer | null, usage: GPUBufferUsageFlags): GPUBuffer {
+    if (existingBuffer && existingBuffer.size === data.byteLength) {
+      this.device.queue.writeBuffer(
+        existingBuffer,
+        0,
+        data.buffer as ArrayBuffer,
+        data.byteOffset,
+        data.byteLength
+      );
+      return existingBuffer;
+    }
+    if (existingBuffer) existingBuffer.destroy();
+    const buffer = this.device.createBuffer({
+      size: data.byteLength,
+      usage: usage | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Int32Array(buffer.getMappedRange()).set(data);
+    buffer.unmap();
+    return buffer;
   }
 
   applyBoundaryCollision(
@@ -626,6 +728,66 @@ export class WebGPURenderer {
     pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
     pass.end();
     this.device.queue.submit([encoder.finish()]);
+  }
+
+  applyParticleSeparation(scene: Scene) {
+    const fluid = scene.fluid!;
+    if (!fluid || fluid.numParticles === 0) return;
+
+    this.particlePosBuffer = this.createOrUpdateBuffer(
+      fluid.particlePos,
+      this.particlePosBuffer,
+      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.particlePosScratchBuffer = this.createOrUpdateBuffer(
+      fluid.particlePos,
+      this.particlePosScratchBuffer,
+      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+
+    this.firstCellParticleBuffer = this.createOrUpdateIntBuffer(
+      fluid.firstCellParticle,
+      this.firstCellParticleBuffer,
+      GPUBufferUsage.STORAGE
+    );
+    this.cellParticleIdsBuffer = this.createOrUpdateIntBuffer(
+      fluid.cellParticleIds,
+      this.cellParticleIdsBuffer,
+      GPUBufferUsage.STORAGE
+    );
+
+    const minDist = 2.0 * fluid.particleRadius;
+    const separationData = new Float32Array(8);
+    separationData[0] = fluid.numParticles;
+    separationData[1] = fluid.spatialGridInvSpacing;
+    separationData[2] = fluid.spatialGridNumX;
+    separationData[3] = fluid.spatialGridNumY;
+    separationData[4] = minDist;
+    separationData[5] = minDist * minDist;
+    this.writeFloat32(this.particleSeparationUniformBuffer, 0, separationData);
+
+    const bindGroup = this.device.createBindGroup({
+      layout: this.particleSeparationPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.particleSeparationUniformBuffer } },
+        { binding: 1, resource: { buffer: this.particlePosBuffer! } },
+        { binding: 2, resource: { buffer: this.particlePosScratchBuffer! } },
+        { binding: 3, resource: { buffer: this.firstCellParticleBuffer! } },
+        { binding: 4, resource: { buffer: this.cellParticleIdsBuffer! } },
+      ],
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.particleSeparationPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
+
+    const posTmp = this.particlePosBuffer;
+    this.particlePosBuffer = this.particlePosScratchBuffer;
+    this.particlePosScratchBuffer = posTmp;
   }
 
   syncParticlesToCpu(scene: Scene, options: { includeColor?: boolean } = {}) {

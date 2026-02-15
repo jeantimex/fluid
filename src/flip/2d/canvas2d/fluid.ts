@@ -123,36 +123,7 @@ export class FlipFluid {
    */
   pushParticlesApart(numIters: number) {
     const colorDiffusionCoeff = 0.001;
-    this.numCellParticles.fill(0);
-
-    // 1. Sort particles into spatial grid cells
-    for (let i = 0; i < this.numParticles; i++) {
-      const x = this.particlePos[2 * i];
-      const y = this.particlePos[2 * i + 1];
-      const xi = clamp(Math.floor(x * this.spatialGridInvSpacing), 0, this.spatialGridNumX - 1);
-      const yi = clamp(Math.floor(y * this.spatialGridInvSpacing), 0, this.spatialGridNumY - 1);
-      const cellNr = xi * this.spatialGridNumY + yi;
-      this.numCellParticles[cellNr]++;
-    }
-
-    // 2. Build prefix sums for fast cell access
-    let first = 0;
-    for (let i = 0; i < this.spatialGridTotalCells; i++) {
-      first += this.numCellParticles[i];
-      this.firstCellParticle[i] = first;
-    }
-    this.firstCellParticle[this.spatialGridTotalCells] = first;
-
-    // 3. Fill the sorted ID array
-    for (let i = 0; i < this.numParticles; i++) {
-      const x = this.particlePos[2 * i];
-      const y = this.particlePos[2 * i + 1];
-      const xi = clamp(Math.floor(x * this.spatialGridInvSpacing), 0, this.spatialGridNumX - 1);
-      const yi = clamp(Math.floor(y * this.spatialGridInvSpacing), 0, this.spatialGridNumY - 1);
-      const cellNr = xi * this.spatialGridNumY + yi;
-      this.firstCellParticle[cellNr]--;
-      this.cellParticleIds[this.firstCellParticle[cellNr]] = i;
-    }
+    this.buildSpatialHash();
 
     // 4. Resolve collisions iteratively
     const minDist = 2.0 * this.particleRadius;
@@ -211,6 +182,39 @@ export class FlipFluid {
           }
         }
       }
+    }
+  }
+
+  buildSpatialHash() {
+    this.numCellParticles.fill(0);
+
+    // 1. Sort particles into spatial grid cells
+    for (let i = 0; i < this.numParticles; i++) {
+      const x = this.particlePos[2 * i];
+      const y = this.particlePos[2 * i + 1];
+      const xi = clamp(Math.floor(x * this.spatialGridInvSpacing), 0, this.spatialGridNumX - 1);
+      const yi = clamp(Math.floor(y * this.spatialGridInvSpacing), 0, this.spatialGridNumY - 1);
+      const cellNr = xi * this.spatialGridNumY + yi;
+      this.numCellParticles[cellNr]++;
+    }
+
+    // 2. Build prefix sums for fast cell access
+    let first = 0;
+    for (let i = 0; i < this.spatialGridTotalCells; i++) {
+      first += this.numCellParticles[i];
+      this.firstCellParticle[i] = first;
+    }
+    this.firstCellParticle[this.spatialGridTotalCells] = first;
+
+    // 3. Fill the sorted ID array
+    for (let i = 0; i < this.numParticles; i++) {
+      const x = this.particlePos[2 * i];
+      const y = this.particlePos[2 * i + 1];
+      const xi = clamp(Math.floor(x * this.spatialGridInvSpacing), 0, this.spatialGridNumX - 1);
+      const yi = clamp(Math.floor(y * this.spatialGridInvSpacing), 0, this.spatialGridNumY - 1);
+      const cellNr = xi * this.spatialGridNumY + yi;
+      this.firstCellParticle[cellNr]--;
+      this.cellParticleIds[this.firstCellParticle[cellNr]] = i;
     }
   }
 
@@ -532,7 +536,8 @@ export class FlipFluid {
     enableWallCollisions: boolean = true,
     enableParticleIntegration: boolean = true,
     enableParticleColorAgeFade: boolean = true,
-    enableParticleColorSurfaceTint: boolean = true
+    enableParticleColorSurfaceTint: boolean = true,
+    enableParticleSeparation: boolean = true
   ) {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
@@ -544,7 +549,7 @@ export class FlipFluid {
       }
       
       // 2. Neighbor Search & Particle-Particle collision
-      if (separateParticles) this.pushParticlesApart(numParticleIters);
+      if (separateParticles && enableParticleSeparation) this.pushParticlesApart(numParticleIters);
       
       // 3. Boundary handling
       this.handleParticleCollisions(
