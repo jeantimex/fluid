@@ -1,9 +1,17 @@
 import { Scene } from '../canvas2d/types';
 
-export function simulateScene(scene: Scene) {
+interface SimulateSceneOptions {
+  enableObstacleCollision?: boolean;
+}
+
+export function simulateScene(scene: Scene, options: SimulateSceneOptions = {}) {
   if (scene.paused || !scene.fluid) return;
 
-  const obstacleRadius = scene.showObstacle ? scene.obstacleRadius : 0;
+  const enableObstacleCollision = options.enableObstacleCollision ?? true;
+  const obstacleRadius = enableObstacleCollision && scene.showObstacle ? scene.obstacleRadius : 0;
+  const obstacleVelX = enableObstacleCollision ? scene.obstacleVelX : 0.0;
+  const obstacleVelY = enableObstacleCollision ? scene.obstacleVelY : 0.0;
+
   scene.fluid.simulate(
     scene.dt,
     scene.gravity,
@@ -16,7 +24,7 @@ export function simulateScene(scene: Scene) {
     scene.obstacleX,
     scene.obstacleY,
     obstacleRadius,
-    scene.obstacleVelX,
-    scene.obstacleVelY
+    obstacleVelX,
+    obstacleVelY
   );
 }

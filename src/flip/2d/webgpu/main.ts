@@ -79,7 +79,7 @@ function simulate() {
     return;
   }
 
-  simulateScene(sim.scene);
+  simulateScene(sim.scene, { enableObstacleCollision: false });
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight);
 }
 
