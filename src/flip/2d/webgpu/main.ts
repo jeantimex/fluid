@@ -92,6 +92,7 @@ async function simulate() {
   renderer.buildGridDensity(sim.scene, { useGpuState: true });
   renderer.buildCellTypes(sim.scene);
   renderer.prepareGridSolverState(sim.scene);
+  renderer.applyPressureSkeleton(sim.scene);
   renderer.applyParticleColorFade(sim.scene, 0.01, { useGpuState: true });
   renderer.applyParticleSurfaceTint(sim.scene, 0.7, 0.8, {
     useGpuState: true,

@@ -450,6 +450,81 @@ const buildCellTypesShaderWGSL = `
   }
 `;
 
+const clearPressureShaderWGSL = `
+  struct ClearPressureUniforms {
+    totalCells: u32,
+    _pad0: vec3u,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: ClearPressureUniforms;
+  @group(0) @binding(1) var<storage, read_write> pressure: array<f32>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= uniforms.totalCells) {
+      return;
+    }
+    pressure[i] = 0.0;
+  }
+`;
+
+const pressureJacobiShaderWGSL = `
+  struct PressureUniforms {
+    numX: u32,
+    numY: u32,
+    _pad0: vec2u,
+    pressureScale: f32,
+    overRelaxation: f32,
+    _pad1: vec2f,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: PressureUniforms;
+  @group(0) @binding(1) var<storage, read> solidMask: array<f32>;
+  @group(0) @binding(2) var<storage, read> cellType: array<i32>;
+  @group(0) @binding(3) var<storage, read_write> velocityX: array<f32>;
+  @group(0) @binding(4) var<storage, read_write> velocityY: array<f32>;
+  @group(0) @binding(5) var<storage, read_write> pressure: array<f32>;
+
+  @compute @workgroup_size(8, 8, 1)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    let j = gid.y;
+    if (i <= 0u || i >= uniforms.numX - 1u || j <= 0u || j >= uniforms.numY - 1u) {
+      return;
+    }
+    let nY = uniforms.numY;
+    let center = i * nY + j;
+    if (cellType[center] != 0) { // FLUID
+      return;
+    }
+
+    let left = (i - 1u) * nY + j;
+    let right = (i + 1u) * nY + j;
+    let bottom = i * nY + (j - 1u);
+    let top = i * nY + (j + 1u);
+
+    let sx0 = solidMask[left];
+    let sx1 = solidMask[right];
+    let sy0 = solidMask[bottom];
+    let sy1 = solidMask[top];
+    let sSum = sx0 + sx1 + sy0 + sy1;
+    if (sSum == 0.0) {
+      return;
+    }
+
+    let divergence = velocityX[right] - velocityX[center] + velocityY[top] - velocityY[center];
+    let p = -divergence / sSum;
+    let relaxedP = p * uniforms.overRelaxation;
+
+    pressure[center] = pressure[center] + uniforms.pressureScale * relaxedP;
+    velocityX[center] = velocityX[center] - sx0 * relaxedP;
+    velocityX[right] = velocityX[right] + sx1 * relaxedP;
+    velocityY[center] = velocityY[center] - sy0 * relaxedP;
+    velocityY[top] = velocityY[top] + sy1 * relaxedP;
+  }
+`;
+
 export class WebGPURenderer {
   device: GPUDevice;
   format: GPUTextureFormat;
@@ -466,6 +541,8 @@ export class WebGPURenderer {
   p2gCellCountPipeline: GPUComputePipeline;
   cellCountsToDensityPipeline: GPUComputePipeline;
   buildCellTypesPipeline: GPUComputePipeline;
+  clearPressurePipeline: GPUComputePipeline;
+  pressureJacobiPipeline: GPUComputePipeline;
   
   uniformBuffer: GPUBuffer;
   meshUniformBuffer: GPUBuffer;
@@ -479,6 +556,8 @@ export class WebGPURenderer {
   p2gUniformBuffer: GPUBuffer;
   densityUniformBuffer: GPUBuffer;
   cellTypesUniformBuffer: GPUBuffer;
+  clearPressureUniformBuffer: GPUBuffer;
+  pressureUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   meshBindGroup: GPUBindGroup;
   
@@ -634,6 +713,22 @@ export class WebGPURenderer {
         entryPoint: 'main',
       },
     });
+    const clearPressureModule = device.createShaderModule({ code: clearPressureShaderWGSL });
+    this.clearPressurePipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: clearPressureModule,
+        entryPoint: 'main',
+      },
+    });
+    const pressureJacobiModule = device.createShaderModule({ code: pressureJacobiShaderWGSL });
+    this.pressureJacobiPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: pressureJacobiModule,
+        entryPoint: 'main',
+      },
+    });
 
     // --- Uniforms ---
     this.uniformBuffer = device.createBuffer({
@@ -683,6 +778,14 @@ export class WebGPURenderer {
     });
     this.cellTypesUniformBuffer = device.createBuffer({
       size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.clearPressureUniformBuffer = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.pressureUniformBuffer = device.createBuffer({
+      size: 32,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -1007,6 +1110,58 @@ export class WebGPURenderer {
       this.pressureBuffer,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
+  }
+
+  applyPressureSkeleton(scene: Scene) {
+    const fluid = scene.fluid;
+    if (!fluid || !this.velocityXBuffer || !this.velocityYBuffer || !this.pressureBuffer) return;
+    if (!this.solidMaskBuffer || !this.cellTypeBuffer) return;
+
+    const clearUniform = new Uint32Array(4);
+    clearUniform[0] = fluid.totalCells;
+    this.device.queue.writeBuffer(this.clearPressureUniformBuffer, 0, clearUniform);
+
+    const clearBindGroup = this.device.createBindGroup({
+      layout: this.clearPressurePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.clearPressureUniformBuffer } },
+        { binding: 1, resource: { buffer: this.pressureBuffer } },
+      ],
+    });
+
+    const pressureScale = (fluid.density * fluid.cellSize) / scene.dt;
+    const pressureUniform = new Float32Array(8);
+    pressureUniform[0] = fluid.numX;
+    pressureUniform[1] = fluid.numY;
+    pressureUniform[4] = pressureScale;
+    pressureUniform[5] = scene.overRelaxation;
+    this.writeFloat32(this.pressureUniformBuffer, 0, pressureUniform);
+
+    const jacobiBindGroup = this.device.createBindGroup({
+      layout: this.pressureJacobiPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.pressureUniformBuffer } },
+        { binding: 1, resource: { buffer: this.solidMaskBuffer } },
+        { binding: 2, resource: { buffer: this.cellTypeBuffer } },
+        { binding: 3, resource: { buffer: this.velocityXBuffer } },
+        { binding: 4, resource: { buffer: this.velocityYBuffer } },
+        { binding: 5, resource: { buffer: this.pressureBuffer } },
+      ],
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    const clearPass = encoder.beginComputePass();
+    clearPass.setPipeline(this.clearPressurePipeline);
+    clearPass.setBindGroup(0, clearBindGroup);
+    clearPass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
+    clearPass.end();
+
+    const jacobiPass = encoder.beginComputePass();
+    jacobiPass.setPipeline(this.pressureJacobiPipeline);
+    jacobiPass.setBindGroup(0, jacobiBindGroup);
+    jacobiPass.dispatchWorkgroups(Math.ceil(fluid.numX / 8), Math.ceil(fluid.numY / 8));
+    jacobiPass.end();
+    this.device.queue.submit([encoder.finish()]);
   }
 
   applyBoundaryCollision(
