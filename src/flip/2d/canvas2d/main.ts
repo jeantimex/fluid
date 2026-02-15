@@ -3,7 +3,7 @@ import { setupGui } from './gui';
 import { Scene } from './types';
 import { Renderer } from './renderer';
 import { applyObstacleToScene, createDefaultScene, setupFluidScene } from '../core/scene';
-import { clientToWorld } from '../core/input';
+import { bindObstaclePointerControls } from '../core/interaction';
 
 const canvas = document.getElementById("myCanvas") as HTMLCanvasElement;
 const gl = canvas.getContext("webgl")!;
@@ -41,36 +41,12 @@ function resize() {
   setupScene();
 }
 
-let mouseDown = false;
-function startDrag(x: number, y: number) {
-  const world = clientToWorld(canvas, cScale, x, y);
-  mouseDown = true;
-  setObstacle(world.x, world.y, true);
-  scene.paused = false;
-}
-
-function drag(x: number, y: number) {
-  if (mouseDown) {
-    const world = clientToWorld(canvas, cScale, x, y);
-    setObstacle(world.x, world.y, false);
-  }
-}
-
-function endDrag() {
-  mouseDown = false;
-  scene.obstacleVelX = 0.0;
-  scene.obstacleVelY = 0.0;
-}
-
-canvas.addEventListener("mousedown", (e) => startDrag(e.clientX, e.clientY));
-window.addEventListener("mouseup", () => endDrag());
-canvas.addEventListener("mousemove", (e) => drag(e.clientX, e.clientY));
-canvas.addEventListener("touchstart", (e) => startDrag(e.touches[0].clientX, e.touches[0].clientY));
-canvas.addEventListener("touchend", () => endDrag());
-canvas.addEventListener("touchmove", (e) => {
-  e.preventDefault();
-  drag(e.touches[0].clientX, e.touches[0].clientY);
-}, { passive: false });
+bindObstaclePointerControls({
+  canvas,
+  scene,
+  getScale: () => cScale,
+  setObstacle,
+});
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "p") scene.paused = !scene.paused;
