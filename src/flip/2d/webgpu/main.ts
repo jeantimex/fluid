@@ -1,55 +1,58 @@
 /**
  * FLIP Fluid Simulation - WebGPU Implementation
  *
- * Main entry point that wires together all components:
- * - WebGPU initialization
- * - FlipFluid simulation (CPU)
- * - GPU rendering
- * - User interaction
- * - UI controls
+ * Step 4: Add simulation (particles fall and splash)
  */
 
 import { initWebGPU } from './webgpu_utils';
-import { createScene, SceneConfig } from './scene';
 import { FlipFluid } from './flip_fluid';
-import { FlipRenderer } from './renderer';
-import { Interaction } from './interaction';
+import diskShader from './shaders/disk.wgsl?raw';
+import particleShader from './shaders/particle.wgsl?raw';
 
-/**
- * Setup the fluid simulation with dam break initial conditions.
- */
-function setupFluid(simWidth: number, simHeight: number): FlipFluid {
+async function main(): Promise<void> {
+  // Get canvas and set size
+  const canvas = document.getElementById('myCanvas') as HTMLCanvasElement;
+  canvas.width = window.innerWidth - 40;
+  canvas.height = window.innerHeight - 100;
+
+  // Simulation dimensions
+  const simHeight = 3.0;
+  const simWidth = (canvas.width / canvas.height) * simHeight;
+
+  console.log('Simulation domain:', simWidth.toFixed(2), 'x', simHeight);
+
+  // Initialize WebGPU
+  const { device, context, format } = await initWebGPU(canvas);
+  console.log('WebGPU initialized!');
+
+  // ============ FLUID SIMULATION SETUP ============
   const res = 100;
-  const tankHeight = simHeight;
-  const tankWidth = simWidth;
-  const h = tankHeight / res;
+  const h = simHeight / res;
+  const particleRadius = 0.3 * h;
   const density = 1000.0;
 
+  // Dam-break particle placement
   const relWaterHeight = 0.8;
   const relWaterWidth = 0.6;
-
-  // Particle radius relative to cell size
-  const r = 0.3 * h;
-  const dx = 2.0 * r;
+  const dx = 2.0 * particleRadius;
   const dy = (Math.sqrt(3.0) / 2.0) * dx;
 
-  // Compute number of particles for dam break
-  const numX = Math.floor((relWaterWidth * tankWidth - 2.0 * h - 2.0 * r) / dx);
-  const numY = Math.floor(
-    (relWaterHeight * tankHeight - 2.0 * h - 2.0 * r) / dy
-  );
+  const numX = Math.floor((relWaterWidth * simWidth - 2.0 * h - 2.0 * particleRadius) / dx);
+  const numY = Math.floor((relWaterHeight * simHeight - 2.0 * h - 2.0 * particleRadius) / dy);
   const maxParticles = numX * numY;
 
-  // Create fluid
-  const fluid = new FlipFluid(density, tankWidth, tankHeight, h, r, maxParticles);
+  console.log('Creating fluid with', maxParticles, 'particles');
 
-  // Place particles in dam-break configuration (hexagonal packing)
-  fluid.numParticles = numX * numY;
+  // Create fluid simulation
+  const fluid = new FlipFluid(density, simWidth, simHeight, h, particleRadius, maxParticles);
+
+  // Initialize particles
+  fluid.numParticles = maxParticles;
   let p = 0;
   for (let i = 0; i < numX; i++) {
     for (let j = 0; j < numY; j++) {
-      fluid.particlePos[p++] = h + r + dx * i + (j % 2 === 0 ? 0.0 : r);
-      fluid.particlePos[p++] = h + r + dy * j;
+      fluid.particlePos[p++] = h + particleRadius + dx * i + (j % 2 === 0 ? 0.0 : particleRadius);
+      fluid.particlePos[p++] = h + particleRadius + dy * j;
     }
   }
 
@@ -65,255 +68,241 @@ function setupFluid(simWidth: number, simHeight: number): FlipFluid {
     }
   }
 
-  return fluid;
-}
+  console.log('Fluid grid:', fluid.fNumX, 'x', fluid.fNumY, 'cells');
 
-/**
- * Update obstacle cells in the grid based on obstacle position.
- */
-function setObstacle(
-  fluid: FlipFluid,
-  x: number,
-  y: number,
-  vx: number,
-  vy: number,
-  radius: number
-): void {
-  const n = fluid.fNumY;
+  // Simulation parameters
+  const gravity = -9.81;
+  const dt = 1.0 / 60.0;
+  const flipRatio = 0.9;
+  const numPressureIters = 50;
+  const numParticleIters = 2;
+  const overRelaxation = 1.9;
+  const compensateDrift = true;
+  const separateParticles = true;
 
-  for (let i = 1; i < fluid.fNumX - 2; i++) {
-    for (let j = 1; j < fluid.fNumY - 2; j++) {
-      fluid.s[i * n + j] = 1.0; // Reset to fluid
+  // Obstacle parameters
+  let obstacleX = 3.0;
+  let obstacleY = 2.0;
+  const obstacleRadius = 0.15;
 
-      const dx = (i + 0.5) * fluid.h - x;
-      const dy = (j + 0.5) * fluid.h - y;
+  // Set initial obstacle
+  function setObstacle(x: number, y: number, vx: number, vy: number): void {
+    for (let i = 1; i < fluid.fNumX - 2; i++) {
+      for (let j = 1; j < fluid.fNumY - 2; j++) {
+        fluid.s[i * n + j] = 1.0;
 
-      if (dx * dx + dy * dy < radius * radius) {
-        fluid.s[i * n + j] = 0.0; // Mark as solid
-        fluid.u[i * n + j] = vx;
-        fluid.u[(i + 1) * n + j] = vx;
-        fluid.v[i * n + j] = vy;
-        fluid.v[i * n + j + 1] = vy;
+        const dx = (i + 0.5) * fluid.h - x;
+        const dy = (j + 0.5) * fluid.h - y;
+
+        if (dx * dx + dy * dy < obstacleRadius * obstacleRadius) {
+          fluid.s[i * n + j] = 0.0;
+          fluid.u[i * n + j] = vx;
+          fluid.u[(i + 1) * n + j] = vx;
+          fluid.v[i * n + j] = vy;
+          fluid.v[i * n + j + 1] = vy;
+        }
       }
     }
   }
-}
 
-/**
- * Setup UI control event handlers.
- */
-function setupUIControls(scene: SceneConfig): void {
-  const showParticlesEl = document.getElementById(
-    'showParticles'
-  ) as HTMLInputElement;
-  const showGridEl = document.getElementById('showGrid') as HTMLInputElement;
-  const compensateDriftEl = document.getElementById(
-    'compensateDrift'
-  ) as HTMLInputElement;
-  const separateParticlesEl = document.getElementById(
-    'separateParticles'
-  ) as HTMLInputElement;
-  const flipRatioEl = document.getElementById('flipRatio') as HTMLInputElement;
+  setObstacle(obstacleX, obstacleY, 0, 0);
 
-  showParticlesEl.addEventListener('change', () => {
-    scene.showParticles = showParticlesEl.checked;
+  // ============ GPU BUFFERS ============
+  const particlePosBuffer = device.createBuffer({
+    size: maxParticles * 2 * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
 
-  showGridEl.addEventListener('change', () => {
-    scene.showGrid = showGridEl.checked;
+  const particleColorBuffer = device.createBuffer({
+    size: maxParticles * 3 * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
 
-  compensateDriftEl.addEventListener('change', () => {
-    scene.compensateDrift = compensateDriftEl.checked;
+  const particleUniforms = device.createBuffer({
+    size: 16,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  device.queue.writeBuffer(particleUniforms, 0, new Float32Array([
+    simWidth, simHeight, 2.0 * particleRadius, 0,
+  ]));
+
+  // Particle pipeline
+  const particleBindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+      { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+    ],
   });
 
-  separateParticlesEl.addEventListener('change', () => {
-    scene.separateParticles = separateParticlesEl.checked;
-  });
-
-  flipRatioEl.addEventListener('input', () => {
-    scene.flipRatio = 0.1 * parseInt(flipRatioEl.value);
-  });
-}
-
-/**
- * Setup mouse, touch, and keyboard event handlers.
- */
-function setupEventListeners(
-  canvas: HTMLCanvasElement,
-  interaction: Interaction,
-  scene: SceneConfig,
-  simulate: () => void
-): void {
-  // Mouse events
-  canvas.addEventListener('mousedown', (event) => {
-    interaction.startDrag(event.clientX, event.clientY);
-    scene.paused = false;
-  });
-
-  canvas.addEventListener('mouseup', () => {
-    interaction.endDrag();
-  });
-
-  canvas.addEventListener('mousemove', (event) => {
-    interaction.drag(event.clientX, event.clientY);
-  });
-
-  // Touch events
-  canvas.addEventListener('touchstart', (event) => {
-    interaction.startDrag(
-      event.touches[0].clientX,
-      event.touches[0].clientY
-    );
-    scene.paused = false;
-  });
-
-  canvas.addEventListener('touchend', () => {
-    interaction.endDrag();
-  });
-
-  canvas.addEventListener(
-    'touchmove',
-    (event) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      interaction.drag(event.touches[0].clientX, event.touches[0].clientY);
+  const particlePipeline = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [particleBindGroupLayout] }),
+    vertex: {
+      module: device.createShaderModule({ code: particleShader }),
+      entryPoint: 'vs_main',
     },
-    { passive: false }
-  );
+    fragment: {
+      module: device.createShaderModule({ code: particleShader }),
+      entryPoint: 'fs_main',
+      targets: [{ format }],
+    },
+    primitive: { topology: 'triangle-strip' },
+  });
 
-  // Keyboard events
+  const particleBindGroup = device.createBindGroup({
+    layout: particleBindGroupLayout,
+    entries: [
+      { binding: 0, resource: { buffer: particleUniforms } },
+      { binding: 1, resource: { buffer: particlePosBuffer } },
+      { binding: 2, resource: { buffer: particleColorBuffer } },
+    ],
+  });
+
+  // ============ DISK SETUP ============
+  const numSegs = 50;
+  const diskVerts = new Float32Array((numSegs + 1) * 2);
+  const dphi = (2.0 * Math.PI) / numSegs;
+
+  diskVerts[0] = 0.0;
+  diskVerts[1] = 0.0;
+  for (let i = 0; i < numSegs; i++) {
+    diskVerts[(i + 1) * 2] = Math.cos(i * dphi);
+    diskVerts[(i + 1) * 2 + 1] = Math.sin(i * dphi);
+  }
+
+  const diskVertexBuffer = device.createBuffer({
+    size: diskVerts.byteLength,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+  device.queue.writeBuffer(diskVertexBuffer, 0, diskVerts);
+
+  const diskIds = new Uint16Array(numSegs * 3);
+  let idx = 0;
+  for (let i = 0; i < numSegs; i++) {
+    diskIds[idx++] = 0;
+    diskIds[idx++] = i + 1;
+    diskIds[idx++] = ((i + 1) % numSegs) + 1;
+  }
+
+  const diskIndexBuffer = device.createBuffer({
+    size: diskIds.byteLength,
+    usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+  });
+  device.queue.writeBuffer(diskIndexBuffer, 0, diskIds);
+
+  const diskUniforms = device.createBuffer({
+    size: 48,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const diskBindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+    ],
+  });
+
+  const diskPipeline = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [diskBindGroupLayout] }),
+    vertex: {
+      module: device.createShaderModule({ code: diskShader }),
+      entryPoint: 'vs_main',
+    },
+    fragment: {
+      module: device.createShaderModule({ code: diskShader }),
+      entryPoint: 'fs_main',
+      targets: [{ format }],
+    },
+    primitive: { topology: 'triangle-list' },
+  });
+
+  const diskBindGroup = device.createBindGroup({
+    layout: diskBindGroupLayout,
+    entries: [
+      { binding: 0, resource: { buffer: diskUniforms } },
+      { binding: 1, resource: { buffer: diskVertexBuffer } },
+    ],
+  });
+
+  // ============ SIMULATION STATE ============
+  let paused = false;
+
+  // Keyboard controls
   document.addEventListener('keydown', (event) => {
-    switch (event.key) {
-      case 'p':
-        scene.paused = !scene.paused;
-        break;
-      case 'm':
-        scene.paused = false;
-        simulate();
-        scene.paused = true;
-        break;
+    if (event.key === 'p') {
+      paused = !paused;
+      console.log(paused ? 'Paused' : 'Running');
     }
   });
-}
 
-/**
- * Main application entry point.
- */
-async function main(): Promise<void> {
-  // Get canvas and set size
-  const canvas = document.getElementById('myCanvas') as HTMLCanvasElement;
-  canvas.width = window.innerWidth - 40;
-  canvas.height = window.innerHeight - 100;
-  canvas.focus();
+  console.log("Press 'p' to pause/unpause. Simulation starting...");
 
-  // Initialize WebGPU
-  const webgpu = await initWebGPU(canvas);
-
-  // Compute simulation dimensions
-  const simHeight = 3.0;
-  const cScale = canvas.height / simHeight;
-  const simWidth = canvas.width / cScale;
-
-  // Create scene configuration
-  const scene = createScene();
-
-  // Setup fluid simulation
-  const fluid = setupFluid(simWidth, simHeight);
-
-  // Create renderer
-  const renderer = new FlipRenderer(webgpu, fluid, simWidth, simHeight);
-
-  // Setup interaction
-  const interaction = new Interaction(canvas, simHeight, scene.dt);
-  interaction.setObstaclePosition(3.0, 2.0);
-
-  // Set initial obstacle
-  setObstacle(
-    fluid,
-    interaction.getObstaclePosition().x,
-    interaction.getObstaclePosition().y,
-    0,
-    0,
-    scene.obstacleRadius
-  );
-
-  // Simulation function
-  const simulate = (): void => {
-    const obsPos = interaction.getObstaclePosition();
-    const obsVel = interaction.getObstacleVelocity();
-
-    // Update obstacle in grid
-    setObstacle(
-      fluid,
-      obsPos.x,
-      obsPos.y,
-      obsVel.vx,
-      obsVel.vy,
-      scene.obstacleRadius
-    );
-
-    // Run simulation step
-    fluid.simulate(
-      scene.dt,
-      scene.gravity,
-      scene.flipRatio,
-      scene.numPressureIters,
-      scene.numParticleIters,
-      scene.overRelaxation,
-      scene.compensateDrift,
-      scene.separateParticles,
-      obsPos.x,
-      obsPos.y,
-      scene.obstacleRadius,
-      obsVel.vx,
-      obsVel.vy
-    );
-  };
-
-  // Setup event listeners
-  setupEventListeners(canvas, interaction, scene, simulate);
-  setupUIControls(scene);
-
-  // Main render loop
+  // ============ MAIN LOOP ============
   function update(): void {
-    // Simulate if not paused
-    if (!scene.paused) {
-      simulate();
-      scene.frameNr++;
+    // Run simulation step
+    if (!paused) {
+      setObstacle(obstacleX, obstacleY, 0, 0);
+
+      fluid.simulate(
+        dt, gravity, flipRatio,
+        numPressureIters, numParticleIters,
+        overRelaxation, compensateDrift, separateParticles,
+        obstacleX, obstacleY, obstacleRadius,
+        0, 0 // obstacle velocity
+      );
     }
 
-    // Update GPU buffers from CPU simulation
-    renderer.updateBuffers(fluid);
+    // Upload particle data to GPU
+    device.queue.writeBuffer(particlePosBuffer, 0, fluid.particlePos.buffer, 0, fluid.numParticles * 2 * 4);
+    device.queue.writeBuffer(particleColorBuffer, 0, fluid.particleColor.buffer, 0, fluid.numParticles * 3 * 4);
 
-    // Get obstacle position for rendering
-    const obsPos = interaction.getObstaclePosition();
+    // Update disk uniforms
+    device.queue.writeBuffer(diskUniforms, 0, new Float32Array([
+      simWidth, simHeight,
+      obstacleX, obstacleY,
+      obstacleRadius + particleRadius, 0, 0, 0,
+      1.0, 0.0, 0.0, 0,
+    ]));
 
     // Render
-    renderer.render(
-      fluid,
-      scene.showParticles,
-      scene.showGrid,
-      obsPos.x,
-      obsPos.y,
-      scene.obstacleRadius
-    );
+    const commandEncoder = device.createCommandEncoder();
+    const textureView = context.getCurrentTexture().createView();
+
+    const renderPass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: textureView,
+        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+        loadOp: 'clear',
+        storeOp: 'store',
+      }],
+    });
+
+    // Draw particles
+    renderPass.setPipeline(particlePipeline);
+    renderPass.setBindGroup(0, particleBindGroup);
+    renderPass.draw(4, fluid.numParticles);
+
+    // Draw disk
+    renderPass.setPipeline(diskPipeline);
+    renderPass.setBindGroup(0, diskBindGroup);
+    renderPass.setIndexBuffer(diskIndexBuffer, 'uint16');
+    renderPass.drawIndexed(numSegs * 3);
+
+    renderPass.end();
+    device.queue.submit([commandEncoder.finish()]);
 
     requestAnimationFrame(update);
   }
 
-  // Start the render loop
   update();
 }
 
-// Run main
 main().catch((error) => {
-  console.error('Failed to initialize FLIP simulation:', error);
+  console.error('Failed to initialize:', error);
   document.body.innerHTML = `
     <div style="color: red; padding: 20px;">
-      <h2>WebGPU Initialization Failed</h2>
+      <h2>Error</h2>
       <p>${error.message}</p>
-      <p>Make sure you're using a browser that supports WebGPU (Chrome 113+, Edge 113+, or Firefox Nightly with flags).</p>
     </div>
   `;
 });
