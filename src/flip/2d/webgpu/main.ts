@@ -1,7 +1,7 @@
 /**
  * FLIP Fluid Simulation - WebGPU Implementation
  *
- * Step 4: Add simulation (particles fall and splash)
+ * Step 5: Add mouse interaction (drag obstacle to push water)
  */
 
 import { initWebGPU } from './webgpu_utils';
@@ -17,7 +17,8 @@ async function main(): Promise<void> {
 
   // Simulation dimensions
   const simHeight = 3.0;
-  const simWidth = (canvas.width / canvas.height) * simHeight;
+  const cScale = canvas.height / simHeight;
+  const simWidth = canvas.width / cScale;
 
   console.log('Simulation domain:', simWidth.toFixed(2), 'x', simHeight);
 
@@ -73,28 +74,30 @@ async function main(): Promise<void> {
   // Simulation parameters
   const gravity = -9.81;
   const dt = 1.0 / 60.0;
-  const flipRatio = 0.9;
+  let flipRatio = 0.9;
   const numPressureIters = 50;
   const numParticleIters = 2;
   const overRelaxation = 1.9;
-  const compensateDrift = true;
-  const separateParticles = true;
+  let compensateDrift = true;
+  let separateParticles = true;
 
-  // Obstacle parameters
+  // Obstacle state
   let obstacleX = 3.0;
   let obstacleY = 2.0;
+  let obstacleVelX = 0.0;
+  let obstacleVelY = 0.0;
   const obstacleRadius = 0.15;
 
-  // Set initial obstacle
+  // Set obstacle in grid
   function setObstacle(x: number, y: number, vx: number, vy: number): void {
     for (let i = 1; i < fluid.fNumX - 2; i++) {
       for (let j = 1; j < fluid.fNumY - 2; j++) {
         fluid.s[i * n + j] = 1.0;
 
-        const dx = (i + 0.5) * fluid.h - x;
-        const dy = (j + 0.5) * fluid.h - y;
+        const cellDx = (i + 0.5) * fluid.h - x;
+        const cellDy = (j + 0.5) * fluid.h - y;
 
-        if (dx * dx + dy * dy < obstacleRadius * obstacleRadius) {
+        if (cellDx * cellDx + cellDy * cellDy < obstacleRadius * obstacleRadius) {
           fluid.s[i * n + j] = 0.0;
           fluid.u[i * n + j] = vx;
           fluid.u[(i + 1) * n + j] = vx;
@@ -106,6 +109,74 @@ async function main(): Promise<void> {
   }
 
   setObstacle(obstacleX, obstacleY, 0, 0);
+
+  // ============ SIMULATION STATE ============
+  let paused = true;
+
+  // ============ MOUSE INTERACTION ============
+  let mouseDown = false;
+
+  function clientToSim(clientX: number, clientY: number): { x: number; y: number } {
+    const bounds = canvas.getBoundingClientRect();
+    const mx = clientX - bounds.left;
+    const my = clientY - bounds.top;
+    return {
+      x: mx / cScale,
+      y: (canvas.height - my) / cScale,
+    };
+  }
+
+  canvas.addEventListener('mousedown', (event) => {
+    mouseDown = true;
+    paused = false; // Auto-unpause on click
+    const pos = clientToSim(event.clientX, event.clientY);
+    obstacleX = pos.x;
+    obstacleY = pos.y;
+    obstacleVelX = 0;
+    obstacleVelY = 0;
+  });
+
+  canvas.addEventListener('mouseup', () => {
+    mouseDown = false;
+    obstacleVelX = 0;
+    obstacleVelY = 0;
+  });
+
+  canvas.addEventListener('mousemove', (event) => {
+    if (!mouseDown) return;
+    const pos = clientToSim(event.clientX, event.clientY);
+    obstacleVelX = (pos.x - obstacleX) / dt;
+    obstacleVelY = (pos.y - obstacleY) / dt;
+    obstacleX = pos.x;
+    obstacleY = pos.y;
+  });
+
+  // Touch support
+  canvas.addEventListener('touchstart', (event) => {
+    mouseDown = true;
+    paused = false; // Auto-unpause on touch
+    const pos = clientToSim(event.touches[0].clientX, event.touches[0].clientY);
+    obstacleX = pos.x;
+    obstacleY = pos.y;
+    obstacleVelX = 0;
+    obstacleVelY = 0;
+  });
+
+  canvas.addEventListener('touchend', () => {
+    mouseDown = false;
+    obstacleVelX = 0;
+    obstacleVelY = 0;
+  });
+
+  canvas.addEventListener('touchmove', (event) => {
+    event.preventDefault();
+    if (!mouseDown) return;
+    const pos = clientToSim(event.touches[0].clientX, event.touches[0].clientY);
+    obstacleVelX = (pos.x - obstacleX) / dt;
+    obstacleVelY = (pos.y - obstacleY) / dt;
+    obstacleX = pos.x;
+    obstacleY = pos.y;
+  }, { passive: false });
 
   // ============ GPU BUFFERS ============
   const particlePosBuffer = device.createBuffer({
@@ -224,32 +295,69 @@ async function main(): Promise<void> {
     ],
   });
 
-  // ============ SIMULATION STATE ============
-  let paused = false;
+  // ============ UI CONTROLS ============
+  let showParticles = true;
 
-  // Keyboard controls
+  // Keyboard
   document.addEventListener('keydown', (event) => {
     if (event.key === 'p') {
       paused = !paused;
       console.log(paused ? 'Paused' : 'Running');
+    } else if (event.key === 'm') {
+      // Single step
+      paused = false;
+      runSimStep();
+      paused = true;
     }
   });
 
-  console.log("Press 'p' to pause/unpause. Simulation starting...");
+  // UI checkboxes
+  const showParticlesEl = document.getElementById('showParticles') as HTMLInputElement;
+  const compensateDriftEl = document.getElementById('compensateDrift') as HTMLInputElement;
+  const separateParticlesEl = document.getElementById('separateParticles') as HTMLInputElement;
+  const flipRatioEl = document.getElementById('flipRatio') as HTMLInputElement;
+
+  if (showParticlesEl) {
+    showParticlesEl.addEventListener('change', () => {
+      showParticles = showParticlesEl.checked;
+    });
+  }
+  if (compensateDriftEl) {
+    compensateDriftEl.addEventListener('change', () => {
+      compensateDrift = compensateDriftEl.checked;
+    });
+  }
+  if (separateParticlesEl) {
+    separateParticlesEl.addEventListener('change', () => {
+      separateParticles = separateParticlesEl.checked;
+    });
+  }
+  if (flipRatioEl) {
+    flipRatioEl.addEventListener('input', () => {
+      flipRatio = 0.1 * parseInt(flipRatioEl.value);
+    });
+  }
+
+  console.log("Drag to move obstacle. Press 'p' to pause, 'm' to step.");
+
+  // ============ SIMULATION ============
+  function runSimStep(): void {
+    setObstacle(obstacleX, obstacleY, obstacleVelX, obstacleVelY);
+
+    fluid.simulate(
+      dt, gravity, flipRatio,
+      numPressureIters, numParticleIters,
+      overRelaxation, compensateDrift, separateParticles,
+      obstacleX, obstacleY, obstacleRadius,
+      obstacleVelX, obstacleVelY
+    );
+  }
 
   // ============ MAIN LOOP ============
   function update(): void {
-    // Run simulation step
+    // Run simulation if not paused
     if (!paused) {
-      setObstacle(obstacleX, obstacleY, 0, 0);
-
-      fluid.simulate(
-        dt, gravity, flipRatio,
-        numPressureIters, numParticleIters,
-        overRelaxation, compensateDrift, separateParticles,
-        obstacleX, obstacleY, obstacleRadius,
-        0, 0 // obstacle velocity
-      );
+      runSimStep();
     }
 
     // Upload particle data to GPU
@@ -278,9 +386,11 @@ async function main(): Promise<void> {
     });
 
     // Draw particles
-    renderPass.setPipeline(particlePipeline);
-    renderPass.setBindGroup(0, particleBindGroup);
-    renderPass.draw(4, fluid.numParticles);
+    if (showParticles) {
+      renderPass.setPipeline(particlePipeline);
+      renderPass.setBindGroup(0, particleBindGroup);
+      renderPass.draw(4, fluid.numParticles);
+    }
 
     // Draw disk
     renderPass.setPipeline(diskPipeline);
