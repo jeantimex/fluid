@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FLIP Fluid - WebGPU</title>
+    <style>
+      body {
+        font-family: verdana;
+        font-size: 15px;
+        margin: 0;
+        padding: 10px;
+        background: #1a1a1a;
+        color: #ffffff;
+      }
+      .controls {
+        margin-bottom: 10px;
+      }
+      .controls label {
+        margin-right: 15px;
+        cursor: pointer;
+      }
+      .slider {
+        -webkit-appearance: none;
+        width: 80px;
+        height: 6px;
+        border-radius: 5px;
+        background: #d3d3d3;
+        outline: none;
+        opacity: 0.7;
+        -webkit-transition: 0.2s;
+        transition: opacity 0.2s;
+        vertical-align: middle;
+      }
+      .slider:hover {
+        opacity: 1;
+      }
+      canvas {
+        border: 2px solid #444;
+        display: block;
+      }
+      .info {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #888;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <label>
+        <input type="checkbox" id="showParticles" checked /> Particles
+      </label>
+      <label>
+        <input type="checkbox" id="showGrid" /> Grid
+      </label>
+      <label>
+        <input type="checkbox" id="compensateDrift" checked /> Compensate Drift
+      </label>
+      <label>
+        <input type="checkbox" id="separateParticles" checked /> Separate
+        Particles
+      </label>
+      <span style="margin-left: 10px">
+        PIC
+        <input
+          type="range"
+          min="0"
+          max="10"
+          value="9"
+          class="slider"
+          id="flipRatio"
+        />
+        FLIP
+      </span>
+    </div>
+    <canvas id="myCanvas"></canvas>
+    <div class="info">
+      <p>
+        Drag to move obstacle | Press 'p' to pause/unpause | Press 'm' to step
+      </p>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
