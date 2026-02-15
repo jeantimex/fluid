@@ -685,8 +685,7 @@ interface Scene {
   obstacleVelY: number;
   showParticles: boolean;
   showGrid: boolean;
-  particleCountX: number;
-  particleCountY: number;
+  particleCount: number;
   fluid: FlipFluid | null;
 }
 
@@ -707,8 +706,7 @@ const scene: Scene = {
   obstacleVelY: 0.0,
   showParticles: true,
   showGrid: false,
-  particleCountX: 40,
-  particleCountY: 80,
+  particleCount: 3200,
   fluid: null,
 };
 
@@ -741,9 +739,9 @@ function setupScene() {
   const dx_spawn = 2.0 * r;
   const dy_spawn = (Math.sqrt(3.0) / 2.0) * dx_spawn;
 
-  // Use fixed particle counts for consistency
-  const numX = scene.particleCountX;
-  const numY = scene.particleCountY;
+  // Calculate numX and numY to be close to a square shape
+  const numX = Math.round(Math.sqrt(scene.particleCount * (dy_spawn / dx_spawn)));
+  const numY = Math.floor(scene.particleCount / numX);
   const maxParticles = numX * numY;
 
   // create fluid

@@ -421,8 +421,12 @@ export function setupGui(
   solverFolder.add(scene, 'overRelaxation', 1, 2, 0.01).name('Over Relaxation');
 
   const setupFolder = gui.addFolder('Fluid Setup');
-  setupFolder.add(scene, 'particleCountX', 10, 200, 1).name('Particles X');
-  setupFolder.add(scene, 'particleCountY', 10, 200, 1).name('Particles Y');
+  setupFolder
+    .add(scene, 'particleCount', 100, 10000, 100)
+    .name('Particle Count')
+    .onChange(() => {
+      if (callbacks.onReset) callbacks.onReset();
+    });
 
   const performanceFolder = gui.addFolder('Performance');
   performanceFolder
