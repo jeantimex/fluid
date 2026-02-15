@@ -170,43 +170,45 @@ export class Renderer {
     }
 
     // --- Obstacle (Disk) ---
-    const numSegs = 50;
-    if (this.diskVertBuffer == null) {
-      this.diskVertBuffer = gl.createBuffer();
-      const dphi = (2.0 * Math.PI) / numSegs;
-      const diskVerts = new Float32Array(2 * numSegs + 2);
-      let p_idx = 0;
-      diskVerts[p_idx++] = 0.0; diskVerts[p_idx++] = 0.0;
-      for (let i = 0; i < numSegs; i++) {
-        diskVerts[p_idx++] = Math.cos(i * dphi);
-        diskVerts[p_idx++] = Math.sin(i * dphi);
+    if (scene.showObstacle) {
+      const numSegs = 50;
+      if (this.diskVertBuffer == null) {
+        this.diskVertBuffer = gl.createBuffer();
+        const dphi = (2.0 * Math.PI) / numSegs;
+        const diskVerts = new Float32Array(2 * numSegs + 2);
+        let p_idx = 0;
+        diskVerts[p_idx++] = 0.0; diskVerts[p_idx++] = 0.0;
+        for (let i = 0; i < numSegs; i++) {
+          diskVerts[p_idx++] = Math.cos(i * dphi);
+          diskVerts[p_idx++] = Math.sin(i * dphi);
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.diskVertBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, diskVerts, gl.STATIC_DRAW);
+
+        this.diskIdBuffer = gl.createBuffer();
+        const diskIds = new Uint16Array(3 * numSegs);
+        p_idx = 0;
+        for (let i = 0; i < numSegs; i++) {
+          diskIds[p_idx++] = 0; diskIds[p_idx++] = 1 + i; diskIds[p_idx++] = 1 + ((i + 1) % numSegs);
+        }
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.diskIdBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, diskIds, gl.STATIC_DRAW);
       }
+
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      gl.useProgram(this.meshShader);
+      gl.uniform2f(gl.getUniformLocation(this.meshShader, "domainSize"), simWidth, simHeight);
+      gl.uniform3f(gl.getUniformLocation(this.meshShader, "color"), 1.0, 0.0, 0.0);
+      gl.uniform2f(gl.getUniformLocation(this.meshShader, "translation"), scene.obstacleX, scene.obstacleY);
+      gl.uniform1f(gl.getUniformLocation(this.meshShader, "scale"), scene.obstacleRadius);
+
+      const meshPosLoc = gl.getAttribLocation(this.meshShader, "attrPosition");
+      gl.enableVertexAttribArray(meshPosLoc);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.diskVertBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, diskVerts, gl.STATIC_DRAW);
-
-      this.diskIdBuffer = gl.createBuffer();
-      const diskIds = new Uint16Array(3 * numSegs);
-      p_idx = 0;
-      for (let i = 0; i < numSegs; i++) {
-        diskIds[p_idx++] = 0; diskIds[p_idx++] = 1 + i; diskIds[p_idx++] = 1 + ((i + 1) % numSegs);
-      }
+      gl.vertexAttribPointer(meshPosLoc, 2, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.diskIdBuffer);
-      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, diskIds, gl.STATIC_DRAW);
+      gl.drawElements(gl.TRIANGLES, 3 * numSegs, gl.UNSIGNED_SHORT, 0);
+      gl.disableVertexAttribArray(meshPosLoc);
     }
-
-    gl.clear(gl.DEPTH_BUFFER_BIT);
-    gl.useProgram(this.meshShader);
-    gl.uniform2f(gl.getUniformLocation(this.meshShader, "domainSize"), simWidth, simHeight);
-    gl.uniform3f(gl.getUniformLocation(this.meshShader, "color"), 1.0, 0.0, 0.0);
-    gl.uniform2f(gl.getUniformLocation(this.meshShader, "translation"), scene.obstacleX, scene.obstacleY);
-    gl.uniform1f(gl.getUniformLocation(this.meshShader, "scale"), scene.obstacleRadius);
-
-    const meshPosLoc = gl.getAttribLocation(this.meshShader, "attrPosition");
-    gl.enableVertexAttribArray(meshPosLoc);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.diskVertBuffer);
-    gl.vertexAttribPointer(meshPosLoc, 2, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.diskIdBuffer);
-    gl.drawElements(gl.TRIANGLES, 3 * numSegs, gl.UNSIGNED_SHORT, 0);
-    gl.disableVertexAttribArray(meshPosLoc);
   }
 }

@@ -21,6 +21,7 @@ export interface Scene {
   obstacleVelY: number;
   showParticles: boolean;
   showGrid: boolean;
+  showObstacle: boolean;
   particleCount: number;
   particleRadiusScale: number;
   fluid: FlipFluid | null;

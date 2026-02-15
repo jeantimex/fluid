@@ -31,6 +31,7 @@ const scene: Scene = {
   obstacleVelY: 0.0,
   showParticles: true,
   showGrid: false,
+  showObstacle: true,
   particleCount: 15000,
   particleRadiusScale: 0.3,
   fluid: null,
@@ -85,7 +86,7 @@ function setupScene() {
   setObstacle(simWidth * 0.75, simHeight * 0.5, true);
 }
 
-function setObstacle(x: number, y: number, reset: boolean) {
+export function setObstacle(x: number, y: number, reset: boolean) {
   let vx = 0.0;
   let vy = 0.0;
   if (!reset) {
@@ -94,8 +95,11 @@ function setObstacle(x: number, y: number, reset: boolean) {
   }
   scene.obstacleX = x;
   scene.obstacleY = y;
-  const r_obstacle = scene.obstacleRadius;
+  
+  const r_obstacle = scene.showObstacle ? scene.obstacleRadius : 0;
   const f_val = scene.fluid!;
+  if (!f_val) return;
+
   const n_y = f_val.numY;
 
   for (let i = 1; i < f_val.numX - 2; i++) {
@@ -103,7 +107,7 @@ function setObstacle(x: number, y: number, reset: boolean) {
       f_val.solidMask[i * n_y + j] = 1.0;
       const dx = (i + 0.5) * f_val.cellSize - x;
       const dy = (j + 0.5) * f_val.cellSize - y;
-      if (dx * dx + dy * dy < r_obstacle * r_obstacle) {
+      if (r_obstacle > 0 && dx * dx + dy * dy < r_obstacle * r_obstacle) {
         f_val.solidMask[i * n_y + j] = 0.0;
         f_val.velocityX[i * n_y + j] = vx;
         f_val.velocityX[(i + 1) * n_y + j] = vx;
@@ -185,7 +189,13 @@ const guiState = {
   reset: () => setupScene(),
 };
 
-const { stats, gui } = setupGui(scene, { onReset: guiState.reset }, {
+const { stats, gui } = setupGui(
+  scene,
+  {
+    onReset: guiState.reset,
+    onToggleObstacle: () => setObstacle(scene.obstacleX, scene.obstacleY, true),
+  },
+  {
   title: 'Canvas 2D FLIP Fluid',
   subtitle: 'Hybrid FLIP/PIC Fluid Simulation',
   features: ['FLIP/PIC Hybrid Solver', 'Staggered MAC Grid', 'Incompressible Pressure Solver', 'Interactive Obstacle', 'Particle Drift Compensation'],
@@ -202,12 +212,14 @@ let pauseController = gui.add(guiState, 'togglePause').name(scene.paused ? 'Resu
 gui.add(guiState, 'reset').name('Reset Simulation');
 
 function simulate() {
-  if (!scene.paused && scene.fluid)
+  if (!scene.paused && scene.fluid) {
+    const r_obstacle = scene.showObstacle ? scene.obstacleRadius : 0;
     scene.fluid.simulate(
       scene.dt, scene.gravity, scene.flipRatio, scene.numPressureIters, scene.numParticleIters,
       scene.overRelaxation, scene.compensateDrift, scene.separateParticles,
-      scene.obstacleX, scene.obstacleY, scene.obstacleRadius, scene.obstacleVelX, scene.obstacleVelY
+      scene.obstacleX, scene.obstacleY, r_obstacle, scene.obstacleVelX, scene.obstacleVelY
     );
+  }
 }
 
 function update() {

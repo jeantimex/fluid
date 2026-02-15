@@ -3,6 +3,7 @@ import Stats from 'stats-gl';
 
 export interface GuiCallbacks {
   onReset?: () => void;
+  onToggleObstacle?: () => void;
 }
 
 export interface GuiOptions {
@@ -411,6 +412,12 @@ export function setupGui(
   const displayFolder = fluidFolder.addFolder('Display');
   displayFolder.add(scene, 'showParticles').name('Particles');
   displayFolder.add(scene, 'showGrid').name('Grid');
+  displayFolder
+    .add(scene, 'showObstacle')
+    .name('Obstacle')
+    .onChange(() => {
+      if (callbacks.onToggleObstacle) callbacks.onToggleObstacle();
+    });
   
   // Setup (requires reset)
   const setupFolder = fluidFolder.addFolder('Setup');
