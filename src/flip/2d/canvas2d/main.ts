@@ -3,6 +3,7 @@ import { setupGui } from './gui';
 import { Scene } from './types';
 import { Renderer } from './renderer';
 import { applyObstacleToScene, createDefaultScene, setupFluidScene } from '../core/scene';
+import { clientToWorld } from '../core/input';
 
 const canvas = document.getElementById("myCanvas") as HTMLCanvasElement;
 const gl = canvas.getContext("webgl")!;
@@ -42,26 +43,16 @@ function resize() {
 
 let mouseDown = false;
 function startDrag(x: number, y: number) {
-  const bounds = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const mx = (x - bounds.left) * dpr;
-  const my = (y - bounds.top) * dpr;
+  const world = clientToWorld(canvas, cScale, x, y);
   mouseDown = true;
-  const x_world = mx / cScale;
-  const y_world = (canvas.height - my) / cScale;
-  setObstacle(x_world, y_world, true);
+  setObstacle(world.x, world.y, true);
   scene.paused = false;
 }
 
 function drag(x: number, y: number) {
   if (mouseDown) {
-    const bounds = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const mx = (x - bounds.left) * dpr;
-    const my = (y - bounds.top) * dpr;
-    const x_world = mx / cScale;
-    const y_world = (canvas.height - my) / cScale;
-    setObstacle(x_world, y_world, false);
+    const world = clientToWorld(canvas, cScale, x, y);
+    setObstacle(world.x, world.y, false);
   }
 }
 
