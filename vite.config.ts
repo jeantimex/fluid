@@ -41,6 +41,10 @@ export default defineConfig({
           __dirname,
           'src/flip/2d/canvas2d/index.html'
         ),
+        'demo-flip-2d-webgpu': resolve(
+          __dirname,
+          'src/flip/2d/webgpu/index.html'
+        ),
       },
     },
   },
