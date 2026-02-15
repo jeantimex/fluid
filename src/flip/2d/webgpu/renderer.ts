@@ -761,27 +761,27 @@ export class WebGPURenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.hashCountUniformBuffer = device.createBuffer({
-      size: 32,
+      size: 48,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.hashFillUniformBuffer = device.createBuffer({
-      size: 32,
+      size: 48,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.p2gUniformBuffer = device.createBuffer({
-      size: 32,
+      size: 48,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.densityUniformBuffer = device.createBuffer({
-      size: 16,
+      size: 32,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.cellTypesUniformBuffer = device.createBuffer({
-      size: 16,
+      size: 32,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.clearPressureUniformBuffer = device.createBuffer({
-      size: 16,
+      size: 32,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.pressureUniformBuffer = device.createBuffer({
@@ -1471,7 +1471,7 @@ export class WebGPURenderer {
     this.device.queue.submit([encoder.finish()]);
   }
 
-  syncParticlesToCpu(scene: Scene, options: { includeColor?: boolean } = {}) {
+  async syncParticlesToCpu(scene: Scene, options: { includeColor?: boolean } = {}) {
     const fluid = scene.fluid;
     if (!fluid || !this.particlePosBuffer || !this.particleVelBuffer || this.readbackInFlight) return;
     const includeColor = options.includeColor ?? false;
@@ -1492,28 +1492,28 @@ export class WebGPURenderer {
     this.device.queue.submit([encoder.finish()]);
 
     this.readbackInFlight = true;
-    const maps: Promise<void>[] = [
-      this.particlePosReadbackBuffer.mapAsync(GPUMapMode.READ),
-      this.particleVelReadbackBuffer.mapAsync(GPUMapMode.READ),
-    ];
-    if (includeColor) maps.push(this.particleColorReadbackBuffer!.mapAsync(GPUMapMode.READ));
-    Promise.all(maps)
-      .then(() => {
-        const posData = new Float32Array(this.particlePosReadbackBuffer!.getMappedRange());
-        const velData = new Float32Array(this.particleVelReadbackBuffer!.getMappedRange());
-        fluid.particlePos.set(posData);
-        fluid.particleVel.set(velData);
-        this.particlePosReadbackBuffer!.unmap();
-        this.particleVelReadbackBuffer!.unmap();
-        if (includeColor) {
-          const colorData = new Float32Array(this.particleColorReadbackBuffer!.getMappedRange());
-          fluid.particleColor.set(colorData);
-          this.particleColorReadbackBuffer!.unmap();
-        }
-      })
-      .finally(() => {
-        this.readbackInFlight = false;
-      });
+    try {
+      const maps: Promise<void>[] = [
+        this.particlePosReadbackBuffer.mapAsync(GPUMapMode.READ),
+        this.particleVelReadbackBuffer.mapAsync(GPUMapMode.READ),
+      ];
+      if (includeColor) maps.push(this.particleColorReadbackBuffer!.mapAsync(GPUMapMode.READ));
+      await Promise.all(maps);
+
+      const posData = new Float32Array(this.particlePosReadbackBuffer!.getMappedRange());
+      const velData = new Float32Array(this.particleVelReadbackBuffer!.getMappedRange());
+      fluid.particlePos.set(posData);
+      fluid.particleVel.set(velData);
+      this.particlePosReadbackBuffer!.unmap();
+      this.particleVelReadbackBuffer!.unmap();
+      if (includeColor) {
+        const colorData = new Float32Array(this.particleColorReadbackBuffer!.getMappedRange());
+        fluid.particleColor.set(colorData);
+        this.particleColorReadbackBuffer!.unmap();
+      }
+    } finally {
+      this.readbackInFlight = false;
+    }
   }
 
   draw(

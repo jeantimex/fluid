@@ -26,6 +26,7 @@ const setObstacleFn = createSetObstacle(sim.scene);
 const runtime = {
   simulationBackend: 'cpu' as 'cpu' | 'gpu',
   gpuStatePrimed: false,
+  gpuPressureEnabled: true,
 };
 
 function setupScene() {
@@ -82,23 +83,25 @@ async function simulate() {
     return;
   }
 
-  const useGpuState = runtime.gpuStatePrimed;
+  const useGpuState = false;
   renderer.applyIntegrateParticles(sim.scene, { useGpuState });
-  await renderer.buildSpatialHashHybrid(sim.scene, { useGpuState: true });
-  renderer.applyParticleSeparation(sim.scene, sim.scene.numParticleIters, { useGpuState: true });
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
     useGpuState: true,
   });
-  renderer.buildGridDensity(sim.scene, { useGpuState: true });
-  renderer.buildCellTypes(sim.scene);
-  renderer.prepareGridSolverState(sim.scene);
-  renderer.applyPressureSkeleton(sim.scene);
+  await renderer.syncParticlesToCpu(sim.scene);
+  simulateScene(sim.scene, {
+    enableObstacleCollision: false,
+    enableWallCollision: false,
+    enableParticleIntegration: false,
+    enableParticleColorAgeFade: false,
+    enableParticleColorSurfaceTint: false,
+  });
   renderer.applyParticleColorFade(sim.scene, 0.01, { useGpuState: true });
   renderer.applyParticleSurfaceTint(sim.scene, 0.7, 0.8, {
     useGpuState: true,
-    useGpuDensity: true,
+    useGpuDensity: false,
   });
-  runtime.gpuStatePrimed = true;
+  runtime.gpuStatePrimed = false;
 }
 
 async function init() {
@@ -124,6 +127,7 @@ async function init() {
 
   pauseController = addPauseResetControls(gui, guiState, sim.scene);
   gui.add(runtime, 'simulationBackend', ['cpu', 'gpu']).name('Sim Backend');
+  gui.add(runtime, 'gpuPressureEnabled').name('GPU Pressure');
 
   bootstrapWithResize({ resize });
 
