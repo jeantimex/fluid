@@ -487,6 +487,9 @@ export class WebGPURenderer {
   particleColorBuffer: GPUBuffer | null = null;
   gridPosBuffer: GPUBuffer | null = null;
   gridColorBuffer: GPUBuffer | null = null;
+  velocityXBuffer: GPUBuffer | null = null;
+  velocityYBuffer: GPUBuffer | null = null;
+  pressureBuffer: GPUBuffer | null = null;
   particleDensityBuffer: GPUBuffer | null = null;
   firstCellParticleBuffer: GPUBuffer | null = null;
   cellParticleIdsBuffer: GPUBuffer | null = null;
@@ -983,6 +986,27 @@ export class WebGPURenderer {
     pass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
     pass.end();
     this.device.queue.submit([encoder.finish()]);
+  }
+
+  prepareGridSolverState(scene: Scene) {
+    const fluid = scene.fluid;
+    if (!fluid) return;
+
+    this.velocityXBuffer = this.createOrUpdateBuffer(
+      fluid.velocityX,
+      this.velocityXBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.velocityYBuffer = this.createOrUpdateBuffer(
+      fluid.velocityY,
+      this.velocityYBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.pressureBuffer = this.createOrUpdateBuffer(
+      fluid.pressure,
+      this.pressureBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
   }
 
   applyBoundaryCollision(
