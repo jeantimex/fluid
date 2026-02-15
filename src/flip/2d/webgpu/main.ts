@@ -95,7 +95,7 @@ async function simulate() {
   });
   renderer.applyParticleColorFade(sim.scene);
   renderer.applyParticleSurfaceTint(sim.scene);
-  renderer.syncParticlesToCpu(sim.scene, { includeColor: true });
+  renderer.syncParticlesToCpu(sim.scene);
 }
 
 async function init() {
