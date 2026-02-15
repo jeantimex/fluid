@@ -8,6 +8,7 @@ const canvas = document.getElementById("webgpuCanvas") as HTMLCanvasElement;
 let device: GPUDevice;
 let context: GPUCanvasContext;
 let renderer: WebGPURenderer;
+let presentationFormat: GPUTextureFormat;
 
 let simHeight = 3.0;
 let cScale = 300.0;
@@ -127,6 +128,13 @@ function resize() {
   canvas.height = height * dpr;
   canvas.style.width = width + 'px';
   canvas.style.height = height + 'px';
+  if (context) {
+    context.configure({
+      device,
+      format: presentationFormat,
+      alphaMode: 'premultiplied',
+    });
+  }
   
   cScale = 300.0 * dpr;
   simHeight = canvas.height / cScale;
@@ -176,7 +184,16 @@ canvas.addEventListener("touchmove", (e) => {
 }, { passive: false });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "p") scene.paused = !scene.paused;
+  if (e.key === "p") {
+    scene.paused = !scene.paused;
+    pauseController?.name(scene.paused ? 'Resume' : 'Pause');
+  }
+  if (e.key === "m") {
+    scene.paused = false;
+    simulate();
+    scene.paused = true;
+    pauseController?.name('Resume');
+  }
 });
 
 const guiState = {
@@ -189,16 +206,27 @@ const guiState = {
 
 let pauseController: any;
 
+function simulate() {
+  if (!scene.paused && scene.fluid) {
+    const r_obstacle = scene.showObstacle ? scene.obstacleRadius : 0;
+    scene.fluid.simulate(
+      scene.dt, scene.gravity, scene.flipRatio, scene.numPressureIters, scene.numParticleIters,
+      scene.overRelaxation, scene.compensateDrift, scene.separateParticles,
+      scene.obstacleX, scene.obstacleY, r_obstacle, scene.obstacleVelX, scene.obstacleVelY
+    );
+  }
+}
+
 async function init() {
   if (!navigator.gpu) throw new Error("WebGPU not supported");
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) throw new Error("No GPU adapter found");
   device = await adapter.requestDevice();
   context = canvas.getContext("webgpu")!;
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  context.configure({ device, format, alphaMode: 'premultiplied' });
+  presentationFormat = navigator.gpu.getPreferredCanvasFormat();
+  context.configure({ device, format: presentationFormat, alphaMode: 'premultiplied' });
 
-  renderer = new WebGPURenderer(device, format);
+  renderer = new WebGPURenderer(device, presentationFormat);
 
   const { stats, gui } = setupGui(
     scene,
@@ -210,7 +238,7 @@ async function init() {
       title: 'WebGPU FLIP Fluid',
       subtitle: 'Hybrid FLIP/PIC (GPU Render)',
       features: ['WebGPU Renderer', 'FLIP/PIC Solver', 'Staggered MAC Grid', 'Interactive Obstacle'],
-      interactions: ['Click & Drag: Move Obstacle', 'P: Pause/Resume', 'Click Reset to apply Fluid > Setup'],
+      interactions: ['Click & Drag: Move Obstacle', 'P: Pause/Resume', 'M: Step Simulation', 'Click Reset to apply Fluid > Setup'],
       githubUrl: 'https://github.com/jeantimex/fluid',
     }
   );
@@ -220,17 +248,6 @@ async function init() {
 
   resize();
   window.addEventListener("resize", resize);
-
-  function simulate() {
-    if (!scene.paused && scene.fluid) {
-      const r_obstacle = scene.showObstacle ? scene.obstacleRadius : 0;
-      scene.fluid.simulate(
-        scene.dt, scene.gravity, scene.flipRatio, scene.numPressureIters, scene.numParticleIters,
-        scene.overRelaxation, scene.compensateDrift, scene.separateParticles,
-        scene.obstacleX, scene.obstacleY, r_obstacle, scene.obstacleVelX, scene.obstacleVelY
-      );
-    }
-  }
 
   function frame() {
     stats.begin();

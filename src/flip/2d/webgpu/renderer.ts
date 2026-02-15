@@ -190,7 +190,7 @@ export class WebGPURenderer {
 
   private createOrUpdateBuffer(data: Float32Array, existingBuffer: GPUBuffer | null, usage: GPUBufferUsageFlags): GPUBuffer {
     if (existingBuffer && existingBuffer.size === data.byteLength) {
-      this.device.queue.writeBuffer(existingBuffer, 0, data);
+      this.writeFloat32(existingBuffer, 0, data);
       return existingBuffer;
     }
     if (existingBuffer) existingBuffer.destroy();
@@ -204,18 +204,28 @@ export class WebGPURenderer {
     return buffer;
   }
 
+  private writeFloat32(target: GPUBuffer, offset: number, data: Float32Array) {
+    this.device.queue.writeBuffer(
+      target,
+      offset,
+      data.buffer as ArrayBuffer,
+      data.byteOffset,
+      data.byteLength
+    );
+  }
+
   draw(scene: Scene, simWidth: number, simHeight: number, context: GPUCanvasContext) {
     const fluid = scene.fluid!;
     if (!fluid) return;
 
     // 1. Update Uniforms
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, new Float32Array([simWidth, simHeight]));
+    this.writeFloat32(this.uniformBuffer, 0, new Float32Array([simWidth, simHeight]));
 
     const commandEncoder = this.device.createCommandEncoder();
     const renderPass = commandEncoder.beginRenderPass({
       colorAttachments: [{
         view: context.getCurrentTexture().createView(),
-        clearValue: { r: 0.05, g: 0.06, b: 0.08, a: 1.0 },
+        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
         loadOp: 'clear',
         storeOp: 'store',
       }],
@@ -237,7 +247,7 @@ export class WebGPURenderer {
       this.gridColorBuffer = this.createOrUpdateBuffer(fluid.cellColor, this.gridColorBuffer, GPUBufferUsage.VERTEX);
 
       const gridSize = fluid.cellSize * 0.9;
-      this.device.queue.writeBuffer(this.uniformBuffer, 8, new Float32Array([gridSize, 0.0])); // pointSize, drawDisk
+      this.writeFloat32(this.uniformBuffer, 8, new Float32Array([gridSize, 0.0])); // pointSize, drawDisk
 
       renderPass.setPipeline(this.particlePipeline);
       renderPass.setBindGroup(0, this.bindGroup);
@@ -252,7 +262,7 @@ export class WebGPURenderer {
       this.particleColorBuffer = this.createOrUpdateBuffer(fluid.particleColor, this.particleColorBuffer, GPUBufferUsage.VERTEX);
 
       const pSize = fluid.particleRadius * 2.0;
-      this.device.queue.writeBuffer(this.uniformBuffer, 8, new Float32Array([pSize, 1.0])); // pointSize, drawDisk
+      this.writeFloat32(this.uniformBuffer, 8, new Float32Array([pSize, 1.0])); // pointSize, drawDisk
 
       renderPass.setPipeline(this.particlePipeline);
       renderPass.setBindGroup(0, this.bindGroup);
@@ -277,7 +287,7 @@ export class WebGPURenderer {
       meshData[10] = scene.obstacleRadius; // scale (offset 40)
       // meshData[11] is padding
       
-      this.device.queue.writeBuffer(this.meshUniformBuffer, 0, meshData);
+      this.writeFloat32(this.meshUniformBuffer, 0, meshData);
 
       renderPass.setPipeline(this.meshPipeline);
       renderPass.setBindGroup(0, this.meshBindGroup);
@@ -289,6 +299,7 @@ export class WebGPURenderer {
   }
 
   resetGridBuffer() {
+    this.gridPosBuffer?.destroy();
     this.gridPosBuffer = null;
   }
 }
