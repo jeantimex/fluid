@@ -1159,7 +1159,10 @@ export class WebGPURenderer {
     const jacobiPass = encoder.beginComputePass();
     jacobiPass.setPipeline(this.pressureJacobiPipeline);
     jacobiPass.setBindGroup(0, jacobiBindGroup);
-    jacobiPass.dispatchWorkgroups(Math.ceil(fluid.numX / 8), Math.ceil(fluid.numY / 8));
+    const pressureIters = Math.max(1, Math.floor(scene.numPressureIters));
+    for (let iter = 0; iter < pressureIters; iter++) {
+      jacobiPass.dispatchWorkgroups(Math.ceil(fluid.numX / 8), Math.ceil(fluid.numY / 8));
+    }
     jacobiPass.end();
     this.device.queue.submit([encoder.finish()]);
   }
