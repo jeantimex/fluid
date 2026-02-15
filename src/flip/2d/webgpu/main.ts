@@ -426,10 +426,7 @@ async function main(): Promise<void> {
     // Run GPU G2P
     gpuSim.runG2P();
 
-    // G2P transfer (CPU) - keep for comparison
-    fluid.transferVelocities(false, flipRatio);
-
-    // Read back GPU velocities and use them (overwrite CPU results)
+    // G2P transfer (GPU)
     const gpuVelAfterG2P = await gpuSim.readParticleVelocities(fluid.numParticles);
     fluid.particleVel.set(gpuVelAfterG2P);
 
