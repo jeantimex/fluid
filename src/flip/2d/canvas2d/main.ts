@@ -685,6 +685,8 @@ interface Scene {
   obstacleVelY: number;
   showParticles: boolean;
   showGrid: boolean;
+  particleCountX: number;
+  particleCountY: number;
   fluid: FlipFluid | null;
 }
 
@@ -705,6 +707,8 @@ const scene: Scene = {
   obstacleVelY: 0.0,
   showParticles: true,
   showGrid: false,
+  particleCountX: 40,
+  particleCountY: 80,
   fluid: null,
 };
 
@@ -738,8 +742,8 @@ function setupScene() {
   const dy_spawn = (Math.sqrt(3.0) / 2.0) * dx_spawn;
 
   // Use fixed particle counts for consistency
-  const numX = 40;
-  const numY = 80;
+  const numX = scene.particleCountX;
+  const numY = scene.particleCountY;
   const maxParticles = numX * numY;
 
   // create fluid
@@ -1209,7 +1213,8 @@ const { stats, gui } = setupGui(
     interactions: [
       'Click & Drag: Move Obstacle',
       'P: Pause/Resume',
-      'M: Step Simulation'
+      'M: Step Simulation',
+      'Click Reset to apply Fluid Setup'
     ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
