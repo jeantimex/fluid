@@ -192,6 +192,9 @@ async function simulate() {
     if (runtime.gpuPressureEnabled) {
       renderer.applyPressureSkeleton(sim.scene, runtime.gpuPressureIters);
     }
+    if (runtime.gpuFullStep && runtime.gpuP2GVelXEnabled) {
+      renderer.applyGridToParticleVelocities(sim.scene, { useGpuState: true });
+    }
   }
 
   const needsCpuSync = !runtime.gpuFullStep || runtime.gpuDebugReadback || runtime.gpuParityMetrics;

@@ -690,6 +690,110 @@ const clearPressureShaderWGSL = `
   }
 `;
 
+const g2pVelocityShaderWGSL = `
+  struct G2PUniforms {
+    numParticles: u32,
+    numX: u32,
+    numY: u32,
+    _pad0: u32,
+    invCellSize: f32,
+    cellSize: f32,
+    flipRatio: f32,
+    _pad1: f32,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: G2PUniforms;
+  @group(0) @binding(1) var<storage, read> positions: array<vec2f>;
+  @group(0) @binding(2) var<storage, read_write> particleVel: array<vec2f>;
+  @group(0) @binding(3) var<storage, read> cellType: array<i32>;
+  @group(0) @binding(4) var<storage, read> velocityXNew: array<f32>;
+  @group(0) @binding(5) var<storage, read> velocityYNew: array<f32>;
+  @group(0) @binding(6) var<storage, read> velocityXOld: array<f32>;
+  @group(0) @binding(7) var<storage, read> velocityYOld: array<f32>;
+
+  fn transferComponent(
+    p: vec2f,
+    pVelComp: f32,
+    component: u32
+  ) -> f32 {
+    let nY = uniforms.numY;
+    let h = uniforms.cellSize;
+    let hInv = uniforms.invCellSize;
+    let h2 = 0.5 * h;
+    let dx = select(0.0, h2, component == 1u);
+    let dy = select(h2, 0.0, component == 1u);
+
+    var x = clamp(p.x, h, (f32(uniforms.numX) - 1.0) * h);
+    var y = clamp(p.y, h, (f32(uniforms.numY) - 1.0) * h);
+
+    let x0 = min(i32(floor((x - dx) * hInv)), i32(uniforms.numX) - 2);
+    let tx = (x - dx - f32(x0) * h) * hInv;
+    let x1 = min(x0 + 1, i32(uniforms.numX) - 2);
+    let y0 = min(i32(floor((y - dy) * hInv)), i32(uniforms.numY) - 2);
+    let ty = (y - dy - f32(y0) * h) * hInv;
+    let y1 = min(y0 + 1, i32(uniforms.numY) - 2);
+
+    let sx = 1.0 - tx;
+    let sy = 1.0 - ty;
+    let d0 = sx * sy;
+    let d1 = tx * sy;
+    let d2 = tx * ty;
+    let d3 = sx * ty;
+    let nr0 = u32(x0) * nY + u32(y0);
+    let nr1 = u32(x1) * nY + u32(y0);
+    let nr2 = u32(x1) * nY + u32(y1);
+    let nr3 = u32(x0) * nY + u32(y1);
+
+    let offset = select(i32(nY), 1, component == 1u);
+    let valid0 = select(0.0, 1.0, cellType[nr0] != 1 || cellType[u32(i32(nr0) - offset)] != 1);
+    let valid1 = select(0.0, 1.0, cellType[nr1] != 1 || cellType[u32(i32(nr1) - offset)] != 1);
+    let valid2 = select(0.0, 1.0, cellType[nr2] != 1 || cellType[u32(i32(nr2) - offset)] != 1);
+    let valid3 = select(0.0, 1.0, cellType[nr3] != 1 || cellType[u32(i32(nr3) - offset)] != 1);
+
+    let totalWeight = valid0 * d0 + valid1 * d1 + valid2 * d2 + valid3 * d3;
+    if (totalWeight <= 0.0) {
+      return pVelComp;
+    }
+
+    let new0 = select(velocityXNew[nr0], velocityYNew[nr0], component == 1u);
+    let new1 = select(velocityXNew[nr1], velocityYNew[nr1], component == 1u);
+    let new2 = select(velocityXNew[nr2], velocityYNew[nr2], component == 1u);
+    let new3 = select(velocityXNew[nr3], velocityYNew[nr3], component == 1u);
+    let old0 = select(velocityXOld[nr0], velocityYOld[nr0], component == 1u);
+    let old1 = select(velocityXOld[nr1], velocityYOld[nr1], component == 1u);
+    let old2 = select(velocityXOld[nr2], velocityYOld[nr2], component == 1u);
+    let old3 = select(velocityXOld[nr3], velocityYOld[nr3], component == 1u);
+
+    let picVel = (
+      valid0 * d0 * new0 +
+      valid1 * d1 * new1 +
+      valid2 * d2 * new2 +
+      valid3 * d3 * new3
+    ) / totalWeight;
+    let deltaVel = (
+      valid0 * d0 * (new0 - old0) +
+      valid1 * d1 * (new1 - old1) +
+      valid2 * d2 * (new2 - old2) +
+      valid3 * d3 * (new3 - old3)
+    ) / totalWeight;
+    let flipVel = pVelComp + deltaVel;
+    return (1.0 - uniforms.flipRatio) * picVel + uniforms.flipRatio * flipVel;
+  }
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= uniforms.numParticles) {
+      return;
+    }
+    let p = positions[i];
+    var pv = particleVel[i];
+    pv.x = transferComponent(p, pv.x, 0u);
+    pv.y = transferComponent(p, pv.y, 1u);
+    particleVel[i] = pv;
+  }
+`;
+
 const pressureDivergenceShaderWGSL = `
   struct PressureUniforms {
     numX: u32,
@@ -876,6 +980,7 @@ export class WebGPURenderer {
   p2gVelocityXScatterPipeline: GPUComputePipeline;
   p2gVelocityXNormalizePipeline: GPUComputePipeline;
   p2gVelocityYScatterPipeline: GPUComputePipeline;
+  g2pVelocityPipeline: GPUComputePipeline;
   pressureDivergencePipeline: GPUComputePipeline;
   pressureProjectPipeline: GPUComputePipeline;
   clearPressurePipeline: GPUComputePipeline;
@@ -896,6 +1001,7 @@ export class WebGPURenderer {
   p2gVelocityXUniformBuffer: GPUBuffer;
   p2gVelocityXNormalizeUniformBuffer: GPUBuffer;
   p2gVelocityYUniformBuffer: GPUBuffer;
+  g2pVelocityUniformBuffer: GPUBuffer;
   clearPressureUniformBuffer: GPUBuffer;
   pressureUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
@@ -908,6 +1014,8 @@ export class WebGPURenderer {
   gridColorBuffer: GPUBuffer | null = null;
   velocityXBuffer: GPUBuffer | null = null;
   velocityYBuffer: GPUBuffer | null = null;
+  velocityXPrevBuffer: GPUBuffer | null = null;
+  velocityYPrevBuffer: GPUBuffer | null = null;
   velocityXScratchBuffer: GPUBuffer | null = null;
   velocityYScratchBuffer: GPUBuffer | null = null;
   pressureBuffer: GPUBuffer | null = null;
@@ -1085,6 +1193,14 @@ export class WebGPURenderer {
         entryPoint: 'main',
       },
     });
+    const g2pVelocityModule = device.createShaderModule({ code: g2pVelocityShaderWGSL });
+    this.g2pVelocityPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: g2pVelocityModule,
+        entryPoint: 'main',
+      },
+    });
     const pressureDivergenceModule = device.createShaderModule({ code: pressureDivergenceShaderWGSL });
     this.pressureDivergencePipeline = device.createComputePipeline({
       layout: 'auto',
@@ -1177,6 +1293,10 @@ export class WebGPURenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.p2gVelocityYUniformBuffer = device.createBuffer({
+      size: 48,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.g2pVelocityUniformBuffer = device.createBuffer({
       size: 48,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -1564,6 +1684,16 @@ export class WebGPURenderer {
       this.velocityYBuffer,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
+    this.velocityXPrevBuffer = this.createOrUpdateBuffer(
+      new Float32Array(fluid.totalCells),
+      this.velocityXPrevBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.velocityYPrevBuffer = this.createOrUpdateBuffer(
+      new Float32Array(fluid.totalCells),
+      this.velocityYPrevBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
     this.p2gVelocityXAccumBuffer = this.createOrUpdateIntBuffer(
       new Int32Array(fluid.totalCells),
       this.p2gVelocityXAccumBuffer,
@@ -1672,6 +1802,71 @@ export class WebGPURenderer {
     normalizeYPass.setBindGroup(0, normalizeYBindGroup);
     normalizeYPass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
     normalizeYPass.end();
+    encoder.copyBufferToBuffer(this.velocityXBuffer, 0, this.velocityXPrevBuffer!, 0, fluid.totalCells * Float32Array.BYTES_PER_ELEMENT);
+    encoder.copyBufferToBuffer(this.velocityYBuffer, 0, this.velocityYPrevBuffer!, 0, fluid.totalCells * Float32Array.BYTES_PER_ELEMENT);
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  applyGridToParticleVelocities(scene: Scene, options: { useGpuState?: boolean } = {}) {
+    const fluid = scene.fluid;
+    if (!fluid || fluid.numParticles === 0) return;
+    const useGpuState = options.useGpuState ?? false;
+    if (
+      !this.velocityXBuffer ||
+      !this.velocityYBuffer ||
+      !this.velocityXPrevBuffer ||
+      !this.velocityYPrevBuffer ||
+      !this.cellTypeBuffer
+    ) return;
+
+    const canReuseGpuState =
+      useGpuState &&
+      this.particlePosBuffer != null &&
+      this.particleVelBuffer != null &&
+      this.particlePosBuffer.size === fluid.particlePos.byteLength &&
+      this.particleVelBuffer.size === fluid.particleVel.byteLength;
+    if (!canReuseGpuState) {
+      this.particlePosBuffer = this.createOrUpdateBuffer(
+        fluid.particlePos,
+        this.particlePosBuffer,
+        GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+      this.particleVelBuffer = this.createOrUpdateBuffer(
+        fluid.particleVel,
+        this.particleVelBuffer,
+        GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+    }
+
+    const g2pData = new Float32Array(8);
+    g2pData[0] = fluid.numParticles;
+    g2pData[1] = fluid.numX;
+    g2pData[2] = fluid.numY;
+    g2pData[4] = fluid.invCellSize;
+    g2pData[5] = fluid.cellSize;
+    g2pData[6] = scene.flipRatio;
+    this.writeFloat32(this.g2pVelocityUniformBuffer, 0, g2pData);
+
+    const bindGroup = this.device.createBindGroup({
+      layout: this.g2pVelocityPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.g2pVelocityUniformBuffer } },
+        { binding: 1, resource: { buffer: this.particlePosBuffer! } },
+        { binding: 2, resource: { buffer: this.particleVelBuffer! } },
+        { binding: 3, resource: { buffer: this.cellTypeBuffer! } },
+        { binding: 4, resource: { buffer: this.velocityXBuffer } },
+        { binding: 5, resource: { buffer: this.velocityYBuffer } },
+        { binding: 6, resource: { buffer: this.velocityXPrevBuffer } },
+        { binding: 7, resource: { buffer: this.velocityYPrevBuffer } },
+      ],
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.g2pVelocityPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+    pass.end();
     this.device.queue.submit([encoder.finish()]);
   }
 
