@@ -3,7 +3,7 @@ import { setupGui } from '../canvas2d/gui';
 import { Scene } from '../canvas2d/types';
 import { FlipFluid } from '../canvas2d/fluid';
 import { WebGPURenderer } from './renderer';
-import { createDefaultScene } from '../core/scene';
+import { applyObstacleToScene, createDefaultScene } from '../core/scene';
 
 const canvas = document.getElementById("webgpuCanvas") as HTMLCanvasElement;
 let device: GPUDevice;
@@ -67,37 +67,7 @@ function setupScene() {
 }
 
 function setObstacle(x: number, y: number, reset: boolean) {
-  let vx = 0.0;
-  let vy = 0.0;
-  if (!reset) {
-    vx = (x - scene.obstacleX) / scene.dt;
-    vy = (y - scene.obstacleY) / scene.dt;
-  }
-  scene.obstacleX = x;
-  scene.obstacleY = y;
-  
-  const r_obstacle = scene.showObstacle ? scene.obstacleRadius : 0;
-  const f_val = scene.fluid;
-  if (!f_val) return;
-
-  const n_y = f_val.numY;
-
-  for (let i = 1; i < f_val.numX - 2; i++) {
-    for (let j = 1; j < f_val.numY - 2; j++) {
-      f_val.solidMask[i * n_y + j] = 1.0;
-      const dx = (i + 0.5) * f_val.cellSize - x;
-      const dy = (j + 0.5) * f_val.cellSize - y;
-      if (r_obstacle > 0 && dx * dx + dy * dy < r_obstacle * r_obstacle) {
-        f_val.solidMask[i * n_y + j] = 0.0;
-        f_val.velocityX[i * n_y + j] = vx;
-        f_val.velocityX[(i + 1) * n_y + j] = vx;
-        f_val.velocityY[i * n_y + j] = vy;
-        f_val.velocityY[i * n_y + j + 1] = vy;
-      }
-    }
-  }
-  scene.obstacleVelX = vx;
-  scene.obstacleVelY = vy;
+  applyObstacleToScene(scene, x, y, reset);
 }
 
 function resize() {
