@@ -82,8 +82,12 @@ function simulate() {
   simulateScene(sim.scene, {
     enableObstacleCollision: false,
     enableWallCollision: false,
+    enableParticleIntegration: false,
   });
-  renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight);
+  renderer.applyIntegrateParticles(sim.scene);
+  renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
+    useGpuState: true,
+  });
   renderer.syncParticlesToCpu(sim.scene);
 }
 

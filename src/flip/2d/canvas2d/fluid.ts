@@ -527,14 +527,17 @@ export class FlipFluid {
     obstacleRadius: number,
     obstacleVelX: number,
     obstacleVelY: number,
-    enableWallCollisions: boolean = true
+    enableWallCollisions: boolean = true,
+    enableParticleIntegration: boolean = true
   ) {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
 
     for (let step = 0; step < numSubSteps; step++) {
       // 1. Prediction (Euler integration)
-      this.integrateParticles(sdt, gravity);
+      if (enableParticleIntegration) {
+        this.integrateParticles(sdt, gravity);
+      }
       
       // 2. Neighbor Search & Particle-Particle collision
       if (separateParticles) this.pushParticlesApart(numParticleIters);

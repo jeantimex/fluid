@@ -157,6 +157,34 @@ const boundaryCollisionShaderWGSL = `
   }
 `;
 
+const integrateParticlesShaderWGSL = `
+  struct IntegrateUniforms {
+    dt: f32,
+    gravity: f32,
+    numParticles: f32,
+    _pad0: f32,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: IntegrateUniforms;
+  @group(0) @binding(1) var<storage, read_write> positions: array<vec2f>;
+  @group(0) @binding(2) var<storage, read_write> velocities: array<vec2f>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u32(uniforms.numParticles)) {
+      return;
+    }
+
+    var v = velocities[i];
+    var p = positions[i];
+    v.y = v.y + uniforms.dt * uniforms.gravity;
+    p = p + v * uniforms.dt;
+    velocities[i] = v;
+    positions[i] = p;
+  }
+`;
+
 export class WebGPURenderer {
   device: GPUDevice;
   format: GPUTextureFormat;
@@ -164,10 +192,12 @@ export class WebGPURenderer {
   particlePipeline: GPURenderPipeline;
   meshPipeline: GPURenderPipeline;
   boundaryCollisionPipeline: GPUComputePipeline;
+  integrateParticlesPipeline: GPUComputePipeline;
   
   uniformBuffer: GPUBuffer;
   meshUniformBuffer: GPUBuffer;
   boundaryUniformBuffer: GPUBuffer;
+  integrateUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   meshBindGroup: GPUBindGroup;
   
@@ -236,6 +266,14 @@ export class WebGPURenderer {
         entryPoint: 'main',
       },
     });
+    const integrateModule = device.createShaderModule({ code: integrateParticlesShaderWGSL });
+    this.integrateParticlesPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: integrateModule,
+        entryPoint: 'main',
+      },
+    });
 
     // --- Uniforms ---
     this.uniformBuffer = device.createBuffer({
@@ -249,6 +287,10 @@ export class WebGPURenderer {
     });
     this.boundaryUniformBuffer = device.createBuffer({
       size: 64,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.integrateUniformBuffer = device.createBuffer({
+      size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -298,20 +340,37 @@ export class WebGPURenderer {
     );
   }
 
-  applyBoundaryCollision(scene: Scene, simWidth: number, simHeight: number) {
+  applyBoundaryCollision(
+    scene: Scene,
+    simWidth: number,
+    simHeight: number,
+    options: { useGpuState?: boolean } = {}
+  ) {
     const fluid = scene.fluid!;
     if (!fluid || fluid.numParticles === 0) return;
+    const useGpuState = options.useGpuState ?? false;
 
-    this.particlePosBuffer = this.createOrUpdateBuffer(
-      fluid.particlePos,
-      this.particlePosBuffer,
-      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-    );
-    this.particleVelBuffer = this.createOrUpdateBuffer(
-      fluid.particleVel,
-      this.particleVelBuffer,
-      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-    );
+    const canReuseGpuState =
+      useGpuState &&
+      this.particlePosBuffer != null &&
+      this.particleVelBuffer != null &&
+      this.particlePosBuffer.size === fluid.particlePos.byteLength &&
+      this.particleVelBuffer.size === fluid.particleVel.byteLength;
+
+    if (!canReuseGpuState) {
+      this.particlePosBuffer = this.createOrUpdateBuffer(
+        fluid.particlePos,
+        this.particlePosBuffer,
+        GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+      this.particleVelBuffer = this.createOrUpdateBuffer(
+        fluid.particleVel,
+        this.particleVelBuffer,
+        GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+    }
+    const posBuffer = this.particlePosBuffer!;
+    const velBuffer = this.particleVelBuffer!;
 
     const obstacleRadius = scene.showObstacle ? scene.obstacleRadius : 0.0;
     const minX = fluid.cellSize + fluid.particleRadius;
@@ -339,8 +398,8 @@ export class WebGPURenderer {
       layout: this.boundaryCollisionPipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.boundaryUniformBuffer } },
-        { binding: 1, resource: { buffer: this.particlePosBuffer } },
-        { binding: 2, resource: { buffer: this.particleVelBuffer } },
+        { binding: 1, resource: { buffer: posBuffer } },
+        { binding: 2, resource: { buffer: velBuffer } },
       ],
     });
 
@@ -348,6 +407,47 @@ export class WebGPURenderer {
     const pass = encoder.beginComputePass();
     pass.setPipeline(this.boundaryCollisionPipeline);
     pass.setBindGroup(0, boundaryBindGroup);
+    pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  applyIntegrateParticles(scene: Scene) {
+    const fluid = scene.fluid!;
+    if (!fluid || fluid.numParticles === 0) return;
+
+    this.particlePosBuffer = this.createOrUpdateBuffer(
+      fluid.particlePos,
+      this.particlePosBuffer,
+      GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    this.particleVelBuffer = this.createOrUpdateBuffer(
+      fluid.particleVel,
+      this.particleVelBuffer,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+    const posBuffer = this.particlePosBuffer!;
+    const velBuffer = this.particleVelBuffer!;
+
+    const integrateData = new Float32Array(4);
+    integrateData[0] = scene.dt;
+    integrateData[1] = scene.gravity;
+    integrateData[2] = fluid.numParticles;
+    this.writeFloat32(this.integrateUniformBuffer, 0, integrateData);
+
+    const integrateBindGroup = this.device.createBindGroup({
+      layout: this.integrateParticlesPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.integrateUniformBuffer } },
+        { binding: 1, resource: { buffer: posBuffer } },
+        { binding: 2, resource: { buffer: velBuffer } },
+      ],
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.integrateParticlesPipeline);
+    pass.setBindGroup(0, integrateBindGroup);
     pass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
     pass.end();
     this.device.queue.submit([encoder.finish()]);
