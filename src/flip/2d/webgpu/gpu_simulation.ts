@@ -184,6 +184,75 @@ export class GPUFluidSimulation {
   }
 
   /**
+   * Clear atomic accumulation buffers (needed before P2G).
+   */
+  clearP2GBuffers(): void {
+    const zeros = new Int32Array(this.params.fNumCells);
+    this.device.queue.writeBuffer(this.buffers.gridUAccum, 0, zeros);
+    this.device.queue.writeBuffer(this.buffers.gridVAccum, 0, zeros);
+    this.device.queue.writeBuffer(this.buffers.gridDUAccum, 0, zeros);
+    this.device.queue.writeBuffer(this.buffers.gridDVAccum, 0, zeros);
+  }
+
+  /**
+   * Run P2G (Particle to Grid) transfer on GPU.
+   * This includes: clear grid, mark cells, P2G transfer, normalize.
+   */
+  runP2G(): void {
+    // Clear atomic accumulation buffers
+    this.clearP2GBuffers();
+
+    const encoder = this.device.createCommandEncoder();
+
+    // Step 1: Clear grid velocities and copy to prev
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.clearGridPipeline);
+      pass.setBindGroup(0, this.pipelines.clearGridBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(this.params.fNumCells / this.pipelines.workgroupSize));
+      pass.end();
+    }
+
+    // Step 2: Mark cells as SOLID/AIR based on solid flag
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.markCellsPipeline);
+      pass.setBindGroup(0, this.pipelines.markCellsBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(this.params.fNumCells / this.pipelines.workgroupSize));
+      pass.end();
+    }
+
+    // Step 3: Mark cells as FLUID based on particle positions
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.markFluidPipeline);
+      pass.setBindGroup(0, this.pipelines.markFluidBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(this.params.numParticles / this.pipelines.workgroupSize));
+      pass.end();
+    }
+
+    // Step 4: P2G atomic accumulation
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.p2gPipeline);
+      pass.setBindGroup(0, this.pipelines.p2gBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(this.params.numParticles / this.pipelines.workgroupSize));
+      pass.end();
+    }
+
+    // Step 5: Normalize grid velocities
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.normalizeGridPipeline);
+      pass.setBindGroup(0, this.pipelines.normalizeGridBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(this.params.fNumCells / this.pipelines.workgroupSize));
+      pass.end();
+    }
+
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  /**
    * Run spatial hash computation (hash + count + prefix sum + reorder).
    */
   runSpatialHash(): void {
@@ -320,6 +389,121 @@ export class GPUFluidSimulation {
 
     const encoder = this.device.createCommandEncoder();
     encoder.copyBufferToBuffer(this.buffers.particleColor, 0, stagingBuffer, 0, size);
+    this.device.queue.submit([encoder.finish()]);
+
+    await stagingBuffer.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+    stagingBuffer.unmap();
+    stagingBuffer.destroy();
+
+    return data;
+  }
+
+  /**
+   * Read grid U velocities back from GPU to CPU.
+   */
+  async readGridU(): Promise<Float32Array> {
+    const size = this.params.fNumCells * 4;
+
+    const stagingBuffer = this.device.createBuffer({
+      size,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(this.buffers.gridU, 0, stagingBuffer, 0, size);
+    this.device.queue.submit([encoder.finish()]);
+
+    await stagingBuffer.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+    stagingBuffer.unmap();
+    stagingBuffer.destroy();
+
+    return data;
+  }
+
+  /**
+   * Read grid V velocities back from GPU to CPU.
+   */
+  async readGridV(): Promise<Float32Array> {
+    const size = this.params.fNumCells * 4;
+
+    const stagingBuffer = this.device.createBuffer({
+      size,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(this.buffers.gridV, 0, stagingBuffer, 0, size);
+    this.device.queue.submit([encoder.finish()]);
+
+    await stagingBuffer.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+    stagingBuffer.unmap();
+    stagingBuffer.destroy();
+
+    return data;
+  }
+
+  /**
+   * Read cell types back from GPU to CPU.
+   */
+  async readCellType(): Promise<Int32Array> {
+    const size = this.params.fNumCells * 4;
+
+    const stagingBuffer = this.device.createBuffer({
+      size,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(this.buffers.gridCellType, 0, stagingBuffer, 0, size);
+    this.device.queue.submit([encoder.finish()]);
+
+    await stagingBuffer.mapAsync(GPUMapMode.READ);
+    const data = new Int32Array(stagingBuffer.getMappedRange().slice(0));
+    stagingBuffer.unmap();
+    stagingBuffer.destroy();
+
+    return data;
+  }
+
+  /**
+   * Read previous U velocities back from GPU to CPU.
+   */
+  async readPrevU(): Promise<Float32Array> {
+    const size = this.params.fNumCells * 4;
+
+    const stagingBuffer = this.device.createBuffer({
+      size,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(this.buffers.gridPrevU, 0, stagingBuffer, 0, size);
+    this.device.queue.submit([encoder.finish()]);
+
+    await stagingBuffer.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+    stagingBuffer.unmap();
+    stagingBuffer.destroy();
+
+    return data;
+  }
+
+  /**
+   * Read previous V velocities back from GPU to CPU.
+   */
+  async readPrevV(): Promise<Float32Array> {
+    const size = this.params.fNumCells * 4;
+
+    const stagingBuffer = this.device.createBuffer({
+      size,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(this.buffers.gridPrevV, 0, stagingBuffer, 0, size);
     this.device.queue.submit([encoder.finish()]);
 
     await stagingBuffer.mapAsync(GPUMapMode.READ);

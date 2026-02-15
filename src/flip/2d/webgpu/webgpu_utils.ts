@@ -49,8 +49,15 @@ export async function initWebGPU(
     throw new WebGPUInitError('Unable to acquire a WebGPU adapter.');
   }
 
-  // Request a logical device from the adapter
-  const device = await adapter.requestDevice();
+  // Request a logical device from the adapter with higher limits for compute shaders
+  const device = await adapter.requestDevice({
+    requiredLimits: {
+      maxStorageBuffersPerShaderStage: Math.min(
+        adapter.limits.maxStorageBuffersPerShaderStage,
+        10 // We need 9 for normalize_grid shader
+      ),
+    },
+  });
 
   // Get a WebGPU rendering context from the canvas
   const context = canvas.getContext('webgpu');

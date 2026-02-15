@@ -66,6 +66,12 @@ export class GPUSimulationBuffers {
   gridUTemp: GPUBuffer;
   gridVTemp: GPUBuffer;
 
+  // Atomic buffers for P2G accumulation (using fixed-point encoding)
+  gridUAccum: GPUBuffer;    // atomic<i32> - accumulated velocity * weight
+  gridVAccum: GPUBuffer;    // atomic<i32>
+  gridDUAccum: GPUBuffer;   // atomic<i32> - accumulated weight
+  gridDVAccum: GPUBuffer;   // atomic<i32>
+
   // Uniform buffers
   simParams: GPUBuffer;
   obstacleParams: GPUBuffer;
@@ -184,7 +190,7 @@ export class GPUSimulationBuffers {
 
     this.gridCellType = device.createBuffer({
       size: params.fNumCells * 4, // i32
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
       label: 'gridCellType',
     });
 
@@ -205,6 +211,31 @@ export class GPUSimulationBuffers {
       size: gridSize,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       label: 'gridVTemp',
+    });
+
+    // Atomic buffers for P2G accumulation (i32 for atomics)
+    this.gridUAccum = device.createBuffer({
+      size: gridSize, // same size, just interpreted as i32
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      label: 'gridUAccum',
+    });
+
+    this.gridVAccum = device.createBuffer({
+      size: gridSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      label: 'gridVAccum',
+    });
+
+    this.gridDUAccum = device.createBuffer({
+      size: gridSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      label: 'gridDUAccum',
+    });
+
+    this.gridDVAccum = device.createBuffer({
+      size: gridSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      label: 'gridDVAccum',
     });
 
     // Uniform buffers
@@ -368,6 +399,10 @@ export class GPUSimulationBuffers {
     this.gridDensity.destroy();
     this.gridUTemp.destroy();
     this.gridVTemp.destroy();
+    this.gridUAccum.destroy();
+    this.gridVAccum.destroy();
+    this.gridDUAccum.destroy();
+    this.gridDVAccum.destroy();
     this.simParams.destroy();
     this.obstacleParams.destroy();
   }

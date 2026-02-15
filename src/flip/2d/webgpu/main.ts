@@ -397,8 +397,28 @@ async function main(): Promise<void> {
       fluid.pushParticlesApart(numParticleIters);
     }
 
-    // P2G transfer (CPU)
-    fluid.transferVelocities(true, flipRatio);
+    // ===== GPU: P2G Transfer =====
+    gpuSim.getBuffers().uploadParticlePos(fluid.particlePos, fluid.numParticles);
+    gpuSim.getBuffers().uploadParticleVel(fluid.particleVel, fluid.numParticles);
+    gpuSim.uploadGridS(fluid.s);
+    gpuSim.getBuffers().uploadGridU(fluid.u);
+    gpuSim.getBuffers().uploadGridV(fluid.v);
+
+    gpuSim.runP2G();
+
+    // Read back GPU results
+    const gpuU = await gpuSim.readGridU();
+    const gpuV = await gpuSim.readGridV();
+    const gpuPrevU = await gpuSim.readPrevU();
+    const gpuPrevV = await gpuSim.readPrevV();
+    const gpuCellType = await gpuSim.readCellType();
+
+    // Use GPU P2G results
+    fluid.u.set(gpuU);
+    fluid.v.set(gpuV);
+    fluid.prevU.set(gpuPrevU);
+    fluid.prevV.set(gpuPrevV);
+    fluid.cellType.set(gpuCellType);
 
     // Update density (CPU)
     fluid.updateParticleDensity();

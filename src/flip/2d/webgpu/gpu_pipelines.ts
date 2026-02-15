@@ -14,6 +14,11 @@ import countShader from './shaders/count.wgsl?raw';
 import prefixSumShader from './shaders/prefix_sum.wgsl?raw';
 import reorderShader from './shaders/reorder.wgsl?raw';
 import pushApartShader from './shaders/push_apart.wgsl?raw';
+import clearGridShader from './shaders/clear_grid.wgsl?raw';
+import markCellsShader from './shaders/mark_cells.wgsl?raw';
+import markFluidShader from './shaders/mark_fluid.wgsl?raw';
+import p2gShader from './shaders/p2g.wgsl?raw';
+import normalizeGridShader from './shaders/normalize_grid.wgsl?raw';
 
 export class GPUComputePipelines {
   private device: GPUDevice;
@@ -28,6 +33,11 @@ export class GPUComputePipelines {
   prefixSumPipeline: GPUComputePipeline;
   reorderPipeline: GPUComputePipeline;
   pushApartPipeline: GPUComputePipeline;
+  clearGridPipeline: GPUComputePipeline;
+  markCellsPipeline: GPUComputePipeline;
+  markFluidPipeline: GPUComputePipeline;
+  p2gPipeline: GPUComputePipeline;
+  normalizeGridPipeline: GPUComputePipeline;
 
   // Bind groups
   integrateBindGroup: GPUBindGroup;
@@ -39,6 +49,11 @@ export class GPUComputePipelines {
   prefixSumBindGroup: GPUBindGroup;
   reorderBindGroup: GPUBindGroup;
   pushApartBindGroup: GPUBindGroup;
+  clearGridBindGroup: GPUBindGroup;
+  markCellsBindGroup: GPUBindGroup;
+  markFluidBindGroup: GPUBindGroup;
+  p2gBindGroup: GPUBindGroup;
+  normalizeGridBindGroup: GPUBindGroup;
 
   // Workgroup size
   readonly workgroupSize = 256;
@@ -257,6 +272,123 @@ export class GPUComputePipelines {
         { binding: 1, resource: { buffer: buffers.cellOffset } },
         { binding: 2, resource: { buffer: buffers.sortedIndex } },
         { binding: 3, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    // === P2G Pipelines ===
+
+    // Clear grid pipeline
+    const clearGridModule = device.createShaderModule({
+      label: 'clear grid shader',
+      code: clearGridShader,
+    });
+    this.clearGridPipeline = device.createComputePipeline({
+      label: 'clear grid pipeline',
+      layout: 'auto',
+      compute: { module: clearGridModule, entryPoint: 'main' },
+    });
+    this.clearGridBindGroup = device.createBindGroup({
+      label: 'clear grid bind group',
+      layout: this.clearGridPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.gridU } },
+        { binding: 1, resource: { buffer: buffers.gridV } },
+        { binding: 2, resource: { buffer: buffers.gridDU } },
+        { binding: 3, resource: { buffer: buffers.gridDV } },
+        { binding: 4, resource: { buffer: buffers.gridPrevU } },
+        { binding: 5, resource: { buffer: buffers.gridPrevV } },
+        { binding: 6, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    // Mark cells pipeline (marks SOLID/AIR based on solid flag)
+    const markCellsModule = device.createShaderModule({
+      label: 'mark cells shader',
+      code: markCellsShader,
+    });
+    this.markCellsPipeline = device.createComputePipeline({
+      label: 'mark cells pipeline',
+      layout: 'auto',
+      compute: { module: markCellsModule, entryPoint: 'main' },
+    });
+    this.markCellsBindGroup = device.createBindGroup({
+      label: 'mark cells bind group',
+      layout: this.markCellsPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.gridS } },
+        { binding: 1, resource: { buffer: buffers.gridCellType } },
+        { binding: 2, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    // Mark fluid pipeline (marks FLUID based on particle positions)
+    const markFluidModule = device.createShaderModule({
+      label: 'mark fluid shader',
+      code: markFluidShader,
+    });
+    this.markFluidPipeline = device.createComputePipeline({
+      label: 'mark fluid pipeline',
+      layout: 'auto',
+      compute: { module: markFluidModule, entryPoint: 'main' },
+    });
+    this.markFluidBindGroup = device.createBindGroup({
+      label: 'mark fluid bind group',
+      layout: this.markFluidPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.particlePos } },
+        { binding: 1, resource: { buffer: buffers.gridCellType } },
+        { binding: 2, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    // P2G pipeline (atomic accumulation)
+    const p2gModule = device.createShaderModule({
+      label: 'p2g shader',
+      code: p2gShader,
+    });
+    this.p2gPipeline = device.createComputePipeline({
+      label: 'p2g pipeline',
+      layout: 'auto',
+      compute: { module: p2gModule, entryPoint: 'main' },
+    });
+    this.p2gBindGroup = device.createBindGroup({
+      label: 'p2g bind group',
+      layout: this.p2gPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.particlePos } },
+        { binding: 1, resource: { buffer: buffers.particleVel } },
+        { binding: 2, resource: { buffer: buffers.gridUAccum } },
+        { binding: 3, resource: { buffer: buffers.gridVAccum } },
+        { binding: 4, resource: { buffer: buffers.gridDUAccum } },
+        { binding: 5, resource: { buffer: buffers.gridDVAccum } },
+        { binding: 6, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    // Normalize grid pipeline (converts atomic accum to f32 and restores solid)
+    const normalizeGridModule = device.createShaderModule({
+      label: 'normalize grid shader',
+      code: normalizeGridShader,
+    });
+    this.normalizeGridPipeline = device.createComputePipeline({
+      label: 'normalize grid pipeline',
+      layout: 'auto',
+      compute: { module: normalizeGridModule, entryPoint: 'main' },
+    });
+    this.normalizeGridBindGroup = device.createBindGroup({
+      label: 'normalize grid bind group',
+      layout: this.normalizeGridPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.gridUAccum } },
+        { binding: 1, resource: { buffer: buffers.gridVAccum } },
+        { binding: 2, resource: { buffer: buffers.gridDUAccum } },
+        { binding: 3, resource: { buffer: buffers.gridDVAccum } },
+        { binding: 4, resource: { buffer: buffers.gridU } },
+        { binding: 5, resource: { buffer: buffers.gridV } },
+        { binding: 6, resource: { buffer: buffers.gridPrevU } },
+        { binding: 7, resource: { buffer: buffers.gridPrevV } },
+        { binding: 8, resource: { buffer: buffers.gridCellType } },
+        { binding: 9, resource: { buffer: buffers.simParams } },
       ],
     });
   }

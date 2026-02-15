@@ -32,8 +32,8 @@ struct SimParams {
   pNumCells: i32,
 };
 
-const AIR_CELL: i32 = 0;
-const FLUID_CELL: i32 = 1;
+const FLUID_CELL: i32 = 0;
+const AIR_CELL: i32 = 1;
 const SOLID_CELL: i32 = 2;
 
 @group(0) @binding(0) var<storage, read> positions: array<vec2<f32>>;
