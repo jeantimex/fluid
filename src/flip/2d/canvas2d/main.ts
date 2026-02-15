@@ -712,7 +712,7 @@ const scene: Scene = {
   obstacleVelY: 0.0,
   showParticles: true,
   showGrid: false,
-  particleCount: 3200,
+  particleCount: 15000,
   particleRadiusScale: 0.3,
   fluid: null,
 };
@@ -729,7 +729,7 @@ function setupScene() {
   gridVertBuffer = null;
 
   // Use a fixed grid spacing to keep simulation detail consistent
-  const h = 0.05;
+  const h = 0.03;
 
   const tankHeight = 1.0 * simHeight;
   const tankWidth = 1.0 * simWidth;

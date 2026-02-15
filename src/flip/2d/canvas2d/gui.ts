@@ -422,7 +422,7 @@ export function setupGui(
 
   const setupFolder = gui.addFolder('Fluid Setup');
   setupFolder
-    .add(scene, 'particleCount', 100, 10000, 100)
+    .add(scene, 'particleCount', 100, 25000, 100)
     .name('Particle Count')
     .onChange(() => {
       if (callbacks.onReset) callbacks.onReset();
