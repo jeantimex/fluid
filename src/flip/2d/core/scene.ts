@@ -1,4 +1,5 @@
 import { Scene } from '../canvas2d/types';
+import { FlipFluid } from '../canvas2d/fluid';
 
 export function createDefaultScene(): Scene {
   return {
@@ -57,4 +58,52 @@ export function applyObstacleToScene(scene: Scene, x: number, y: number, reset: 
   }
   scene.obstacleVelX = vx;
   scene.obstacleVelY = vy;
+}
+
+export function setupFluidScene(scene: Scene, simWidth: number, simHeight: number) {
+  scene.obstacleRadius = 0.15;
+  scene.overRelaxation = 1.9;
+  scene.dt = 1.0 / 60.0;
+  scene.numPressureIters = 50;
+  scene.numParticleIters = 2;
+
+  const cellSize = 0.03;
+  const tankHeight = simHeight;
+  const tankWidth = simWidth;
+  const density = 1000.0;
+  const r = scene.particleRadiusScale * cellSize;
+  const dxSpawn = 2.0 * r;
+  const dySpawn = (Math.sqrt(3.0) / 2.0) * dxSpawn;
+
+  const numX = Math.round(Math.sqrt(scene.particleCount * (dySpawn / dxSpawn)));
+  const numY = Math.floor(scene.particleCount / numX);
+  const maxParticles = numX * numY;
+
+  const fluid = new FlipFluid(density, tankWidth, tankHeight, cellSize, r, maxParticles);
+  scene.fluid = fluid;
+  fluid.numParticles = maxParticles;
+
+  let pIdx = 0;
+  const blockWidth = (numX - 1) * dxSpawn;
+  const blockHeight = (numY - 1) * dySpawn;
+  const offsetX = (tankWidth - blockWidth) / 2;
+  const offsetY = (tankHeight - blockHeight) / 2;
+
+  for (let i = 0; i < numX; i++) {
+    for (let j = 0; j < numY; j++) {
+      fluid.particlePos[pIdx++] = offsetX + dxSpawn * i + (j % 2 === 0 ? 0.0 : r);
+      fluid.particlePos[pIdx++] = offsetY + dySpawn * j;
+    }
+  }
+
+  const nY = fluid.numY;
+  for (let i = 0; i < fluid.numX; i++) {
+    for (let j = 0; j < fluid.numY; j++) {
+      let sVal = 1.0;
+      if (i === 0 || i === fluid.numX - 1 || j === 0) sVal = 0.0;
+      fluid.solidMask[i * nY + j] = sVal;
+    }
+  }
+
+  applyObstacleToScene(scene, simWidth * 0.75, simHeight * 0.5, true);
 }

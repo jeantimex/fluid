@@ -1,9 +1,8 @@
 import './style.css';
 import { setupGui } from '../canvas2d/gui';
 import { Scene } from '../canvas2d/types';
-import { FlipFluid } from '../canvas2d/fluid';
 import { WebGPURenderer } from './renderer';
-import { applyObstacleToScene, createDefaultScene } from '../core/scene';
+import { applyObstacleToScene, createDefaultScene, setupFluidScene } from '../core/scene';
 
 const canvas = document.getElementById("webgpuCanvas") as HTMLCanvasElement;
 let device: GPUDevice;
@@ -18,52 +17,8 @@ let simWidth = 1.0;
 const scene: Scene = createDefaultScene();
 
 function setupScene() {
-  scene.obstacleRadius = 0.15;
-  scene.overRelaxation = 1.9;
-  scene.dt = 1.0 / 60.0;
-  scene.numPressureIters = 50;
-  scene.numParticleIters = 2;
-
   if (renderer) renderer.resetGridBuffer();
-
-  const cellSize = 0.03;
-  const tankHeight = 1.0 * simHeight;
-  const tankWidth = 1.0 * simWidth;
-  const density = 1000.0;
-  const r = scene.particleRadiusScale * cellSize;
-  const dx_spawn = 2.0 * r;
-  const dy_spawn = (Math.sqrt(3.0) / 2.0) * dx_spawn;
-
-  const numX = Math.round(Math.sqrt(scene.particleCount * (dy_spawn / dx_spawn)));
-  const numY = Math.floor(scene.particleCount / numX);
-  const maxParticles = numX * numY;
-
-  const f_sim = new FlipFluid(density, tankWidth, tankHeight, cellSize, r, maxParticles);
-  scene.fluid = f_sim;
-  f_sim.numParticles = maxParticles;
-  let p_idx = 0;
-
-  const blockWidth = (numX - 1) * dx_spawn;
-  const blockHeight = (numY - 1) * dy_spawn;
-  const offsetX = (tankWidth - blockWidth) / 2;
-  const offsetY = (tankHeight - blockHeight) / 2;
-
-  for (let i = 0; i < numX; i++) {
-    for (let j = 0; j < numY; j++) {
-      f_sim.particlePos[p_idx++] = offsetX + dx_spawn * i + (j % 2 === 0 ? 0.0 : r);
-      f_sim.particlePos[p_idx++] = offsetY + dy_spawn * j;
-    }
-  }
-
-  const n_cells_y = f_sim.numY;
-  for (let i = 0; i < f_sim.numX; i++) {
-    for (let j = 0; j < f_sim.numY; j++) {
-      let s_val = 1.0;
-      if (i === 0 || i === f_sim.numX - 1 || j === 0) s_val = 0.0;
-      f_sim.solidMask[i * n_cells_y + j] = s_val;
-    }
-  }
-  setObstacle(simWidth * 0.75, simHeight * 0.5, true);
+  setupFluidScene(scene, simWidth, simHeight);
 }
 
 function setObstacle(x: number, y: number, reset: boolean) {
