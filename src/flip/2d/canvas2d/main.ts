@@ -263,6 +263,11 @@ class FlipFluid {
       // obstacle collision
 
       if (d2 < minDist2) {
+        const d = Math.sqrt(d2);
+        const s = (minDist - d) / d;
+        x += dx * s;
+        y += dy * s;
+
         this.particleVel[2 * i] = scene.obstacleVelX;
         this.particleVel[2 * i + 1] = scene.obstacleVelY;
       }
@@ -686,6 +691,7 @@ interface Scene {
   showParticles: boolean;
   showGrid: boolean;
   particleCount: number;
+  particleRadiusScale: number;
   fluid: FlipFluid | null;
 }
 
@@ -707,6 +713,7 @@ const scene: Scene = {
   showParticles: true,
   showGrid: false,
   particleCount: 3200,
+  particleRadiusScale: 0.3,
   fluid: null,
 };
 
@@ -735,7 +742,7 @@ function setupScene() {
 
   // compute number of particles
 
-  const r = 0.3 * h; // particle radius w.r.t. cell size
+  const r = scene.particleRadiusScale * h; // particle radius w.r.t. cell size
   const dx_spawn = 2.0 * r;
   const dy_spawn = (Math.sqrt(3.0) / 2.0) * dx_spawn;
 
@@ -1057,7 +1064,7 @@ function draw() {
   );
   gl.uniform1f(
     gl.getUniformLocation(meshShader!, "scale"),
-    scene.obstacleRadius + scene.fluid!.particleRadius
+    scene.obstacleRadius
   );
 
   const meshPosLoc = gl.getAttribLocation(meshShader!, "attrPosition");

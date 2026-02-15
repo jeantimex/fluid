@@ -427,6 +427,12 @@ export function setupGui(
     .onChange(() => {
       if (callbacks.onReset) callbacks.onReset();
     });
+  setupFolder
+    .add(scene, 'particleRadiusScale', 0.05, 0.5, 0.01)
+    .name('Particle Size')
+    .onChange(() => {
+      if (callbacks.onReset) callbacks.onReset();
+    });
 
   const performanceFolder = gui.addFolder('Performance');
   performanceFolder
