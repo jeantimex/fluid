@@ -391,8 +391,8 @@ async function main(): Promise<void> {
     fluid.particlePos.set(gpuPos);
     fluid.particleVel.set(gpuVel);
 
-    // ===== CPU: Remaining simulation steps =====
-    // Push particles apart (uses spatial hash - still on CPU)
+    // ===== CPU: Push particles apart =====
+    // (GPU version has different behavior due to parallel processing - keeping CPU for now)
     if (separateParticles) {
       fluid.pushParticlesApart(numParticleIters);
     }

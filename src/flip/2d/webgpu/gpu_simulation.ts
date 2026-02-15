@@ -176,6 +176,88 @@ export class GPUFluidSimulation {
   }
 
   /**
+   * Clear cell count buffer (needed before counting).
+   */
+  clearCellCount(): void {
+    const zeros = new Uint32Array(this.params.pNumCells);
+    this.device.queue.writeBuffer(this.buffers.cellCount, 0, zeros);
+  }
+
+  /**
+   * Run spatial hash computation (hash + count + prefix sum + reorder).
+   */
+  runSpatialHash(): void {
+    // Clear cell counts
+    this.clearCellCount();
+
+    const encoder = this.device.createCommandEncoder();
+
+    // Step 1: Compute hash keys
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.hashPipeline);
+      pass.setBindGroup(0, this.pipelines.hashBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(this.params.numParticles / this.pipelines.workgroupSize));
+      pass.end();
+    }
+
+    // Step 2: Count particles per cell
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.countPipeline);
+      pass.setBindGroup(0, this.pipelines.countBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(this.params.numParticles / this.pipelines.workgroupSize));
+      pass.end();
+    }
+
+    // Step 3: Prefix sum (single workgroup)
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.prefixSumPipeline);
+      pass.setBindGroup(0, this.pipelines.prefixSumBindGroup);
+      pass.dispatchWorkgroups(1);
+      pass.end();
+    }
+
+    // Step 4: Reorder particles
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.reorderPipeline);
+      pass.setBindGroup(0, this.pipelines.reorderBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(this.params.numParticles / this.pipelines.workgroupSize));
+      pass.end();
+    }
+
+    this.device.queue.submit([encoder.finish()]);
+
+    // Re-run prefix sum to restore offsets (reorder modified them)
+    const encoder2 = this.device.createCommandEncoder();
+    {
+      const pass = encoder2.beginComputePass();
+      pass.setPipeline(this.pipelines.prefixSumPipeline);
+      pass.setBindGroup(0, this.pipelines.prefixSumBindGroup);
+      pass.dispatchWorkgroups(1);
+      pass.end();
+    }
+    this.device.queue.submit([encoder2.finish()]);
+  }
+
+  /**
+   * Run push particles apart on GPU.
+   */
+  runPushApart(): void {
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+
+    pass.setPipeline(this.pipelines.pushApartPipeline);
+    pass.setBindGroup(0, this.pipelines.pushApartBindGroup);
+    pass.dispatchWorkgroups(Math.ceil(this.params.numParticles / this.pipelines.workgroupSize));
+
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  /**
    * Read particle positions back from GPU to CPU.
    * This is async and blocks until data is ready.
    */
