@@ -184,6 +184,67 @@ export class GPUFluidSimulation {
   }
 
   /**
+   * Clear density accumulation buffer.
+   */
+  clearDensityBuffer(): void {
+    const zeros = new Int32Array(this.params.fNumCells);
+    this.device.queue.writeBuffer(this.buffers.densityAccum, 0, zeros);
+  }
+
+  /**
+   * Run density computation on GPU.
+   */
+  runDensity(): void {
+    // Clear density accumulation buffer
+    this.clearDensityBuffer();
+
+    const encoder = this.device.createCommandEncoder();
+
+    // Step 1: Accumulate density from particles
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.densityPipeline);
+      pass.setBindGroup(0, this.pipelines.densityBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(this.params.numParticles / this.pipelines.workgroupSize));
+      pass.end();
+    }
+
+    // Step 2: Normalize density (convert from fixed-point to float)
+    {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipelines.normalizeDensityPipeline);
+      pass.setBindGroup(0, this.pipelines.normalizeDensityBindGroup);
+      pass.dispatchWorkgroups(Math.ceil(this.params.fNumCells / this.pipelines.workgroupSize));
+      pass.end();
+    }
+
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  /**
+   * Read density values back from GPU to CPU.
+   */
+  async readDensity(): Promise<Float32Array> {
+    const size = this.params.fNumCells * 4;
+
+    const stagingBuffer = this.device.createBuffer({
+      size,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(this.buffers.gridDensity, 0, stagingBuffer, 0, size);
+    this.device.queue.submit([encoder.finish()]);
+
+    await stagingBuffer.mapAsync(GPUMapMode.READ);
+    const data = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+    stagingBuffer.unmap();
+    stagingBuffer.destroy();
+
+    return data;
+  }
+
+  /**
    * Clear atomic accumulation buffers (needed before P2G).
    */
   clearP2GBuffers(): void {

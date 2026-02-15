@@ -420,8 +420,29 @@ async function main(): Promise<void> {
     fluid.prevV.set(gpuPrevV);
     fluid.cellType.set(gpuCellType);
 
-    // Update density (CPU)
-    fluid.updateParticleDensity();
+    // ===== GPU: Density Update =====
+    // Particle positions are already on GPU from P2G
+    gpuSim.runDensity();
+
+    // Read back density for rest density computation (only needed on first frame)
+    const gpuDensity = await gpuSim.readDensity();
+    fluid.particleDensity.set(gpuDensity);
+
+    // Compute rest density on first frame (CPU - it's a reduction operation)
+    if (fluid.particleRestDensity === 0.0) {
+      let sum = 0.0;
+      let numFluidCells = 0;
+      for (let i = 0; i < fluid.fNumCells; i++) {
+        if (fluid.cellType[i] === 0) { // FLUID_CELL = 0
+          sum += fluid.particleDensity[i];
+          numFluidCells++;
+        }
+      }
+      if (numFluidCells > 0) {
+        fluid.particleRestDensity = sum / numFluidCells;
+      }
+      console.log('Computed rest density:', fluid.particleRestDensity);
+    }
 
     // Pressure solver (CPU)
     const sdt = 1.0 / 60.0; // sub-timestep for pressure solve
@@ -451,11 +472,10 @@ async function main(): Promise<void> {
     fluid.particleVel.set(gpuVelAfterG2P);
 
     // ===== GPU: Color Update =====
-    // Sync particleRestDensity from CPU (computed in updateParticleDensity)
+    // Sync particleRestDensity from CPU
     gpuSim.updateParams({ particleRestDensity: fluid.particleRestDensity });
 
-    // Upload density computed by CPU
-    gpuSim.uploadGridDensity(fluid.particleDensity);
+    // Density is already on GPU from runDensity()
     // Upload current colors and positions for the color shader
     gpuSim.getBuffers().uploadParticlePos(fluid.particlePos, fluid.numParticles);
     gpuSim.getBuffers().uploadParticleColor(fluid.particleColor, fluid.numParticles);

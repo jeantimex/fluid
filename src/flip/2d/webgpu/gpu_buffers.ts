@@ -72,6 +72,9 @@ export class GPUSimulationBuffers {
   gridDUAccum: GPUBuffer;   // atomic<i32> - accumulated weight
   gridDVAccum: GPUBuffer;   // atomic<i32>
 
+  // Atomic buffer for density accumulation
+  densityAccum: GPUBuffer;  // atomic<i32>
+
   // Uniform buffers
   simParams: GPUBuffer;
   obstacleParams: GPUBuffer;
@@ -196,7 +199,7 @@ export class GPUSimulationBuffers {
 
     this.gridDensity = device.createBuffer({
       size: gridSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
       label: 'gridDensity',
     });
 
@@ -236,6 +239,13 @@ export class GPUSimulationBuffers {
       size: gridSize,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       label: 'gridDVAccum',
+    });
+
+    // Atomic buffer for density accumulation
+    this.densityAccum = device.createBuffer({
+      size: gridSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      label: 'densityAccum',
     });
 
     // Uniform buffers
@@ -403,6 +413,7 @@ export class GPUSimulationBuffers {
     this.gridVAccum.destroy();
     this.gridDUAccum.destroy();
     this.gridDVAccum.destroy();
+    this.densityAccum.destroy();
     this.simParams.destroy();
     this.obstacleParams.destroy();
   }

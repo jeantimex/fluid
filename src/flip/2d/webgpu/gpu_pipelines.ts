@@ -19,6 +19,8 @@ import markCellsShader from './shaders/mark_cells.wgsl?raw';
 import markFluidShader from './shaders/mark_fluid.wgsl?raw';
 import p2gShader from './shaders/p2g.wgsl?raw';
 import normalizeGridShader from './shaders/normalize_grid.wgsl?raw';
+import densityShader from './shaders/density.wgsl?raw';
+import normalizeDensityShader from './shaders/normalize_density.wgsl?raw';
 
 export class GPUComputePipelines {
   private device: GPUDevice;
@@ -38,6 +40,8 @@ export class GPUComputePipelines {
   markFluidPipeline: GPUComputePipeline;
   p2gPipeline: GPUComputePipeline;
   normalizeGridPipeline: GPUComputePipeline;
+  densityPipeline: GPUComputePipeline;
+  normalizeDensityPipeline: GPUComputePipeline;
 
   // Bind groups
   integrateBindGroup: GPUBindGroup;
@@ -54,6 +58,8 @@ export class GPUComputePipelines {
   markFluidBindGroup: GPUBindGroup;
   p2gBindGroup: GPUBindGroup;
   normalizeGridBindGroup: GPUBindGroup;
+  densityBindGroup: GPUBindGroup;
+  normalizeDensityBindGroup: GPUBindGroup;
 
   // Workgroup size
   readonly workgroupSize = 256;
@@ -389,6 +395,48 @@ export class GPUComputePipelines {
         { binding: 7, resource: { buffer: buffers.gridPrevV } },
         { binding: 8, resource: { buffer: buffers.gridCellType } },
         { binding: 9, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    // === Density Pipelines ===
+
+    // Density accumulation pipeline
+    const densityModule = device.createShaderModule({
+      label: 'density shader',
+      code: densityShader,
+    });
+    this.densityPipeline = device.createComputePipeline({
+      label: 'density pipeline',
+      layout: 'auto',
+      compute: { module: densityModule, entryPoint: 'main' },
+    });
+    this.densityBindGroup = device.createBindGroup({
+      label: 'density bind group',
+      layout: this.densityPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.particlePos } },
+        { binding: 1, resource: { buffer: buffers.densityAccum } },
+        { binding: 2, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    // Normalize density pipeline
+    const normalizeDensityModule = device.createShaderModule({
+      label: 'normalize density shader',
+      code: normalizeDensityShader,
+    });
+    this.normalizeDensityPipeline = device.createComputePipeline({
+      label: 'normalize density pipeline',
+      layout: 'auto',
+      compute: { module: normalizeDensityModule, entryPoint: 'main' },
+    });
+    this.normalizeDensityBindGroup = device.createBindGroup({
+      label: 'normalize density bind group',
+      layout: this.normalizeDensityPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.densityAccum } },
+        { binding: 1, resource: { buffer: buffers.gridDensity } },
+        { binding: 2, resource: { buffer: buffers.simParams } },
       ],
     });
   }
