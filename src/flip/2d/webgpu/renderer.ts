@@ -369,6 +369,55 @@ const hashFillShaderWGSL = `
   }
 `;
 
+const p2gCellCountShaderWGSL = `
+  struct P2GUniforms {
+    numParticles: u32,
+    gridNumX: u32,
+    gridNumY: u32,
+    _pad0: u32,
+    invCellSize: f32,
+    _pad1: vec3f,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: P2GUniforms;
+  @group(0) @binding(1) var<storage, read> positions: array<vec2f>;
+  @group(0) @binding(2) var<storage, read_write> cellCounts: array<atomic<u32>>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= uniforms.numParticles) {
+      return;
+    }
+
+    let p = positions[i];
+    let xi = clamp(u32(floor(p.x * uniforms.invCellSize)), 0u, uniforms.gridNumX - 1u);
+    let yi = clamp(u32(floor(p.y * uniforms.invCellSize)), 0u, uniforms.gridNumY - 1u);
+    let cellNr = xi * uniforms.gridNumY + yi;
+    atomicAdd(&cellCounts[cellNr], 1u);
+  }
+`;
+
+const cellCountsToDensityShaderWGSL = `
+  struct DensityUniforms {
+    totalCells: u32,
+    _pad0: vec3u,
+  }
+
+  @group(0) @binding(0) var<uniform> uniforms: DensityUniforms;
+  @group(0) @binding(1) var<storage, read_write> cellCounts: array<atomic<u32>>;
+  @group(0) @binding(2) var<storage, read_write> density: array<f32>;
+
+  @compute @workgroup_size(64)
+  fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= uniforms.totalCells) {
+      return;
+    }
+    density[i] = f32(atomicLoad(&cellCounts[i]));
+  }
+`;
+
 export class WebGPURenderer {
   device: GPUDevice;
   format: GPUTextureFormat;
@@ -382,6 +431,8 @@ export class WebGPURenderer {
   particleSeparationPipeline: GPUComputePipeline;
   hashCountPipeline: GPUComputePipeline;
   hashFillPipeline: GPUComputePipeline;
+  p2gCellCountPipeline: GPUComputePipeline;
+  cellCountsToDensityPipeline: GPUComputePipeline;
   
   uniformBuffer: GPUBuffer;
   meshUniformBuffer: GPUBuffer;
@@ -392,6 +443,8 @@ export class WebGPURenderer {
   particleSeparationUniformBuffer: GPUBuffer;
   hashCountUniformBuffer: GPUBuffer;
   hashFillUniformBuffer: GPUBuffer;
+  p2gUniformBuffer: GPUBuffer;
+  densityUniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   meshBindGroup: GPUBindGroup;
   
@@ -406,6 +459,7 @@ export class WebGPURenderer {
   hashCountsBuffer: GPUBuffer | null = null;
   hashOffsetsBuffer: GPUBuffer | null = null;
   hashCountsReadbackBuffer: GPUBuffer | null = null;
+  gridCellCountsBuffer: GPUBuffer | null = null;
   hashBuildInFlight = false;
   particlePosScratchBuffer: GPUBuffer | null = null;
   particlePosReadbackBuffer: GPUBuffer | null = null;
@@ -517,6 +571,22 @@ export class WebGPURenderer {
         entryPoint: 'main',
       },
     });
+    const p2gCountModule = device.createShaderModule({ code: p2gCellCountShaderWGSL });
+    this.p2gCellCountPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: p2gCountModule,
+        entryPoint: 'main',
+      },
+    });
+    const densityModule = device.createShaderModule({ code: cellCountsToDensityShaderWGSL });
+    this.cellCountsToDensityPipeline = device.createComputePipeline({
+      layout: 'auto',
+      compute: {
+        module: densityModule,
+        entryPoint: 'main',
+      },
+    });
 
     // --- Uniforms ---
     this.uniformBuffer = device.createBuffer({
@@ -554,6 +624,14 @@ export class WebGPURenderer {
     });
     this.hashFillUniformBuffer = device.createBuffer({
       size: 32,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.p2gUniformBuffer = device.createBuffer({
+      size: 32,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.densityUniformBuffer = device.createBuffer({
+      size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -749,6 +827,78 @@ export class WebGPURenderer {
     }
   }
 
+  buildGridDensity(scene: Scene, options: { useGpuState?: boolean } = {}) {
+    const fluid = scene.fluid;
+    if (!fluid || fluid.numParticles === 0) return;
+    const useGpuState = options.useGpuState ?? false;
+
+    const canReuseGpuState =
+      useGpuState &&
+      this.particlePosBuffer != null &&
+      this.particlePosBuffer.size === fluid.particlePos.byteLength;
+    if (!canReuseGpuState) {
+      this.particlePosBuffer = this.createOrUpdateBuffer(
+        fluid.particlePos,
+        this.particlePosBuffer,
+        GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      );
+    }
+
+    this.gridCellCountsBuffer = this.createOrUpdateUintBuffer(
+      new Uint32Array(fluid.totalCells),
+      this.gridCellCountsBuffer,
+      GPUBufferUsage.STORAGE
+    );
+    this.particleDensityBuffer = this.createOrUpdateBuffer(
+      new Float32Array(fluid.totalCells),
+      this.particleDensityBuffer,
+      GPUBufferUsage.STORAGE
+    );
+
+    const p2gData = new Float32Array(8);
+    p2gData[0] = fluid.numParticles;
+    p2gData[1] = fluid.numX;
+    p2gData[2] = fluid.numY;
+    p2gData[4] = fluid.invCellSize;
+    this.writeFloat32(this.p2gUniformBuffer, 0, p2gData);
+
+    const densityData = new Uint32Array(4);
+    densityData[0] = fluid.totalCells;
+    this.device.queue.writeBuffer(this.densityUniformBuffer, 0, densityData);
+
+    const countBindGroup = this.device.createBindGroup({
+      layout: this.p2gCellCountPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.p2gUniformBuffer } },
+        { binding: 1, resource: { buffer: this.particlePosBuffer! } },
+        { binding: 2, resource: { buffer: this.gridCellCountsBuffer } },
+      ],
+    });
+
+    const densityBindGroup = this.device.createBindGroup({
+      layout: this.cellCountsToDensityPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.densityUniformBuffer } },
+        { binding: 1, resource: { buffer: this.gridCellCountsBuffer } },
+        { binding: 2, resource: { buffer: this.particleDensityBuffer } },
+      ],
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    const countPass = encoder.beginComputePass();
+    countPass.setPipeline(this.p2gCellCountPipeline);
+    countPass.setBindGroup(0, countBindGroup);
+    countPass.dispatchWorkgroups(Math.ceil(fluid.numParticles / 64));
+    countPass.end();
+
+    const densityPass = encoder.beginComputePass();
+    densityPass.setPipeline(this.cellCountsToDensityPipeline);
+    densityPass.setBindGroup(0, densityBindGroup);
+    densityPass.dispatchWorkgroups(Math.ceil(fluid.totalCells / 64));
+    densityPass.end();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
   applyBoundaryCollision(
     scene: Scene,
     simWidth: number,
@@ -917,11 +1067,12 @@ export class WebGPURenderer {
     scene: Scene,
     threshold: number = 0.7,
     bright: number = 0.8,
-    options: { useGpuState?: boolean } = {}
+    options: { useGpuState?: boolean; useGpuDensity?: boolean } = {}
   ) {
     const fluid = scene.fluid!;
     if (!fluid || fluid.numParticles === 0 || fluid.particleRestDensity <= 0.0) return;
     const useGpuState = options.useGpuState ?? false;
+    const useGpuDensity = options.useGpuDensity ?? false;
 
     const canReuseGpuState =
       useGpuState &&
@@ -942,11 +1093,13 @@ export class WebGPURenderer {
         GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
       );
     }
-    this.particleDensityBuffer = this.createOrUpdateBuffer(
-      fluid.particleDensity,
-      this.particleDensityBuffer,
-      GPUBufferUsage.STORAGE
-    );
+    if (!useGpuDensity || this.particleDensityBuffer == null || this.particleDensityBuffer.size !== fluid.particleDensity.byteLength) {
+      this.particleDensityBuffer = this.createOrUpdateBuffer(
+        fluid.particleDensity,
+        this.particleDensityBuffer,
+        GPUBufferUsage.STORAGE
+      );
+    }
 
     const surfaceTintData = new Float32Array(8);
     surfaceTintData[0] = fluid.numParticles;

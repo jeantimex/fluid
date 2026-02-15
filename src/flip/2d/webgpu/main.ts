@@ -89,8 +89,12 @@ async function simulate() {
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
     useGpuState: true,
   });
+  renderer.buildGridDensity(sim.scene, { useGpuState: true });
   renderer.applyParticleColorFade(sim.scene, 0.01, { useGpuState: true });
-  renderer.applyParticleSurfaceTint(sim.scene, 0.7, 0.8, { useGpuState: true });
+  renderer.applyParticleSurfaceTint(sim.scene, 0.7, 0.8, {
+    useGpuState: true,
+    useGpuDensity: true,
+  });
   runtime.gpuStatePrimed = true;
 }
 
