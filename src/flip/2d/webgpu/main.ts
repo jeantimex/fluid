@@ -87,7 +87,7 @@ async function simulate() {
     enableParticleColorSurfaceTint: false,
     enableParticleSeparation: false,
   });
-  renderer.applyIntegrateParticles(sim.scene, { mirrorCpuState: true });
+  renderer.applyIntegrateParticles(sim.scene);
   await renderer.buildSpatialHashHybrid(sim.scene, { useGpuState: true });
   renderer.applyParticleSeparation(sim.scene, sim.scene.numParticleIters);
   renderer.applyBoundaryCollision(sim.scene, sim.simWidth, sim.simHeight, {
