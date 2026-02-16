@@ -6,10 +6,10 @@ const MAX_DISTANCE = 60.0;
 
 export class Camera {
     element: HTMLElement;
-    distance: number = 40.0;
+    distance: number = 30.0;
     orbitPoint: number[];
-    azimuth: number = 0.0;
-    elevation: number = 0.25;
+    azimuth: number = -Math.PI / 6;
+    elevation: number = Math.PI / 2 - Math.PI / 2.5; // ~0.314 rad (18 degrees)
     minElevation: number = -Math.PI / 4;
     maxElevation: number = Math.PI / 4;
 

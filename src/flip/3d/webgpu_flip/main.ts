@@ -1062,10 +1062,16 @@ async function init() {
 
         // Mouse ray origin is camera position
         const mouseRayOrigin = camera.getPosition();
+        // Transform mouse ray origin to simulation space (subtract simulation offset)
+        const simMouseRayOrigin = [
+            mouseRayOrigin[0] - SIM_OFFSET_X,
+            mouseRayOrigin[1] - SIM_OFFSET_Y,
+            mouseRayOrigin[2] - SIM_OFFSET_Z
+        ];
 
         // Compute Pass
         const computePass = commandEncoder.beginComputePass();
-        simulator.step(computePass, particleCount, mouseVelocity, mouseRayOrigin, worldSpaceMouseRay);
+        simulator.step(computePass, particleCount, mouseVelocity, simMouseRayOrigin, worldSpaceMouseRay);
         computePass.end();
 
         if (particleCount > 0) {
