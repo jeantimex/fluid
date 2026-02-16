@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Fluid Particles</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="ui">
+        <div id="start-button" class="button">Start</div>
+        <div id="preset-button" class="button">Next Preset</div>
+        
+        <div class="slider-container editing-ui">
+            <label>Particle Density</label>
+            <div id="density-slider" class="slider"></div>
+            <div id="particle-count">0 particles</div>
+        </div>
+
+        <div class="slider-container simulating-ui" style="display: none;">
+            <label>Fluidity</label>
+            <div id="fluidity-slider" class="slider"></div>
+        </div>
+
+        <div class="slider-container simulating-ui" style="display: none;">
+            <label>Speed</label>
+            <div id="speed-slider" class="slider"></div>
+        </div>
+    </div>
+
+    <div class="instructions editing-ui">
+        <span>Space + drag</span> to rotate camera <br/>
+        <span>Scroll</span> to zoom in and out <br/>
+        <br/>
+        <span>Draw on walls</span> to create new boxes <br/>
+        <span>Drag box faces</span> to resize <br/>
+        <span>Shift + drag box faces</span> to translate <br/>
+    </div>
+
+    <script type="module" src="main.ts"></script>
+</body>
+</html>
