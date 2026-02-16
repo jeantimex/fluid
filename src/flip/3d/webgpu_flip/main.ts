@@ -44,9 +44,16 @@ async function init() {
     const GRID_WIDTH = 40;
     const GRID_HEIGHT = 20;
     const GRID_DEPTH = 20;
-    const RESOLUTION_X = 40;
-    const RESOLUTION_Y = 20;
-    const RESOLUTION_Z = 20;
+
+    // WebGL uses gridCellDensity = 0.5 by default
+    // gridCells = 40 * 20 * 20 * 0.5 = 8000
+    // gridResolutionY = ceil(pow(8000/2, 1/3)) = 16
+    // gridResolutionX = 32, gridResolutionZ = 16
+    const RESOLUTION_X = 32;
+    const RESOLUTION_Y = 16;
+    const RESOLUTION_Z = 16;
+
+    const PARTICLES_PER_CELL = 10;
 
     const camera = new Camera(canvas, [GRID_WIDTH / 2, GRID_HEIGHT / 3, GRID_DEPTH / 2]);
     const boxEditor = new BoxEditor(device, presentationFormat, [GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH]);
@@ -160,24 +167,55 @@ async function init() {
     function spawnParticles() {
         const positions = new Float32Array(MAX_PARTICLES * 4);
         const velocities = new Float32Array(MAX_PARTICLES * 4);
-        
-        // Spawn particles in the first box
-        if (boxEditor.boxes.length > 0) {
-            const box = boxEditor.boxes[0];
-            particleCount = 20000; // Increased for better grid saturation
-            for (let i = 0; i < particleCount; i++) {
-                const p = box.randomPoint();
-                positions[i * 4 + 0] = p[0];
-                positions[i * 4 + 1] = p[1];
-                positions[i * 4 + 2] = p[2];
-                positions[i * 4 + 3] = 1.0;
 
-                // WebGL reference initializes with zero velocity
-                velocities[i * 4 + 0] = 0.0;
-                velocities[i * 4 + 1] = 0.0;
-                velocities[i * 4 + 2] = 0.0;
-                velocities[i * 4 + 3] = 0.0;
+        // Spawn particles in all boxes (matching WebGL behavior)
+        if (boxEditor.boxes.length > 0) {
+            // Calculate total volume of all boxes
+            let totalBoxVolume = 0;
+            for (const box of boxEditor.boxes) {
+                totalBoxVolume += box.computeVolume();
             }
+
+            // Calculate particle count (matching WebGL formula)
+            const totalGridVolume = GRID_WIDTH * GRID_HEIGHT * GRID_DEPTH;
+            const fractionFilled = totalBoxVolume / totalGridVolume;
+            const totalGridCells = RESOLUTION_X * RESOLUTION_Y * RESOLUTION_Z;
+            const desiredParticleCount = Math.floor(fractionFilled * totalGridCells * PARTICLES_PER_CELL);
+            particleCount = Math.min(desiredParticleCount, MAX_PARTICLES);
+
+            console.log(`Spawning ${particleCount} particles (fraction: ${fractionFilled.toFixed(3)}, cells: ${totalGridCells})`);
+
+            // Distribute particles across boxes proportionally
+            let particlesCreated = 0;
+            for (let boxIdx = 0; boxIdx < boxEditor.boxes.length; boxIdx++) {
+                const box = boxEditor.boxes[boxIdx];
+                const boxVolume = box.computeVolume();
+
+                let particlesInBox: number;
+                if (boxIdx < boxEditor.boxes.length - 1) {
+                    particlesInBox = Math.floor(particleCount * boxVolume / totalBoxVolume);
+                } else {
+                    // Last box gets remaining particles
+                    particlesInBox = particleCount - particlesCreated;
+                }
+
+                for (let i = 0; i < particlesInBox; i++) {
+                    const idx = particlesCreated + i;
+                    const p = box.randomPoint();
+                    positions[idx * 4 + 0] = p[0];
+                    positions[idx * 4 + 1] = p[1];
+                    positions[idx * 4 + 2] = p[2];
+                    positions[idx * 4 + 3] = 1.0;
+
+                    // WebGL reference initializes with zero velocity
+                    velocities[idx * 4 + 0] = 0.0;
+                    velocities[idx * 4 + 1] = 0.0;
+                    velocities[idx * 4 + 2] = 0.0;
+                    velocities[idx * 4 + 3] = 0.0;
+                }
+                particlesCreated += particlesInBox;
+            }
+
             device.queue.writeBuffer(particlePositionBuffer, 0, positions);
             device.queue.writeBuffer(particleVelocityBuffer, 0, velocities);
         }
@@ -240,7 +278,9 @@ async function init() {
             
             device.queue.writeBuffer(sphereUniformBuffer, 0, projectionMatrix);
             device.queue.writeBuffer(sphereUniformBuffer, 64, camera.getViewMatrix());
-            device.queue.writeBuffer(sphereUniformBuffer, 128, new Float32Array([0.2])); // radius
+            // Sphere radius = 7.0 / gridResolutionX (matches WebGL)
+            const sphereRadius = 7.0 / RESOLUTION_X;
+            device.queue.writeBuffer(sphereUniformBuffer, 128, new Float32Array([sphereRadius]));
 
             passEncoder.setVertexBuffer(0, sphereVertexBuffer);
             passEncoder.setIndexBuffer(sphereIndexBuffer, 'uint16');
