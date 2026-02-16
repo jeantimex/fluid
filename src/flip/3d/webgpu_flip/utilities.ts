@@ -256,6 +256,7 @@ export const Utilities = {
         matrix[13] = -(nUX * eye[0] + nUY * eye[1] + nUZ * eye[2]);
         matrix[14] = -(fX * eye[0] + fY * eye[1] + fZ * eye[2]);
         matrix[15] = 1;
+        return matrix;
     },
 
     makeOrthographicMatrix: function (matrix: Float32Array, left: number, right: number, bottom: number, top: number, near: number, far: number) {

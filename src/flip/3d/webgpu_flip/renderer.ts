@@ -1,6 +1,5 @@
 export function generateSphereGeometry(iterations: number) {
     let vertices: number[][] = [];
-    const normals: number[][] = [];
 
     const addVertex = (v: number[]) => {
         const mag = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
@@ -22,6 +21,7 @@ export function generateSphereGeometry(iterations: number) {
 
     const t = (1.0 + Math.sqrt(5.0)) / 2.0;
 
+    // Initial icosahedron vertices
     addVertex([-1, t, 0]);
     addVertex([1, t, 0]);
     addVertex([-1, -t, 0]);
@@ -33,7 +33,7 @@ export function generateSphereGeometry(iterations: number) {
     addVertex([t, 0, -1]);
     addVertex([t, 0, 1]);
     addVertex([-t, 0, -1]);
-    addVertex([t, 0, 1]);
+    addVertex([-t, 0, 1]);
 
     let faces = [
         [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
@@ -43,7 +43,7 @@ export function generateSphereGeometry(iterations: number) {
     ];
 
     for (let i = 0; i < iterations; i++) {
-        const faces2 = [];
+        const faces2: number[][] = [];
         for (const face of faces) {
             const a = getMiddlePoint(face[0], face[1]);
             const b = getMiddlePoint(face[1], face[2]);
@@ -57,10 +57,15 @@ export function generateSphereGeometry(iterations: number) {
     }
 
     const packedVertices = new Float32Array(vertices.length * 3);
+    const packedNormals = new Float32Array(vertices.length * 3);
     for (let i = 0; i < vertices.length; i++) {
+        // For a unit sphere, normals are the same as vertex positions
         packedVertices[i * 3 + 0] = vertices[i][0];
         packedVertices[i * 3 + 1] = vertices[i][1];
         packedVertices[i * 3 + 2] = vertices[i][2];
+        packedNormals[i * 3 + 0] = vertices[i][0];
+        packedNormals[i * 3 + 1] = vertices[i][1];
+        packedNormals[i * 3 + 2] = vertices[i][2];
     }
 
     const indices = new Uint16Array(faces.length * 3);
@@ -70,5 +75,5 @@ export function generateSphereGeometry(iterations: number) {
         indices[i * 3 + 2] = faces[i][2];
     }
 
-    return { vertices: packedVertices, indices };
+    return { vertices: packedVertices, normals: packedNormals, indices };
 }
