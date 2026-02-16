@@ -28,6 +28,7 @@ export interface SimulationParams {
   dt: number;
   flipRatio: number;
   overRelaxation: number;
+  density: number;  // Material density (e.g., 1000 for water)
   particleRestDensity: number;
 
   // Domain
@@ -78,6 +79,7 @@ export class GPUSimulationBuffers {
   // Uniform buffers
   simParams: GPUBuffer;
   obstacleParams: GPUBuffer;
+  pressureParams: GPUBuffer;
 
   // Sizes for reference
   maxParticles: number;
@@ -262,6 +264,13 @@ export class GPUSimulationBuffers {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       label: 'obstacleParams',
     });
+
+    // PressureParams: cp (f32), colorPass (i32), compensateDrift (i32), pad = 16 bytes
+    this.pressureParams = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      label: 'pressureParams',
+    });
   }
 
   /**
@@ -386,6 +395,30 @@ export class GPUSimulationBuffers {
   }
 
   /**
+   * Update pressure solver parameters.
+   */
+  updatePressureParams(cp: number, colorPass: number, compensateDrift: boolean): void {
+    const data = new ArrayBuffer(16);
+    const floatView = new Float32Array(data);
+    const intView = new Int32Array(data);
+
+    floatView[0] = cp;
+    intView[1] = colorPass;
+    intView[2] = compensateDrift ? 1 : 0;
+    intView[3] = 0; // padding
+
+    this.device.queue.writeBuffer(this.pressureParams, 0, data);
+  }
+
+  /**
+   * Clear pressure array to zero.
+   */
+  clearPressure(): void {
+    const zeros = new Float32Array(this.fNumCells);
+    this.device.queue.writeBuffer(this.gridP, 0, zeros);
+  }
+
+  /**
    * Clean up GPU resources.
    */
   destroy(): void {
@@ -416,5 +449,6 @@ export class GPUSimulationBuffers {
     this.densityAccum.destroy();
     this.simParams.destroy();
     this.obstacleParams.destroy();
+    this.pressureParams.destroy();
   }
 }

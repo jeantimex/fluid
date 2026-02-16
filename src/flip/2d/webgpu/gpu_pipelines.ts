@@ -21,6 +21,7 @@ import p2gShader from './shaders/p2g.wgsl?raw';
 import normalizeGridShader from './shaders/normalize_grid.wgsl?raw';
 import densityShader from './shaders/density.wgsl?raw';
 import normalizeDensityShader from './shaders/normalize_density.wgsl?raw';
+import pressureShader from './shaders/pressure.wgsl?raw';
 
 export class GPUComputePipelines {
   private device: GPUDevice;
@@ -42,6 +43,7 @@ export class GPUComputePipelines {
   normalizeGridPipeline: GPUComputePipeline;
   densityPipeline: GPUComputePipeline;
   normalizeDensityPipeline: GPUComputePipeline;
+  pressurePipeline: GPUComputePipeline;
 
   // Bind groups
   integrateBindGroup: GPUBindGroup;
@@ -60,6 +62,7 @@ export class GPUComputePipelines {
   normalizeGridBindGroup: GPUBindGroup;
   densityBindGroup: GPUBindGroup;
   normalizeDensityBindGroup: GPUBindGroup;
+  pressureBindGroup: GPUBindGroup;
 
   // Workgroup size
   readonly workgroupSize = 256;
@@ -437,6 +440,31 @@ export class GPUComputePipelines {
         { binding: 0, resource: { buffer: buffers.densityAccum } },
         { binding: 1, resource: { buffer: buffers.gridDensity } },
         { binding: 2, resource: { buffer: buffers.simParams } },
+      ],
+    });
+
+    // === Pressure Solver Pipeline ===
+    const pressureModule = device.createShaderModule({
+      label: 'pressure shader',
+      code: pressureShader,
+    });
+    this.pressurePipeline = device.createComputePipeline({
+      label: 'pressure pipeline',
+      layout: 'auto',
+      compute: { module: pressureModule, entryPoint: 'main' },
+    });
+    this.pressureBindGroup = device.createBindGroup({
+      label: 'pressure bind group',
+      layout: this.pressurePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: buffers.gridU } },
+        { binding: 1, resource: { buffer: buffers.gridV } },
+        { binding: 2, resource: { buffer: buffers.gridP } },
+        { binding: 3, resource: { buffer: buffers.gridS } },
+        { binding: 4, resource: { buffer: buffers.gridCellType } },
+        { binding: 5, resource: { buffer: buffers.gridDensity } },
+        { binding: 6, resource: { buffer: buffers.simParams } },
+        { binding: 7, resource: { buffer: buffers.pressureParams } },
       ],
     });
   }

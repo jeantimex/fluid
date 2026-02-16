@@ -576,6 +576,62 @@ export class GPUFluidSimulation {
   }
 
   /**
+   * Copy current grid velocities to prev buffers (for FLIP correction).
+   * This should be called after P2G but before pressure solve.
+   */
+  saveGridVelocities(): void {
+    const size = this.params.fNumCells * 4;
+    const encoder = this.device.createCommandEncoder();
+    encoder.copyBufferToBuffer(this.buffers.gridU, 0, this.buffers.gridPrevU, 0, size);
+    encoder.copyBufferToBuffer(this.buffers.gridV, 0, this.buffers.gridPrevV, 0, size);
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  /**
+   * Run pressure solver on GPU using Red-Black Gauss-Seidel.
+   * @param numIterations Number of pressure solve iterations
+   * @param compensateDrift Whether to compensate for density drift
+   */
+  runPressureSolver(numIterations: number, compensateDrift: boolean = true): void {
+    // Clear pressure array
+    this.buffers.clearPressure();
+
+    // Compute cp = density * h / dt (using material density, not particle rest density)
+    const cp = this.params.density * this.params.h / this.params.dt;
+
+    const interiorCells = (this.params.fNumX - 2) * (this.params.fNumY - 2);
+    const workgroups = Math.ceil(interiorCells / this.pipelines.workgroupSize);
+
+    // Run Red-Black iterations
+    // Each iteration needs separate submission to ensure uniform updates are visible
+    for (let iter = 0; iter < numIterations; iter++) {
+      // Red pass (colorPass = 0)
+      this.buffers.updatePressureParams(cp, 0, compensateDrift);
+      {
+        const encoder = this.device.createCommandEncoder();
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(this.pipelines.pressurePipeline);
+        pass.setBindGroup(0, this.pipelines.pressureBindGroup);
+        pass.dispatchWorkgroups(workgroups);
+        pass.end();
+        this.device.queue.submit([encoder.finish()]);
+      }
+
+      // Black pass (colorPass = 1)
+      this.buffers.updatePressureParams(cp, 1, compensateDrift);
+      {
+        const encoder = this.device.createCommandEncoder();
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(this.pipelines.pressurePipeline);
+        pass.setBindGroup(0, this.pipelines.pressureBindGroup);
+        pass.dispatchWorkgroups(workgroups);
+        pass.end();
+        this.device.queue.submit([encoder.finish()]);
+      }
+    }
+  }
+
+  /**
    * Clean up resources.
    */
   destroy(): void {

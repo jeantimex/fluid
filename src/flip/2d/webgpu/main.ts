@@ -94,6 +94,7 @@ async function main(): Promise<void> {
     dt: 1.0 / 60.0,
     flipRatio: 0.9,
     overRelaxation: 1.9,
+    density: density,  // Material density (1000.0 for water)
     particleRestDensity: 0.0,
     domainWidth: simWidth,
     domainHeight: simHeight,
@@ -391,10 +392,25 @@ async function main(): Promise<void> {
     fluid.particlePos.set(gpuPos);
     fluid.particleVel.set(gpuVel);
 
-    // ===== CPU: Push particles apart =====
-    // (GPU version has different behavior due to parallel processing - keeping CPU for now)
+    // ===== Push particles apart =====
+    // GPU push_apart has race conditions causing noisy behavior
+    // Using CPU version for stability (GPU spatial hash has this issue)
+    const useGpuPushApart = false;
+
     if (separateParticles) {
-      fluid.pushParticlesApart(numParticleIters);
+      if (useGpuPushApart) {
+        // GPU version: build spatial hash once, then push apart multiple times
+        gpuSim.runSpatialHash();
+        for (let iter = 0; iter < numParticleIters; iter++) {
+          gpuSim.runPushApart();
+        }
+        // Read back updated positions
+        const gpuPosAfterPush = await gpuSim.readParticlePositions(fluid.numParticles);
+        fluid.particlePos.set(gpuPosAfterPush);
+      } else {
+        // CPU version (stable)
+        fluid.pushParticlesApart(numParticleIters);
+      }
     }
 
     // ===== GPU: P2G Transfer =====
@@ -442,14 +458,41 @@ async function main(): Promise<void> {
         fluid.particleRestDensity = sum / numFluidCells;
       }
       console.log('Computed rest density:', fluid.particleRestDensity);
+      // Update GPU with rest density
+      gpuSim.updateParams({ particleRestDensity: fluid.particleRestDensity, overRelaxation });
     }
 
-    // Pressure solver (CPU)
-    const sdt = 1.0 / 60.0; // sub-timestep for pressure solve
-    fluid.solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
+    // ===== Pressure Solver =====
+    // Try GPU pressure solver with adjusted parameters
+    // Red-Black Gauss-Seidel converges slower, so use more iterations
+    // and lower over-relaxation for stability
+    const useGpuPressure = false; // Toggle this to test GPU pressure solver
+
+    if (useGpuPressure) {
+      // GPU needs: grid data already uploaded from P2G, density from density step
+      gpuSim.saveGridVelocities();
+      // Use more iterations (100) and rely on overRelaxation from params
+      gpuSim.runPressureSolver(100, compensateDrift);
+
+      // Read back results
+      const gpuU = await gpuSim.readGridU();
+      const gpuV = await gpuSim.readGridV();
+      fluid.u.set(gpuU);
+      fluid.v.set(gpuV);
+    } else {
+      // CPU pressure solver (stable, known to work)
+      fluid.solveIncompressibility(numPressureIters, dt, overRelaxation, compensateDrift);
+    }
+
+    // Upload the results back to GPU for G2P
+    gpuSim.getBuffers().uploadGridU(fluid.u);
+    gpuSim.getBuffers().uploadGridV(fluid.v);
+    gpuSim.getBuffers().uploadPrevU(fluid.prevU);
+    gpuSim.getBuffers().uploadPrevV(fluid.prevV);
 
     // ===== GPU: G2P Transfer =====
     // Upload grid data needed for G2P (after pressure solver)
+    // Note: U and V are already on GPU from pressure solver, but prevU/prevV and cellType need upload
     gpuSim.uploadGridDataForG2P(
       fluid.u,
       fluid.v,
