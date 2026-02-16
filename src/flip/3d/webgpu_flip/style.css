@@ -2,93 +2,10 @@ body {
     margin: 0;
     padding: 0;
     overflow: hidden;
-    background-color: #f0f0f0;
-    font-family: 'Asap', Helvetica, Arial, sans-serif;
-    user-select: none;
 }
 
 #canvas {
     display: block;
     width: 100vw;
     height: 100vh;
-}
-
-#ui {
-    position: absolute;
-    top: 30px;
-    left: 30px;
-    pointer-events: none;
-}
-
-.button {
-    pointer-events: auto;
-    width: 120px;
-    height: 40px;
-    line-height: 40px;
-    text-align: center;
-    font-weight: bold;
-    color: white;
-    margin-bottom: 10px;
-    cursor: pointer;
-}
-
-#start-button {
-    background: rgb(70, 190, 60);
-}
-
-#start-button:hover {
-    background: rgb(60, 180, 50);
-}
-
-#preset-button {
-    background: rgba(80, 160, 230, 1.0);
-    width: 100px;
-    height: 30px;
-    line-height: 30px;
-    font-size: 12px;
-}
-
-.slider-container {
-    margin-top: 15px;
-    color: #555555;
-    font-size: 12px;
-    font-weight: bold;
-}
-
-.slider {
-    pointer-events: auto;
-    margin-top: 4px;
-    width: 200px;
-    height: 22px;
-    background: rgba(0, 0, 0, 0.1);
-    position: relative;
-    cursor: pointer;
-}
-
-.slider-fill {
-    height: 100%;
-    background: #666666;
-    position: absolute;
-    top: 0;
-    left: 0;
-}
-
-#particle-count {
-    color: #777777;
-    font-weight: normal;
-    margin-top: 4px;
-}
-
-.instructions {
-    position: absolute;
-    bottom: 30px;
-    left: 30px;
-    font-size: 12px;
-    line-height: 16px;
-    color: #555555;
-}
-
-.instructions span {
-    font-weight: bold;
-    color: #444444;
 }
