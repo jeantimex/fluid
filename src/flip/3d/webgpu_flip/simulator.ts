@@ -86,9 +86,9 @@ export class Simulator {
 
             const SCALE: f32 = 10000.0;
             const GRAVITY: f32 = 40.0;
-            const FLIP_RATIO: f32 = 0.95;  // Slightly more PIC for stability
+            const FLIP_RATIO: f32 = 0.99;  // Match WebGL (0 = PIC, 1 = FLIP)
             const PARTICLE_DENSITY: f32 = 10.0;
-            const TURBULENCE: f32 = 0.08;  // Increased for more active particles
+            const TURBULENCE: f32 = 0.05;  // Match WebGL
 
             // Velocity grid index (nx+1) x (ny+1) x (nz+1)
             fn velIdx(x: u32, y: u32, z: u32) -> u32 {
@@ -264,11 +264,8 @@ export class Simulator {
                 if (id.x > uniforms.nx || id.y > uniforms.ny || id.z > uniforms.nz) { return; }
                 let vi = velIdx(id.x, id.y, id.z);
 
-                // Only apply gravity where we have fluid influence
-                let wy = f32(atomicLoad(&gridWeightAtomic[vi].y)) / SCALE;
-                if (wy > 0.0) {
-                    gridVel[vi].y -= GRAVITY * uniforms.dt;
-                }
+                // Apply gravity to all cells (matches WebGL)
+                gridVel[vi].y -= GRAVITY * uniforms.dt;
             }
 
             // ============ ENFORCE BOUNDARY ============
@@ -563,13 +560,16 @@ export class Simulator {
                 var step = v2 * uniforms.dt;
 
                 // Turbulence with time-varying random (like WebGL)
-                // Use frame number to create changing random directions
-                let randomDir = hash3(pos, f32(pIdx) * 0.001 + uniforms.frameNumber * 0.1);
+                // WebGL uses pre-computed random texture sampled with slowly changing offset
+                // Simulate this with stable per-particle random that shifts slowly
+                let stableRandom = hash3(vec3<f32>(f32(pIdx) * 0.1, 0.0, 0.0), 0.0);
+                let timeOffset = uniforms.frameNumber * 0.005;  // Very slow variation
+                let randomDir = hash3(stableRandom + vec3<f32>(timeOffset), 0.0);
                 step += TURBULENCE * randomDir * length(v1) * uniforms.dt;
 
                 pos += step;
 
-                // Clamp to bounds
+                // Clamp to bounds (same as WebGL)
                 let eps = 0.01;
                 pos = clamp(pos, vec3<f32>(eps), vec3<f32>(uniforms.width - eps, uniforms.height - eps, uniforms.depth - eps));
 
@@ -699,8 +699,8 @@ export class Simulator {
         pass.setPipeline(this.divergencePipeline);
         pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
 
-        // 8. Jacobi pressure solve (30 iterations - balanced for performance)
-        for (let i = 0; i < 30; i++) {
+        // 8. Jacobi pressure solve (50 iterations - match WebGL)
+        for (let i = 0; i < 50; i++) {
             pass.setPipeline(this.jacobiPipeline);
             pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
         }
