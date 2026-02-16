@@ -2,6 +2,7 @@ import { Utilities } from './utilities';
 import { Camera } from './camera';
 import { BoxEditor } from './box_editor';
 import { generateSphereGeometry } from './renderer';
+import { Simulator } from './simulator';
 
 async function init() {
     if (!navigator.gpu) {
@@ -39,6 +40,9 @@ async function init() {
     const GRID_WIDTH = 40;
     const GRID_HEIGHT = 20;
     const GRID_DEPTH = 20;
+    const RESOLUTION_X = 40;
+    const RESOLUTION_Y = 20;
+    const RESOLUTION_Z = 20;
 
     const camera = new Camera(canvas, [GRID_WIDTH / 2, GRID_HEIGHT / 3, GRID_DEPTH / 2]);
     const boxEditor = new BoxEditor(device, presentationFormat, [GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH]);
@@ -46,13 +50,15 @@ async function init() {
     // --- Particle Setup ---
     const MAX_PARTICLES = 100000;
     const particlePositionBuffer = device.createBuffer({
-        size: MAX_PARTICLES * 16, // vec4<f32>
+        size: MAX_PARTICLES * 16,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     const particleVelocityBuffer = device.createBuffer({
-        size: MAX_PARTICLES * 16, // vec4<f32>
+        size: MAX_PARTICLES * 16,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
+
+    const simulator = new Simulator(device, RESOLUTION_X, RESOLUTION_Y, RESOLUTION_Z, GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH, particlePositionBuffer, particleVelocityBuffer);
 
     const sphereGeom = generateSphereGeometry(2);
     const sphereVertexBuffer = device.createBuffer({
@@ -160,12 +166,12 @@ async function init() {
                 positions[i * 4 + 0] = p[0];
                 positions[i * 4 + 1] = p[1];
                 positions[i * 4 + 2] = p[2];
-                positions[i * 4 + 3] = 0;
+                positions[i * 4 + 3] = 1.0;
 
                 velocities[i * 4 + 0] = (Math.random() - 0.5) * 2.0;
                 velocities[i * 4 + 1] = (Math.random() - 0.5) * 2.0;
                 velocities[i * 4 + 2] = (Math.random() - 0.5) * 2.0;
-                velocities[i * 4 + 3] = 0;
+                velocities[i * 4 + 3] = 0.0;
             }
             device.queue.writeBuffer(particlePositionBuffer, 0, positions);
             device.queue.writeBuffer(particleVelocityBuffer, 0, velocities);
@@ -193,8 +199,13 @@ async function init() {
 
     function frame() {
         const commandEncoder = device.createCommandEncoder();
-        const textureView = context.getCurrentTexture().createView();
 
+        // Compute Pass
+        const computePass = commandEncoder.beginComputePass();
+        simulator.step(computePass, particleCount);
+        computePass.end();
+
+        const textureView = context.getCurrentTexture().createView();
         const renderPassDescriptor: GPURenderPassDescriptor = {
             colorAttachments: [
                 {
