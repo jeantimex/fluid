@@ -138,7 +138,7 @@ async function init() {
     aoSphereIndexBuffer.unmap();
 
     // Shadow map dimensions
-    const SHADOW_MAP_SIZE = 256;
+    const SHADOW_MAP_SIZE = 1024;
 
     // Create G-buffer texture (normal.xy, speed, depth) - using rgba16float
     let gBufferTexture = device.createTexture({
@@ -187,20 +187,47 @@ async function init() {
         compare: 'less',
     });
 
-    // Calculate light matrices (light from above, centered on world origin)
-    const lightMidpoint = [0, GRID_HEIGHT / 2, 0];  // World center of fluid
+    // Scene configuration (Unity-style)
+    const sceneConfig = {
+        dirToSun: [-0.83, 0.42, -0.36],
+        floorY: 0.0,  // Floor at bottom of simulation
+        skyColorHorizon: [1.0, 1.0, 1.0],
+        sunPower: 500.0,
+        skyColorZenith: [0.08, 0.37, 0.73],
+        sunBrightness: 1.0,
+        skyColorGround: [0.55, 0.5, 0.55],
+        floorSize: 100.0,
+        tileCol1: [0.20392157, 0.5176471, 0.7764706],  // Light Blue
+        tileScale: 1.0,
+        tileCol2: [0.6081319, 0.36850303, 0.8584906],   // Purple
+        tileDarkFactor: -0.35,
+        tileCol3: [0.3019758, 0.735849, 0.45801795],    // Green
+        tileCol4: [0.8018868, 0.6434483, 0.36690104],   // Yellow/Brown
+    };
+
+    // Calculate light matrices (aligned with scene sun direction)
+    const sunDir = sceneConfig.dirToSun;
+    const lightDistance = 50.0;
+    const lightPos = [
+        sunDir[0] * lightDistance,
+        sunDir[1] * lightDistance,
+        sunDir[2] * lightDistance
+    ];
+    
     const lightViewMatrix = Utilities.makeLookAtMatrix(
         new Float32Array(16),
-        lightMidpoint,
-        [lightMidpoint[0], lightMidpoint[1] - 1.0, lightMidpoint[2]],
-        [0.0, 0.0, 1.0]
+        lightPos,
+        [0, 0, 0],  // Look at floor center
+        [0.0, 1.0, 0.0] // Standard Y-up for slanted light
     );
-    // Use WebGPU orthographic projection (z in [0,1] instead of [-1,1])
+    
+    // Orthographic projection covering the simulation area from the light's POV
+    const orthoSize = 40.0;
     const lightProjectionMatrix = Utilities.makeOrthographicMatrixWebGPU(
         new Float32Array(16),
-        -GRID_WIDTH / 2, GRID_WIDTH / 2,
-        -GRID_DEPTH / 2, GRID_DEPTH / 2,
-        -GRID_HEIGHT / 2, GRID_HEIGHT / 2
+        -orthoSize, orthoSize,
+        -orthoSize, orthoSize,
+        0.1, lightDistance * 2.0
     );
     const lightProjectionViewMatrix = new Float32Array(16);
     Utilities.premultiplyMatrix(lightProjectionViewMatrix, lightViewMatrix, lightProjectionMatrix);
@@ -398,7 +425,34 @@ async function init() {
                 return select(-1.0, t, t > 0.0);
             }
 
-            fn getSceneBackground(rayDir: vec3<f32>) -> vec3<f32> {
+            // Sample shadow map with PCF for soft shadows
+            fn sampleFloorShadow(worldPos: vec3<f32>) -> f32 {
+                var lightSpacePos = uniforms.lightProjectionViewMatrix * vec4<f32>(worldPos, 1.0);
+                lightSpacePos = lightSpacePos / lightSpacePos.w;
+                // Note: Y is flipped for WebGPU texture coordinates
+                let lightCoords = vec2<f32>(lightSpacePos.x * 0.5 + 0.5, 0.5 - lightSpacePos.y * 0.5);
+                let lightDepth = lightSpacePos.z;
+
+                // PCF shadow sampling (3x3 kernel)
+                var shadow = 0.0;
+                let texelSize = 1.0 / uniforms.shadowResolution;
+                for (var x = -1; x <= 1; x++) {
+                    for (var y = -1; y <= 1; y++) {
+                        let offset = vec2<f32>(f32(x), f32(y)) * texelSize;
+                        let sampleCoord = lightCoords + offset;
+                        shadow += textureSampleCompare(shadowTex, shadowSamp, sampleCoord, lightDepth - 0.002);
+                    }
+                }
+                shadow = shadow / 9.0;
+
+                // Return no shadow (1.0) if outside light frustum bounds
+                let inBounds = lightCoords.x >= 0.0 && lightCoords.x <= 1.0 &&
+                               lightCoords.y >= 0.0 && lightCoords.y <= 1.0 &&
+                               lightDepth >= 0.0 && lightDepth <= 1.0;
+                return select(1.0, shadow, inBounds);
+            }
+
+            fn getSceneBackground(rayDir: vec3<f32>, floorShadow: f32) -> vec3<f32> {
                 let t = rayPlaneIntersect(uniforms.cameraPos, rayDir, uniforms.floorY);
 
                 if (t > 0.0) {
@@ -428,6 +482,11 @@ async function init() {
                         if (isDarkTile) {
                             tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, uniforms.tileDarkFactor));
                         }
+
+                        // Apply particle shadow to floor (passed in from uniform control flow)
+                        let ambient = 0.4;  // Ambient light in shadow
+                        let shadowFactor = ambient + (1.0 - ambient) * floorShadow;
+                        tileCol *= shadowFactor;
 
                         return tileCol;
                     }
@@ -460,24 +519,31 @@ async function init() {
                 // Shadow calculation with PCF
                 var lightSpacePos = uniforms.lightProjectionViewMatrix * vec4<f32>(worldSpacePos, 1.0);
                 lightSpacePos = lightSpacePos / lightSpacePos.w;
-                let lightCoords = lightSpacePos.xy * 0.5 + 0.5;
+                // Note: Y is flipped for WebGPU texture coordinates
+                let lightCoords = vec2<f32>(lightSpacePos.x * 0.5 + 0.5, 0.5 - lightSpacePos.y * 0.5);
                 let lightDepth = lightSpacePos.z;
 
                 var shadow = 0.0;
-                let texelSize = 5.0 / uniforms.shadowResolution;
-                for (var x = -2; x <= 2; x++) {
-                    for (var y = -2; y <= 2; y++) {
+                let texelSize = 1.0 / uniforms.shadowResolution;
+                for (var x = -1; x <= 1; x++) {
+                    for (var y = -1; y <= 1; y++) {
                         let offset = vec2<f32>(f32(x), f32(y)) * texelSize;
                         shadow += textureSampleCompare(shadowTex, shadowSamp, lightCoords + offset, lightDepth - 0.002);
                     }
                 }
-                shadow /= 25.0;
+                shadow /= 9.0;
 
                 let isBackground = speed < 0.0 || viewSpaceZ > -0.01;
 
                 // Compute ray direction for background
                 let rayDirNorm = normalize((uniforms.inverseViewMatrix * vec4<f32>(viewRay, 0.0)).xyz);
-                let bgColor = getSceneBackground(rayDirNorm);
+
+                // Compute floor shadow in uniform control flow (before any conditionals)
+                let floorT = rayPlaneIntersect(uniforms.cameraPos, rayDirNorm, uniforms.floorY);
+                let floorHitPos = uniforms.cameraPos + rayDirNorm * max(floorT, 0.0);
+                let floorShadow = sampleFloorShadow(floorHitPos);
+
+                let bgColor = getSceneBackground(rayDirNorm, floorShadow);
 
                 // Particle color from speed
                 let hue = max(0.6 - speed * 0.0025, 0.52);
@@ -943,23 +1009,6 @@ async function init() {
     aoUniformData[7] = 0;
     const compositeUniformData = new Float32Array(40);  // Extended for scene uniforms (160 bytes)
 
-    // Scene configuration (Unity-style)
-    const sceneConfig = {
-        dirToSun: [-0.83, 0.42, -0.36],
-        floorY: 0.0,  // Floor at bottom of simulation
-        skyColorHorizon: [1.0, 1.0, 1.0],
-        sunPower: 500.0,
-        skyColorZenith: [0.08, 0.37, 0.73],
-        sunBrightness: 1.0,
-        skyColorGround: [0.55, 0.5, 0.55],
-        floorSize: 100.0,
-        tileCol1: [0.20392157, 0.5176471, 0.7764706],  // Light Blue
-        tileScale: 1.0,
-        tileCol2: [0.6081319, 0.36850303, 0.8584906],   // Purple
-        tileDarkFactor: -0.35,
-        tileCol3: [0.3019758, 0.735849, 0.45801795],    // Green
-        tileCol4: [0.8018868, 0.6434483, 0.36690104],   // Yellow/Brown
-    };
     const fxaaUniformData = new Float32Array(2);  // [width, height]
 
     function frame() {
@@ -1062,9 +1111,8 @@ async function init() {
             });
             shadowPass.setPipeline(shadowPipeline);
             shadowPass.setBindGroup(0, shadowBindGroup);
-            shadowPass.setVertexBuffer(0, aoSphereVertexBuffer);  // Use low-poly for 256x256 shadow map
+            shadowPass.setVertexBuffer(0, aoSphereVertexBuffer);  // Use low-poly for shadow map
             shadowPass.setIndexBuffer(aoSphereIndexBuffer, 'uint16');
-            shadowPass.setViewport(1, 1, SHADOW_MAP_SIZE - 2, SHADOW_MAP_SIZE - 2, 0, 1);
             shadowPass.drawIndexed(aoSphereGeom.indices.length, particleCount);
             shadowPass.end();
 
