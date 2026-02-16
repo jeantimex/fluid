@@ -691,8 +691,8 @@ export class Simulator {
         pass.setPipeline(this.divergencePipeline);
         pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
 
-        // 8. Jacobi pressure solve (50 iterations)
-        for (let i = 0; i < 50; i++) {
+        // 8. Jacobi pressure solve (30 iterations - balanced for performance)
+        for (let i = 0; i < 30; i++) {
             pass.setPipeline(this.jacobiPipeline);
             pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
         }

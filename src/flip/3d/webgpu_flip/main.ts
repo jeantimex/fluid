@@ -71,8 +71,8 @@ async function init() {
 
     const simulator = new Simulator(device, RESOLUTION_X, RESOLUTION_Y, RESOLUTION_Z, GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH, particlePositionBuffer, particleVelocityBuffer);
 
-    // Generate sphere geometry with normals (3 iterations for smooth spheres)
-    const sphereGeom = generateSphereGeometry(3);
+    // Generate sphere geometry with normals (2 iterations is sufficient and faster)
+    const sphereGeom = generateSphereGeometry(2);
     const sphereVertexBuffer = device.createBuffer({
         size: sphereGeom.vertices.byteLength,
         usage: GPUBufferUsage.VERTEX,
@@ -360,8 +360,8 @@ async function init() {
                 let spherePos = positions[instanceIndex].xyz;
                 let viewSpherPos = (uniforms.viewMatrix * vec4<f32>(spherePos, 1.0)).xyz;
 
-                // Extrude sphere 5x for AO range
-                let extrudedRadius = uniforms.sphereRadius * 5.0;
+                // Extrude sphere 3x for AO range (reduced for performance)
+                let extrudedRadius = uniforms.sphereRadius * 3.0;
                 let worldPos = vertexPos * extrudedRadius + spherePos;
 
                 var out: VertexOutput;
