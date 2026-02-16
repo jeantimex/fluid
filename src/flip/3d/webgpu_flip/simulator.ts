@@ -1,5 +1,3 @@
-import { AABB } from './aabb';
-
 export class Simulator {
     device: GPUDevice;
     nx: number; ny: number; nz: number;
@@ -59,13 +57,17 @@ export class Simulator {
         this.pressureBuffer = createBuffer(scalarGridCount * 4);
         this.pressureTempBuffer = createBuffer(scalarGridCount * 4);
 
-        this.uniformBuffer = createBuffer(48, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
+        // Increased buffer size to accommodate mouse data
+        this.uniformBuffer = createBuffer(112, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
 
         const shaderSource = `
             struct Uniforms {
                 nx: u32, ny: u32, nz: u32, particleCount: u32,
                 width: f32, height: f32, depth: f32, dt: f32,
                 frameNumber: f32, _pad1: f32, _pad2: f32, _pad3: f32,
+                mouseVelocity: vec3<f32>, _pad4: f32,
+                mouseRayOrigin: vec3<f32>, _pad5: f32,
+                mouseRayDirection: vec3<f32>, _pad6: f32,
             };
 
             @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -123,6 +125,22 @@ export class Simulator {
 
             fn kernel(v: vec3<f32>) -> f32 {
                 return h(v.x) * h(v.y) * h(v.z);
+            }
+
+            // Mouse kernel function (matches WebGL addforce.frag)
+            const MOUSE_RADIUS: f32 = 5.0;
+
+            fn mouseKernel(gridPosition: vec3<f32>) -> f32 {
+                // Convert grid position to world position
+                let worldPosition = gridPosition / vec3<f32>(f32(uniforms.nx), f32(uniforms.ny), f32(uniforms.nz)) *
+                                   vec3<f32>(uniforms.width, uniforms.height, uniforms.depth);
+
+                // Distance to mouse ray using cross product
+                let toOrigin = worldPosition - uniforms.mouseRayOrigin;
+                let distanceToMouseRay = length(cross(uniforms.mouseRayDirection, toOrigin));
+
+                let normalizedDistance = max(0.0, distanceToMouseRay / MOUSE_RADIUS);
+                return smoothstep(1.0, 0.9, normalizedDistance);
             }
 
             // ============ CLEAR GRID ============
@@ -258,7 +276,7 @@ export class Simulator {
                 gridVelOrig[vi] = vec4<f32>(vx, vy, vz, ws);
             }
 
-            // ============ ADD GRAVITY ============
+            // ============ ADD GRAVITY AND MOUSE FORCE ============
             @compute @workgroup_size(8, 4, 4)
             fn addGravity(@builtin(global_invocation_id) id: vec3<u32>) {
                 if (id.x > uniforms.nx || id.y > uniforms.ny || id.z > uniforms.nz) { return; }
@@ -266,6 +284,23 @@ export class Simulator {
 
                 // Apply gravity to all cells (matches WebGL)
                 gridVel[vi].y -= GRAVITY * uniforms.dt;
+
+                // Apply mouse force (matches WebGL addforce.frag)
+                // MAC grid staggered positions for velocity components
+                let xPosition = vec3<f32>(f32(id.x), f32(id.y) + 0.5, f32(id.z) + 0.5);
+                let yPosition = vec3<f32>(f32(id.x) + 0.5, f32(id.y), f32(id.z) + 0.5);
+                let zPosition = vec3<f32>(f32(id.x) + 0.5, f32(id.y) + 0.5, f32(id.z));
+
+                let kernelX = mouseKernel(xPosition);
+                let kernelY = mouseKernel(yPosition);
+                let kernelZ = mouseKernel(zPosition);
+
+                // Force multiplier: 3.0 * smoothstep(0.0, 1/200, timeStep)
+                let forceMultiplier = 3.0 * smoothstep(0.0, 1.0 / 200.0, uniforms.dt);
+
+                gridVel[vi].x += uniforms.mouseVelocity.x * kernelX * forceMultiplier;
+                gridVel[vi].y += uniforms.mouseVelocity.y * kernelY * forceMultiplier;
+                gridVel[vi].z += uniforms.mouseVelocity.z * kernelZ * forceMultiplier;
             }
 
             // ============ ENFORCE BOUNDARY ============
@@ -631,11 +666,11 @@ export class Simulator {
         // Alt bind group not needed for current implementation
         this.simBindGroupAlt = this.simBindGroup;
 
-        this.updateUniforms(0);
+        this.updateUniforms(0, [0, 0, 0], [0, 0, 0], [0, 0, 1]);
     }
 
-    updateUniforms(particleCount: number) {
-        const data = new ArrayBuffer(48);
+    updateUniforms(particleCount: number, mouseVelocity: number[], mouseRayOrigin: number[], mouseRayDirection: number[]) {
+        const data = new ArrayBuffer(112);
         const u32 = new Uint32Array(data);
         const f32 = new Float32Array(data);
         u32[0] = this.nx;
@@ -650,12 +685,27 @@ export class Simulator {
         f32[9] = 0.0;  // padding
         f32[10] = 0.0; // padding
         f32[11] = 0.0; // padding
+        // Mouse velocity (vec3 + padding)
+        f32[12] = mouseVelocity[0];
+        f32[13] = mouseVelocity[1];
+        f32[14] = mouseVelocity[2];
+        f32[15] = 0.0; // padding
+        // Mouse ray origin (vec3 + padding)
+        f32[16] = mouseRayOrigin[0];
+        f32[17] = mouseRayOrigin[1];
+        f32[18] = mouseRayOrigin[2];
+        f32[19] = 0.0; // padding
+        // Mouse ray direction (vec3 + padding)
+        f32[20] = mouseRayDirection[0];
+        f32[21] = mouseRayDirection[1];
+        f32[22] = mouseRayDirection[2];
+        f32[23] = 0.0; // padding
         this.device.queue.writeBuffer(this.uniformBuffer, 0, data);
         this.frameNumber++;
     }
 
-    step(pass: GPUComputePassEncoder, particleCount: number) {
-        this.updateUniforms(particleCount);
+    step(pass: GPUComputePassEncoder, particleCount: number, mouseVelocity: number[], mouseRayOrigin: number[], mouseRayDirection: number[]) {
+        this.updateUniforms(particleCount, mouseVelocity, mouseRayOrigin, mouseRayDirection);
 
         const velGridWG = [
             Math.ceil((this.nx + 1) / 8),

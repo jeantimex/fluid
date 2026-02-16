@@ -623,9 +623,24 @@ async function init() {
     }
     updateProjectionMatrix();
 
+    // Mouse interaction state (matching WebGL simulatorrenderer.js)
+    let mouseX = 0;  // Normalized mouse position in [-1, 1]
+    let mouseY = 0;
+    let lastMousePlaneX = 0;
+    let lastMousePlaneY = 0;
+
     canvas.addEventListener('mousedown', (e) => camera.onMouseDown(e));
     window.addEventListener('mouseup', () => camera.onMouseUp());
-    window.addEventListener('mousemove', (e) => camera.onMouseMove(e));
+    window.addEventListener('mousemove', (e) => {
+        const position = Utilities.getMousePosition(e, canvas);
+        const normalizedX = position.x / canvas.width;
+        const normalizedY = position.y / canvas.height;
+
+        mouseX = normalizedX * 2.0 - 1.0;
+        mouseY = (1.0 - normalizedY) * 2.0 - 1.0;
+
+        camera.onMouseMove(e);
+    });
 
     console.log("WebGPU Initialized with Particles");
 
@@ -634,13 +649,59 @@ async function init() {
     function frame() {
         const commandEncoder = device.createCommandEncoder();
 
-        // Compute Pass
-        const computePass = commandEncoder.beginComputePass();
-        simulator.step(computePass, particleCount);
-        computePass.end();
+        // Compute mouse interaction (matching WebGL simulatorrenderer.js)
+        const tanHalfFov = Math.tan(FOV / 2.0);
+        const aspect = canvas.width / canvas.height;
 
+        // View space mouse ray
+        const viewSpaceMouseRay = [
+            mouseX * tanHalfFov * aspect,
+            mouseY * tanHalfFov,
+            -1.0
+        ];
+
+        // Mouse plane position at camera distance (orbit point)
+        const mousePlaneX = viewSpaceMouseRay[0] * camera.distance;
+        const mousePlaneY = viewSpaceMouseRay[1] * camera.distance;
+
+        // Mouse velocity (delta from last frame)
+        let mouseVelocityX = mousePlaneX - lastMousePlaneX;
+        let mouseVelocityY = mousePlaneY - lastMousePlaneY;
+
+        // If camera is being dragged, zero out mouse velocity
+        if (camera.isMouseDown()) {
+            mouseVelocityX = 0.0;
+            mouseVelocityY = 0.0;
+        }
+
+        lastMousePlaneX = mousePlaneX;
+        lastMousePlaneY = mousePlaneY;
+
+        // Transform mouse ray to world space
         const viewMatrix = camera.getViewMatrix();
         const inverseViewMatrix = Utilities.invertMatrix(new Float32Array(16), viewMatrix) || new Float32Array(16);
+        const worldSpaceMouseRay: number[] = [0, 0, 0];
+        Utilities.transformDirectionByMatrix(worldSpaceMouseRay, viewSpaceMouseRay, inverseViewMatrix);
+        Utilities.normalizeVector(worldSpaceMouseRay, worldSpaceMouseRay);
+
+        // Get camera right and up vectors from view matrix
+        const cameraRight = [viewMatrix[0], viewMatrix[4], viewMatrix[8]];
+        const cameraUp = [viewMatrix[1], viewMatrix[5], viewMatrix[9]];
+
+        // Compute world space mouse velocity
+        const mouseVelocity = [
+            mouseVelocityX * cameraRight[0] + mouseVelocityY * cameraUp[0],
+            mouseVelocityX * cameraRight[1] + mouseVelocityY * cameraUp[1],
+            mouseVelocityX * cameraRight[2] + mouseVelocityY * cameraUp[2]
+        ];
+
+        // Mouse ray origin is camera position
+        const mouseRayOrigin = camera.getPosition();
+
+        // Compute Pass
+        const computePass = commandEncoder.beginComputePass();
+        simulator.step(computePass, particleCount, mouseVelocity, mouseRayOrigin, worldSpaceMouseRay);
+        computePass.end();
 
         if (particleCount > 0) {
             // ============ 1. G-BUFFER PASS ============

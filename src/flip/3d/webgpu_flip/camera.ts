@@ -92,6 +92,10 @@ export class Camera {
         this.mouseDown = false;
     }
 
+    isMouseDown(): boolean {
+        return this.mouseDown;
+    }
+
     onMouseMove(event: MouseEvent) {
         const { x, y } = Utilities.getMousePosition(event, this.element);
 
