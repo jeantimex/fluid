@@ -16,7 +16,11 @@ async function init() {
         return;
     }
 
-    const device = await adapter.requestDevice();
+    const device = await adapter.requestDevice({
+        requiredLimits: {
+            maxStorageBuffersPerShaderStage: 10,
+        }
+    });
     const canvas = document.getElementById('canvas') as HTMLCanvasElement;
     const context = canvas.getContext('webgpu') as GPUCanvasContext;
 
@@ -160,7 +164,7 @@ async function init() {
         // Spawn particles in the first box
         if (boxEditor.boxes.length > 0) {
             const box = boxEditor.boxes[0];
-            particleCount = 5000; // Let's start with 5000
+            particleCount = 20000; // Increased for better grid saturation
             for (let i = 0; i < particleCount; i++) {
                 const p = box.randomPoint();
                 positions[i * 4 + 0] = p[0];
@@ -168,9 +172,10 @@ async function init() {
                 positions[i * 4 + 2] = p[2];
                 positions[i * 4 + 3] = 1.0;
 
-                velocities[i * 4 + 0] = (Math.random() - 0.5) * 2.0;
-                velocities[i * 4 + 1] = (Math.random() - 0.5) * 2.0;
-                velocities[i * 4 + 2] = (Math.random() - 0.5) * 2.0;
+                // WebGL reference initializes with zero velocity
+                velocities[i * 4 + 0] = 0.0;
+                velocities[i * 4 + 1] = 0.0;
+                velocities[i * 4 + 2] = 0.0;
                 velocities[i * 4 + 3] = 0.0;
             }
             device.queue.writeBuffer(particlePositionBuffer, 0, positions);

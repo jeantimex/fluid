@@ -2,161 +2,580 @@ import { AABB } from './aabb';
 
 export class Simulator {
     device: GPUDevice;
-    
-    // Grid dimensions
     nx: number; ny: number; nz: number;
     gridWidth: number; gridHeight: number; gridDepth: number;
 
-    // Buffers
-    gridVelocityBuffer: GPUBuffer;
-    gridVelocityFloatBuffer: GPUBuffer;
+    // Staggered MAC grid buffers
+    // We store velocity and weights separately for each component
+    // gridVel stores (vx, vy, vz, scalarWeight) but each is at different staggered positions
+    gridVelocityBuffer: GPUBuffer;      // Atomic accumulator for weighted velocities
+    gridWeightBuffer: GPUBuffer;        // Atomic accumulator for weights
+    gridVelocityFloatBuffer: GPUBuffer; // Normalized velocities
+    gridVelocityOrigBuffer: GPUBuffer;  // Original velocities before pressure solve
+    gridMarkerBuffer: GPUBuffer;        // Cell markers (fluid/air)
+    pressureBuffer: GPUBuffer;
+    pressureTempBuffer: GPUBuffer;      // Stores divergence, then used as temp for Jacobi
     uniformBuffer: GPUBuffer;
-    
-    // Pipelines
+
     clearGridPipeline: GPUComputePipeline;
     transferToGridPipeline: GPUComputePipeline;
     normalizeGridPipeline: GPUComputePipeline;
+    markCellsPipeline: GPUComputePipeline;
+    addGravityPipeline: GPUComputePipeline;
+    enforceBoundaryPipeline: GPUComputePipeline;
+    divergencePipeline: GPUComputePipeline;
+    jacobiPipeline: GPUComputePipeline;
+    applyPressurePipeline: GPUComputePipeline;
+    gridToParticlePipeline: GPUComputePipeline;
     advectPipeline: GPUComputePipeline;
-    
-    // Bind Groups
+
     simBindGroup: GPUBindGroup;
+    simBindGroupAlt: GPUBindGroup;
 
     constructor(device: GPUDevice, nx: number, ny: number, nz: number, width: number, height: number, depth: number, posBuffer: GPUBuffer, velBuffer: GPUBuffer) {
         this.device = device;
         this.nx = nx; this.ny = ny; this.nz = nz;
         this.gridWidth = width; this.gridHeight = height; this.gridDepth = depth;
 
-        const gridCellCount = (nx + 1) * (ny + 1) * (nz + 1);
+        // Velocity grid is (nx+1) x (ny+1) x (nz+1) for staggered MAC grid
+        const velGridCount = (nx + 1) * (ny + 1) * (nz + 1);
+        // Scalar grid (pressure, markers) is nx x ny x nz
+        const scalarGridCount = nx * ny * nz;
 
-        this.gridVelocityBuffer = device.createBuffer({
-            size: gridCellCount * 16,
-            usage: GPUBufferUsage.STORAGE,
-        });
+        const createBuffer = (size: number, usage = GPUBufferUsage.STORAGE) =>
+            device.createBuffer({ size, usage });
 
-        this.gridVelocityFloatBuffer = device.createBuffer({
-            size: gridCellCount * 16,
-            usage: GPUBufferUsage.STORAGE,
-        });
+        // Velocity buffers use vel grid size
+        this.gridVelocityBuffer = createBuffer(velGridCount * 16);   // vec4<i32> atomic
+        this.gridWeightBuffer = createBuffer(velGridCount * 16);     // vec4<i32> atomic weights
+        this.gridVelocityFloatBuffer = createBuffer(velGridCount * 16); // vec4<f32>
+        this.gridVelocityOrigBuffer = createBuffer(velGridCount * 16);  // vec4<f32>
 
-        this.uniformBuffer = device.createBuffer({
-            size: 64,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
+        // Marker uses scalar grid size
+        this.gridMarkerBuffer = createBuffer(scalarGridCount * 4);
+
+        // Pressure uses scalar grid size
+        this.pressureBuffer = createBuffer(scalarGridCount * 4);
+        this.pressureTempBuffer = createBuffer(scalarGridCount * 4);
+
+        this.uniformBuffer = createBuffer(32, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
 
         const shaderSource = `
             struct Uniforms {
-                nx: u32, ny: u32, nz: u32,
-                width: f32, height: f32, depth: f32,
-                dt: f32,
+                nx: u32, ny: u32, nz: u32, particleCount: u32,
+                width: f32, height: f32, depth: f32, dt: f32,
             };
 
             @group(0) @binding(0) var<uniform> uniforms: Uniforms;
             @group(0) @binding(1) var<storage, read_write> positions: array<vec4<f32>>;
             @group(0) @binding(2) var<storage, read_write> velocities: array<vec4<f32>>;
-            
-            struct AtomicGridCell {
-                x: atomic<i32>,
-                y: atomic<i32>,
-                z: atomic<i32>,
-                w: atomic<i32>,
-            };
-            @group(0) @binding(3) var<storage, read_write> gridVelocityAtomic: array<AtomicGridCell>;
-            @group(0) @binding(4) var<storage, read_write> gridVelocityFloat: array<vec4<f32>>;
 
-            fn getIndex(x: u32, y: u32, z: u32) -> u32 {
-                return x + y * (uniforms.nx + 1) + z * (uniforms.nx + 1) * (uniforms.ny + 1);
+            // Atomic buffers for P2G accumulation
+            struct AtomicCell { x: atomic<i32>, y: atomic<i32>, z: atomic<i32>, w: atomic<i32> };
+            @group(0) @binding(3) var<storage, read_write> gridVelAtomic: array<AtomicCell>;  // weighted velocity
+            @group(0) @binding(4) var<storage, read_write> gridWeightAtomic: array<AtomicCell>; // weights
+
+            // Float buffers for simulation
+            @group(0) @binding(5) var<storage, read_write> gridVel: array<vec4<f32>>;      // current velocity
+            @group(0) @binding(6) var<storage, read_write> gridVelOrig: array<vec4<f32>>; // original velocity
+            @group(0) @binding(7) var<storage, read_write> marker: array<u32>;            // scalar grid
+            @group(0) @binding(8) var<storage, read_write> pressure: array<f32>;          // scalar grid
+            @group(0) @binding(9) var<storage, read_write> divergence: array<f32>;        // scalar grid
+
+            const SCALE: f32 = 10000.0;
+            const GRAVITY: f32 = 40.0;
+            const FLIP_RATIO: f32 = 0.99;
+            const PARTICLE_DENSITY: f32 = 10.0;
+            const TURBULENCE: f32 = 0.05;
+
+            // Velocity grid index (nx+1) x (ny+1) x (nz+1)
+            fn velIdx(x: u32, y: u32, z: u32) -> u32 {
+                let cx = clamp(x, 0u, uniforms.nx);
+                let cy = clamp(y, 0u, uniforms.ny);
+                let cz = clamp(z, 0u, uniforms.nz);
+                return cx + cy * (uniforms.nx + 1u) + cz * (uniforms.nx + 1u) * (uniforms.ny + 1u);
             }
 
-            const FIXED_POINT_SCALE: f32 = 1000.0;
+            // Scalar grid index nx x ny x nz
+            fn scalarIdx(x: u32, y: u32, z: u32) -> u32 {
+                let cx = clamp(x, 0u, uniforms.nx - 1u);
+                let cy = clamp(y, 0u, uniforms.ny - 1u);
+                let cz = clamp(z, 0u, uniforms.nz - 1u);
+                return cx + cy * uniforms.nx + cz * uniforms.nx * uniforms.ny;
+            }
 
+            fn worldToGrid(p: vec3<f32>) -> vec3<f32> {
+                return vec3<f32>(
+                    p.x / uniforms.width * f32(uniforms.nx),
+                    p.y / uniforms.height * f32(uniforms.ny),
+                    p.z / uniforms.depth * f32(uniforms.nz)
+                );
+            }
+
+            // Trilinear kernel weight function (matches WebGL h() and k())
+            fn h(r: f32) -> f32 {
+                if (r >= 0.0 && r <= 1.0) { return 1.0 - r; }
+                else if (r >= -1.0 && r < 0.0) { return 1.0 + r; }
+                return 0.0;
+            }
+
+            fn kernel(v: vec3<f32>) -> f32 {
+                return h(v.x) * h(v.y) * h(v.z);
+            }
+
+            // ============ CLEAR GRID ============
             @compute @workgroup_size(8, 4, 4)
             fn clearGrid(@builtin(global_invocation_id) id: vec3<u32>) {
-                if (id.x > uniforms.nx || id.y > uniforms.ny || id.z > uniforms.nz) { return; }
-                let idx = getIndex(id.x, id.y, id.z);
-                atomicStore(&gridVelocityAtomic[idx].x, 0);
-                atomicStore(&gridVelocityAtomic[idx].y, 0);
-                atomicStore(&gridVelocityAtomic[idx].z, 0);
-                atomicStore(&gridVelocityAtomic[idx].w, 0);
+                // Clear velocity grid
+                if (id.x <= uniforms.nx && id.y <= uniforms.ny && id.z <= uniforms.nz) {
+                    let vi = velIdx(id.x, id.y, id.z);
+                    atomicStore(&gridVelAtomic[vi].x, 0);
+                    atomicStore(&gridVelAtomic[vi].y, 0);
+                    atomicStore(&gridVelAtomic[vi].z, 0);
+                    atomicStore(&gridVelAtomic[vi].w, 0);
+                    atomicStore(&gridWeightAtomic[vi].x, 0);
+                    atomicStore(&gridWeightAtomic[vi].y, 0);
+                    atomicStore(&gridWeightAtomic[vi].z, 0);
+                    atomicStore(&gridWeightAtomic[vi].w, 0);
+                    gridVel[vi] = vec4<f32>(0.0);
+                    gridVelOrig[vi] = vec4<f32>(0.0);
+                }
+
+                // Clear scalar grid
+                if (id.x < uniforms.nx && id.y < uniforms.ny && id.z < uniforms.nz) {
+                    let si = scalarIdx(id.x, id.y, id.z);
+                    marker[si] = 0u;
+                    pressure[si] = 0.0;
+                    divergence[si] = 0.0;
+                }
             }
 
+            // ============ PARTICLE TO GRID (P2G) - Staggered MAC Grid ============
+            // Matches WebGL transfertogrid.frag exactly
             @compute @workgroup_size(64)
             fn transferToGrid(@builtin(global_invocation_id) id: vec3<u32>) {
                 let pIdx = id.x;
-                if (pIdx >= arrayLength(&positions)) { return; }
+                if (pIdx >= uniforms.particleCount) { return; }
 
-                let p = positions[pIdx].xyz;
-                let v = velocities[pIdx].xyz;
+                let pos = positions[pIdx].xyz;
+                let vel = velocities[pIdx].xyz;
+                let g = worldToGrid(pos);  // Position in grid coordinates
 
-                let gx = (p.x / uniforms.width) * f32(uniforms.nx);
-                let gy = (p.y / uniforms.height) * f32(uniforms.ny);
-                let gz = (p.z / uniforms.depth) * f32(uniforms.nz);
+                // For each nearby grid cell (splat to 2x2x2 neighborhood)
+                let baseX = i32(floor(g.x));
+                let baseY = i32(floor(g.y));
+                let baseZ = i32(floor(g.z));
 
-                let ix = u32(floor(gx));
-                let iy = u32(floor(gy));
-                let iz = u32(floor(gz));
+                for (var di = 0; di <= 1; di++) {
+                    for (var dj = 0; dj <= 1; dj++) {
+                        for (var dk = 0; dk <= 1; dk++) {
+                            let cellX = u32(max(0, baseX + di));
+                            let cellY = u32(max(0, baseY + dj));
+                            let cellZ = u32(max(0, baseZ + dk));
 
-                let fx = gx - f32(ix);
-                let fy = gy - f32(iy);
-                let fz = gz - f32(iz);
+                            if (cellX > uniforms.nx || cellY > uniforms.ny || cellZ > uniforms.nz) {
+                                continue;
+                            }
 
-                for (var i: u32 = 0; i <= 1; i++) {
-                    for (var j: u32 = 0; j <= 1; j++) {
-                        for (var k: u32 = 0; k <= 1; k++) {
-                            let nIdx = getIndex(ix + i, iy + j, iz + k);
-                            let weight = (select(1.0 - fx, fx, i == 1)) *
-                                         (select(1.0 - fy, fy, j == 1)) *
-                                         (select(1.0 - fz, fz, k == 1));
-                            
-                            atomicAdd(&gridVelocityAtomic[nIdx].x, i32(v.x * weight * FIXED_POINT_SCALE));
-                            atomicAdd(&gridVelocityAtomic[nIdx].y, i32(v.y * weight * FIXED_POINT_SCALE));
-                            atomicAdd(&gridVelocityAtomic[nIdx].z, i32(v.z * weight * FIXED_POINT_SCALE));
-                            atomicAdd(&gridVelocityAtomic[nIdx].w, i32(weight * FIXED_POINT_SCALE));
+                            let cellIdx = velIdx(cellX, cellY, cellZ);
+
+                            // MAC grid staggered positions:
+                            // X velocity at (i, j+0.5, k+0.5)
+                            // Y velocity at (i+0.5, j, k+0.5)
+                            // Z velocity at (i+0.5, j+0.5, k)
+                            // Scalar at (i+0.5, j+0.5, k+0.5)
+
+                            let xPos = vec3<f32>(f32(cellX), f32(cellY) + 0.5, f32(cellZ) + 0.5);
+                            let yPos = vec3<f32>(f32(cellX) + 0.5, f32(cellY), f32(cellZ) + 0.5);
+                            let zPos = vec3<f32>(f32(cellX) + 0.5, f32(cellY) + 0.5, f32(cellZ));
+                            let scalarPos = vec3<f32>(f32(cellX) + 0.5, f32(cellY) + 0.5, f32(cellZ) + 0.5);
+
+                            let xWeight = kernel(g - xPos);
+                            let yWeight = kernel(g - yPos);
+                            let zWeight = kernel(g - zPos);
+                            let scalarWeight = kernel(g - scalarPos);
+
+                            // Accumulate weights
+                            atomicAdd(&gridWeightAtomic[cellIdx].x, i32(xWeight * SCALE));
+                            atomicAdd(&gridWeightAtomic[cellIdx].y, i32(yWeight * SCALE));
+                            atomicAdd(&gridWeightAtomic[cellIdx].z, i32(zWeight * SCALE));
+                            atomicAdd(&gridWeightAtomic[cellIdx].w, i32(scalarWeight * SCALE));
+
+                            // Accumulate weighted velocities
+                            atomicAdd(&gridVelAtomic[cellIdx].x, i32(vel.x * xWeight * SCALE));
+                            atomicAdd(&gridVelAtomic[cellIdx].y, i32(vel.y * yWeight * SCALE));
+                            atomicAdd(&gridVelAtomic[cellIdx].z, i32(vel.z * zWeight * SCALE));
                         }
                     }
                 }
             }
 
+            // ============ MARK CELLS ============
+            @compute @workgroup_size(64)
+            fn markCells(@builtin(global_invocation_id) id: vec3<u32>) {
+                let pIdx = id.x;
+                if (pIdx >= uniforms.particleCount) { return; }
+
+                let pos = positions[pIdx].xyz;
+                let g = worldToGrid(pos);
+
+                let cellX = u32(clamp(i32(floor(g.x)), 0, i32(uniforms.nx) - 1));
+                let cellY = u32(clamp(i32(floor(g.y)), 0, i32(uniforms.ny) - 1));
+                let cellZ = u32(clamp(i32(floor(g.z)), 0, i32(uniforms.nz) - 1));
+
+                let si = scalarIdx(cellX, cellY, cellZ);
+                marker[si] = 1u;
+            }
+
+            // ============ NORMALIZE GRID ============
             @compute @workgroup_size(8, 4, 4)
             fn normalizeGrid(@builtin(global_invocation_id) id: vec3<u32>) {
                 if (id.x > uniforms.nx || id.y > uniforms.ny || id.z > uniforms.nz) { return; }
-                let idx = getIndex(id.x, id.y, id.z);
-                
-                let weight = f32(atomicLoad(&gridVelocityAtomic[idx].w)) / FIXED_POINT_SCALE;
-                if (weight > 0.0) {
-                    let vx = f32(atomicLoad(&gridVelocityAtomic[idx].x)) / (FIXED_POINT_SCALE * weight);
-                    let vy = f32(atomicLoad(&gridVelocityAtomic[idx].y)) / (FIXED_POINT_SCALE * weight);
-                    let vz = f32(atomicLoad(&gridVelocityAtomic[idx].z)) / (FIXED_POINT_SCALE * weight);
-                    gridVelocityFloat[idx] = vec4<f32>(vx, vy, vz, weight);
-                } else {
-                    gridVelocityFloat[idx] = vec4<f32>(0.0);
+                let vi = velIdx(id.x, id.y, id.z);
+
+                let wx = f32(atomicLoad(&gridWeightAtomic[vi].x)) / SCALE;
+                let wy = f32(atomicLoad(&gridWeightAtomic[vi].y)) / SCALE;
+                let wz = f32(atomicLoad(&gridWeightAtomic[vi].z)) / SCALE;
+                let ws = f32(atomicLoad(&gridWeightAtomic[vi].w)) / SCALE;
+
+                var vx = 0.0;
+                var vy = 0.0;
+                var vz = 0.0;
+
+                if (wx > 0.0) {
+                    vx = f32(atomicLoad(&gridVelAtomic[vi].x)) / SCALE / wx;
+                }
+                if (wy > 0.0) {
+                    vy = f32(atomicLoad(&gridVelAtomic[vi].y)) / SCALE / wy;
+                }
+                if (wz > 0.0) {
+                    vz = f32(atomicLoad(&gridVelAtomic[vi].z)) / SCALE / wz;
+                }
+
+                gridVel[vi] = vec4<f32>(vx, vy, vz, ws);
+                gridVelOrig[vi] = vec4<f32>(vx, vy, vz, ws);
+            }
+
+            // ============ ADD GRAVITY ============
+            @compute @workgroup_size(8, 4, 4)
+            fn addGravity(@builtin(global_invocation_id) id: vec3<u32>) {
+                if (id.x > uniforms.nx || id.y > uniforms.ny || id.z > uniforms.nz) { return; }
+                let vi = velIdx(id.x, id.y, id.z);
+
+                // Only apply gravity where we have fluid influence
+                let wy = f32(atomicLoad(&gridWeightAtomic[vi].y)) / SCALE;
+                if (wy > 0.0) {
+                    gridVel[vi].y -= GRAVITY * uniforms.dt;
                 }
             }
 
+            // ============ ENFORCE BOUNDARY ============
+            @compute @workgroup_size(8, 4, 4)
+            fn enforceBoundary(@builtin(global_invocation_id) id: vec3<u32>) {
+                if (id.x > uniforms.nx || id.y > uniforms.ny || id.z > uniforms.nz) { return; }
+                let vi = velIdx(id.x, id.y, id.z);
+
+                // Solid walls (matching WebGL enforceboundaries.frag)
+                if (id.x == 0u) { gridVel[vi].x = 0.0; }
+                if (id.x == uniforms.nx) { gridVel[vi].x = 0.0; }
+                if (id.y == 0u) { gridVel[vi].y = 0.0; }
+                if (id.y == uniforms.ny) { gridVel[vi].y = min(gridVel[vi].y, 0.0); }
+                if (id.z == 0u) { gridVel[vi].z = 0.0; }
+                if (id.z == uniforms.nz) { gridVel[vi].z = 0.0; }
+            }
+
+            // ============ COMPUTE DIVERGENCE ============
+            @compute @workgroup_size(8, 4, 4)
+            fn computeDivergence(@builtin(global_invocation_id) id: vec3<u32>) {
+                if (id.x >= uniforms.nx || id.y >= uniforms.ny || id.z >= uniforms.nz) { return; }
+                let si = scalarIdx(id.x, id.y, id.z);
+
+                if (marker[si] == 0u) {
+                    divergence[si] = 0.0;
+                    return;
+                }
+
+                // Sample velocities at face centers (MAC grid)
+                // Left face X velocity at (i, j+0.5, k+0.5) -> velIdx(i, j, k)
+                // Right face X velocity at (i+1, j+0.5, k+0.5) -> velIdx(i+1, j, k)
+                let leftX = gridVel[velIdx(id.x, id.y, id.z)].x;
+                let rightX = gridVel[velIdx(id.x + 1u, id.y, id.z)].x;
+
+                let bottomY = gridVel[velIdx(id.x, id.y, id.z)].y;
+                let topY = gridVel[velIdx(id.x, id.y + 1u, id.z)].y;
+
+                let backZ = gridVel[velIdx(id.x, id.y, id.z)].z;
+                let frontZ = gridVel[velIdx(id.x, id.y, id.z + 1u)].z;
+
+                var div = (rightX - leftX) + (topY - bottomY) + (frontZ - backZ);
+
+                // Volume conservation: use scalar weight (w component)
+                let density = gridVel[velIdx(id.x, id.y, id.z)].w;
+                div -= max((density - PARTICLE_DENSITY) * 1.0, 0.0);
+
+                divergence[si] = div;
+            }
+
+            // ============ JACOBI PRESSURE SOLVE ============
+            @compute @workgroup_size(8, 4, 4)
+            fn jacobi(@builtin(global_invocation_id) id: vec3<u32>) {
+                if (id.x >= uniforms.nx || id.y >= uniforms.ny || id.z >= uniforms.nz) { return; }
+                let si = scalarIdx(id.x, id.y, id.z);
+
+                if (marker[si] == 0u) { return; }
+
+                let div = divergence[si];
+
+                // Sample neighbor pressures
+                var pL = 0.0; var pR = 0.0; var pB = 0.0; var pT = 0.0; var pBk = 0.0; var pFr = 0.0;
+
+                if (id.x > 0u) { pL = pressure[scalarIdx(id.x - 1u, id.y, id.z)]; }
+                if (id.x < uniforms.nx - 1u) { pR = pressure[scalarIdx(id.x + 1u, id.y, id.z)]; }
+                if (id.y > 0u) { pB = pressure[scalarIdx(id.x, id.y - 1u, id.z)]; }
+                if (id.y < uniforms.ny - 1u) { pT = pressure[scalarIdx(id.x, id.y + 1u, id.z)]; }
+                if (id.z > 0u) { pBk = pressure[scalarIdx(id.x, id.y, id.z - 1u)]; }
+                if (id.z < uniforms.nz - 1u) { pFr = pressure[scalarIdx(id.x, id.y, id.z + 1u)]; }
+
+                pressure[si] = (pL + pR + pB + pT + pBk + pFr - div) / 6.0;
+            }
+
+            // ============ APPLY PRESSURE GRADIENT (subtract.frag) ============
+            @compute @workgroup_size(8, 4, 4)
+            fn applyPressure(@builtin(global_invocation_id) id: vec3<u32>) {
+                if (id.x > uniforms.nx || id.y > uniforms.ny || id.z > uniforms.nz) { return; }
+                let vi = velIdx(id.x, id.y, id.z);
+
+                var v = gridVel[vi];
+
+                // For X velocity at face (i, j+0.5, k+0.5):
+                // gradient = pressure[i,j,k] - pressure[i-1,j,k]
+                let pRight = pressure[scalarIdx(id.x, id.y, id.z)];
+                let pLeft = pressure[scalarIdx(id.x - 1u, id.y, id.z)];
+                v.x -= (pRight - pLeft);
+
+                // For Y velocity at face (i+0.5, j, k+0.5):
+                // gradient = pressure[i,j,k] - pressure[i,j-1,k]
+                let pTop = pressure[scalarIdx(id.x, id.y, id.z)];
+                let pBottom = pressure[scalarIdx(id.x, id.y - 1u, id.z)];
+                v.y -= (pTop - pBottom);
+
+                // For Z velocity at face (i+0.5, j+0.5, k):
+                // gradient = pressure[i,j,k] - pressure[i,j,k-1]
+                let pFront = pressure[scalarIdx(id.x, id.y, id.z)];
+                let pBack = pressure[scalarIdx(id.x, id.y, id.z - 1u)];
+                v.z -= (pFront - pBack);
+
+                gridVel[vi] = v;
+            }
+
+            // ============ STAGGERED VELOCITY SAMPLING ============
+            // Sample X velocity: stored at (i, j+0.5, k+0.5)
+            fn sampleXVelocity(g: vec3<f32>) -> f32 {
+                // Shift to X-face coordinates
+                let p = vec3<f32>(g.x, g.y - 0.5, g.z - 0.5);
+                let base = vec3<i32>(i32(floor(p.x)), i32(floor(p.y)), i32(floor(p.z)));
+                let f = p - vec3<f32>(f32(base.x), f32(base.y), f32(base.z));
+
+                var v = 0.0;
+                for (var di = 0; di <= 1; di++) {
+                    for (var dj = 0; dj <= 1; dj++) {
+                        for (var dk = 0; dk <= 1; dk++) {
+                            let w = select(1.0 - f.x, f.x, di == 1) *
+                                    select(1.0 - f.y, f.y, dj == 1) *
+                                    select(1.0 - f.z, f.z, dk == 1);
+                            let ix = u32(clamp(base.x + di, 0, i32(uniforms.nx)));
+                            let iy = u32(clamp(base.y + dj, 0, i32(uniforms.ny)));
+                            let iz = u32(clamp(base.z + dk, 0, i32(uniforms.nz)));
+                            v += gridVel[velIdx(ix, iy, iz)].x * w;
+                        }
+                    }
+                }
+                return v;
+            }
+
+            // Sample Y velocity: stored at (i+0.5, j, k+0.5)
+            fn sampleYVelocity(g: vec3<f32>) -> f32 {
+                let p = vec3<f32>(g.x - 0.5, g.y, g.z - 0.5);
+                let base = vec3<i32>(i32(floor(p.x)), i32(floor(p.y)), i32(floor(p.z)));
+                let f = p - vec3<f32>(f32(base.x), f32(base.y), f32(base.z));
+
+                var v = 0.0;
+                for (var di = 0; di <= 1; di++) {
+                    for (var dj = 0; dj <= 1; dj++) {
+                        for (var dk = 0; dk <= 1; dk++) {
+                            let w = select(1.0 - f.x, f.x, di == 1) *
+                                    select(1.0 - f.y, f.y, dj == 1) *
+                                    select(1.0 - f.z, f.z, dk == 1);
+                            let ix = u32(clamp(base.x + di, 0, i32(uniforms.nx)));
+                            let iy = u32(clamp(base.y + dj, 0, i32(uniforms.ny)));
+                            let iz = u32(clamp(base.z + dk, 0, i32(uniforms.nz)));
+                            v += gridVel[velIdx(ix, iy, iz)].y * w;
+                        }
+                    }
+                }
+                return v;
+            }
+
+            // Sample Z velocity: stored at (i+0.5, j+0.5, k)
+            fn sampleZVelocity(g: vec3<f32>) -> f32 {
+                let p = vec3<f32>(g.x - 0.5, g.y - 0.5, g.z);
+                let base = vec3<i32>(i32(floor(p.x)), i32(floor(p.y)), i32(floor(p.z)));
+                let f = p - vec3<f32>(f32(base.x), f32(base.y), f32(base.z));
+
+                var v = 0.0;
+                for (var di = 0; di <= 1; di++) {
+                    for (var dj = 0; dj <= 1; dj++) {
+                        for (var dk = 0; dk <= 1; dk++) {
+                            let w = select(1.0 - f.x, f.x, di == 1) *
+                                    select(1.0 - f.y, f.y, dj == 1) *
+                                    select(1.0 - f.z, f.z, dk == 1);
+                            let ix = u32(clamp(base.x + di, 0, i32(uniforms.nx)));
+                            let iy = u32(clamp(base.y + dj, 0, i32(uniforms.ny)));
+                            let iz = u32(clamp(base.z + dk, 0, i32(uniforms.nz)));
+                            v += gridVel[velIdx(ix, iy, iz)].z * w;
+                        }
+                    }
+                }
+                return v;
+            }
+
+            fn sampleVelocity(p: vec3<f32>) -> vec3<f32> {
+                let g = worldToGrid(p);
+                return vec3<f32>(sampleXVelocity(g), sampleYVelocity(g), sampleZVelocity(g));
+            }
+
+            // Same for original velocity grid
+            fn sampleXVelocityOrig(g: vec3<f32>) -> f32 {
+                let p = vec3<f32>(g.x, g.y - 0.5, g.z - 0.5);
+                let base = vec3<i32>(i32(floor(p.x)), i32(floor(p.y)), i32(floor(p.z)));
+                let f = p - vec3<f32>(f32(base.x), f32(base.y), f32(base.z));
+
+                var v = 0.0;
+                for (var di = 0; di <= 1; di++) {
+                    for (var dj = 0; dj <= 1; dj++) {
+                        for (var dk = 0; dk <= 1; dk++) {
+                            let w = select(1.0 - f.x, f.x, di == 1) *
+                                    select(1.0 - f.y, f.y, dj == 1) *
+                                    select(1.0 - f.z, f.z, dk == 1);
+                            let ix = u32(clamp(base.x + di, 0, i32(uniforms.nx)));
+                            let iy = u32(clamp(base.y + dj, 0, i32(uniforms.ny)));
+                            let iz = u32(clamp(base.z + dk, 0, i32(uniforms.nz)));
+                            v += gridVelOrig[velIdx(ix, iy, iz)].x * w;
+                        }
+                    }
+                }
+                return v;
+            }
+
+            fn sampleYVelocityOrig(g: vec3<f32>) -> f32 {
+                let p = vec3<f32>(g.x - 0.5, g.y, g.z - 0.5);
+                let base = vec3<i32>(i32(floor(p.x)), i32(floor(p.y)), i32(floor(p.z)));
+                let f = p - vec3<f32>(f32(base.x), f32(base.y), f32(base.z));
+
+                var v = 0.0;
+                for (var di = 0; di <= 1; di++) {
+                    for (var dj = 0; dj <= 1; dj++) {
+                        for (var dk = 0; dk <= 1; dk++) {
+                            let w = select(1.0 - f.x, f.x, di == 1) *
+                                    select(1.0 - f.y, f.y, dj == 1) *
+                                    select(1.0 - f.z, f.z, dk == 1);
+                            let ix = u32(clamp(base.x + di, 0, i32(uniforms.nx)));
+                            let iy = u32(clamp(base.y + dj, 0, i32(uniforms.ny)));
+                            let iz = u32(clamp(base.z + dk, 0, i32(uniforms.nz)));
+                            v += gridVelOrig[velIdx(ix, iy, iz)].y * w;
+                        }
+                    }
+                }
+                return v;
+            }
+
+            fn sampleZVelocityOrig(g: vec3<f32>) -> f32 {
+                let p = vec3<f32>(g.x - 0.5, g.y - 0.5, g.z);
+                let base = vec3<i32>(i32(floor(p.x)), i32(floor(p.y)), i32(floor(p.z)));
+                let f = p - vec3<f32>(f32(base.x), f32(base.y), f32(base.z));
+
+                var v = 0.0;
+                for (var di = 0; di <= 1; di++) {
+                    for (var dj = 0; dj <= 1; dj++) {
+                        for (var dk = 0; dk <= 1; dk++) {
+                            let w = select(1.0 - f.x, f.x, di == 1) *
+                                    select(1.0 - f.y, f.y, dj == 1) *
+                                    select(1.0 - f.z, f.z, dk == 1);
+                            let ix = u32(clamp(base.x + di, 0, i32(uniforms.nx)));
+                            let iy = u32(clamp(base.y + dj, 0, i32(uniforms.ny)));
+                            let iz = u32(clamp(base.z + dk, 0, i32(uniforms.nz)));
+                            v += gridVelOrig[velIdx(ix, iy, iz)].z * w;
+                        }
+                    }
+                }
+                return v;
+            }
+
+            fn sampleVelocityOrig(p: vec3<f32>) -> vec3<f32> {
+                let g = worldToGrid(p);
+                return vec3<f32>(sampleXVelocityOrig(g), sampleYVelocityOrig(g), sampleZVelocityOrig(g));
+            }
+
+            // Hash function for turbulence
+            fn hash3(p: vec3<f32>, seed: f32) -> vec3<f32> {
+                var p3 = fract(p * vec3<f32>(0.1031, 0.1030, 0.0973) + seed);
+                p3 += dot(p3, p3.yxz + 33.33);
+                return normalize(fract((p3.xxy + p3.yxx) * p3.zyx) * 2.0 - 1.0);
+            }
+
+            // ============ GRID TO PARTICLE (G2P) ============
+            @compute @workgroup_size(64)
+            fn gridToParticle(@builtin(global_invocation_id) id: vec3<u32>) {
+                let pIdx = id.x;
+                if (pIdx >= uniforms.particleCount) { return; }
+
+                let pos = positions[pIdx].xyz;
+                let velOld = velocities[pIdx].xyz;
+
+                let vGridNew = sampleVelocity(pos);
+                let vGridOld = sampleVelocityOrig(pos);
+
+                // FLIP: particle velocity + grid velocity change
+                let vFlip = velOld + (vGridNew - vGridOld);
+                // PIC: just use grid velocity
+                let vPic = vGridNew;
+                // Blend
+                let vNew = mix(vPic, vFlip, FLIP_RATIO);
+
+                velocities[pIdx] = vec4<f32>(vNew, 0.0);
+            }
+
+            // ============ ADVECT PARTICLES ============
             @compute @workgroup_size(64)
             fn advect(@builtin(global_invocation_id) id: vec3<u32>) {
-                let idx = id.x;
-                if (idx >= arrayLength(&positions)) { return; }
-                var p = positions[idx].xyz;
-                var v = velocities[idx].xyz;
+                let pIdx = id.x;
+                if (pIdx >= uniforms.particleCount) { return; }
 
-                v.y -= 9.8 * uniforms.dt;
-                p += v * uniforms.dt;
+                var pos = positions[pIdx].xyz;
 
-                if (p.x < 0.0) { p.x = 0.0; v.x *= -0.5; }
-                if (p.x > uniforms.width) { p.x = uniforms.width; v.x *= -0.5; }
-                if (p.y < 0.0) { p.y = 0.0; v.y *= -0.5; }
-                if (p.y > uniforms.height) { p.y = uniforms.height; v.y *= -0.5; }
-                if (p.z < 0.0) { p.z = 0.0; v.z *= -0.5; }
-                if (p.z > uniforms.depth) { p.z = uniforms.depth; v.z *= -0.5; }
+                // RK2 advection
+                let v1 = sampleVelocity(pos);
+                let midPos = pos + v1 * uniforms.dt * 0.5;
+                let v2 = sampleVelocity(midPos);
 
-                positions[idx] = vec4<f32>(p, 1.0);
-                velocities[idx] = vec4<f32>(v, 0.0);
+                var step = v2 * uniforms.dt;
+
+                // Turbulence (uses v1 magnitude like WebGL)
+                let randomDir = hash3(pos, f32(pIdx) * 0.001);
+                step += TURBULENCE * randomDir * length(v1) * uniforms.dt;
+
+                pos += step;
+
+                // Clamp to bounds
+                let eps = 0.01;
+                pos = clamp(pos, vec3<f32>(eps), vec3<f32>(uniforms.width - eps, uniforms.height - eps, uniforms.depth - eps));
+
+                positions[pIdx] = vec4<f32>(pos, 1.0);
             }
         `;
 
         const shaderModule = device.createShaderModule({ code: shaderSource });
 
-        // Explicit Bind Group Layout to ensure compatibility across all pipelines
         const bindGroupLayout = device.createBindGroupLayout({
             entries: [
                 { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -164,22 +583,31 @@ export class Simulator {
                 { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
                 { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
                 { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 8, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 9, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
             ]
         });
 
-        const pipelineLayout = device.createPipelineLayout({
-            bindGroupLayouts: [bindGroupLayout]
-        });
-
-        const pipelineDesc = (entry: string) => ({
+        const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
+        const makePipeline = (entry: string) => device.createComputePipeline({
             layout: pipelineLayout,
             compute: { module: shaderModule, entryPoint: entry }
         });
 
-        this.clearGridPipeline = device.createComputePipeline(pipelineDesc('clearGrid'));
-        this.transferToGridPipeline = device.createComputePipeline(pipelineDesc('transferToGrid'));
-        this.normalizeGridPipeline = device.createComputePipeline(pipelineDesc('normalizeGrid'));
-        this.advectPipeline = device.createComputePipeline(pipelineDesc('advect'));
+        this.clearGridPipeline = makePipeline('clearGrid');
+        this.transferToGridPipeline = makePipeline('transferToGrid');
+        this.normalizeGridPipeline = makePipeline('normalizeGrid');
+        this.markCellsPipeline = makePipeline('markCells');
+        this.addGravityPipeline = makePipeline('addGravity');
+        this.enforceBoundaryPipeline = makePipeline('enforceBoundary');
+        this.divergencePipeline = makePipeline('computeDivergence');
+        this.jacobiPipeline = makePipeline('jacobi');
+        this.applyPressurePipeline = makePipeline('applyPressure');
+        this.gridToParticlePipeline = makePipeline('gridToParticle');
+        this.advectPipeline = makePipeline('advect');
 
         this.simBindGroup = device.createBindGroup({
             layout: bindGroupLayout,
@@ -188,32 +616,101 @@ export class Simulator {
                 { binding: 1, resource: { buffer: posBuffer } },
                 { binding: 2, resource: { buffer: velBuffer } },
                 { binding: 3, resource: { buffer: this.gridVelocityBuffer } },
-                { binding: 4, resource: { buffer: this.gridVelocityFloatBuffer } },
+                { binding: 4, resource: { buffer: this.gridWeightBuffer } },
+                { binding: 5, resource: { buffer: this.gridVelocityFloatBuffer } },
+                { binding: 6, resource: { buffer: this.gridVelocityOrigBuffer } },
+                { binding: 7, resource: { buffer: this.gridMarkerBuffer } },
+                { binding: 8, resource: { buffer: this.pressureBuffer } },
+                { binding: 9, resource: { buffer: this.pressureTempBuffer } },
             ]
         });
 
-        const uniformData = new ArrayBuffer(32);
-        const u32View = new Uint32Array(uniformData, 0, 3);
-        const f32View = new Float32Array(uniformData, 12, 4);
-        u32View[0] = nx; u32View[1] = ny; u32View[2] = nz;
-        f32View[0] = width; f32View[1] = height; f32View[2] = depth;
-        f32View[3] = 1.0 / 60.0;
-        device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+        // Alt bind group not needed for current implementation
+        this.simBindGroupAlt = this.simBindGroup;
+
+        this.updateUniforms(0);
     }
 
-    step(commandEncoder: GPUComputePassEncoder, particleCount: number) {
-        commandEncoder.setBindGroup(0, this.simBindGroup);
+    updateUniforms(particleCount: number) {
+        const data = new ArrayBuffer(32);
+        const u32 = new Uint32Array(data);
+        const f32 = new Float32Array(data);
+        u32[0] = this.nx;
+        u32[1] = this.ny;
+        u32[2] = this.nz;
+        u32[3] = particleCount;
+        f32[4] = this.gridWidth;
+        f32[5] = this.gridHeight;
+        f32[6] = this.gridDepth;
+        f32[7] = 1.0 / 60.0;
+        this.device.queue.writeBuffer(this.uniformBuffer, 0, data);
+    }
 
-        commandEncoder.setPipeline(this.clearGridPipeline);
-        commandEncoder.dispatchWorkgroups(Math.ceil((this.nx + 1) / 8), Math.ceil((this.ny + 1) / 4), Math.ceil((this.nz + 1) / 4));
+    step(pass: GPUComputePassEncoder, particleCount: number) {
+        this.updateUniforms(particleCount);
 
-        commandEncoder.setPipeline(this.transferToGridPipeline);
-        commandEncoder.dispatchWorkgroups(Math.ceil(particleCount / 64));
+        const velGridWG = [
+            Math.ceil((this.nx + 1) / 8),
+            Math.ceil((this.ny + 1) / 4),
+            Math.ceil((this.nz + 1) / 4)
+        ];
+        const scalarGridWG = [
+            Math.ceil(this.nx / 8),
+            Math.ceil(this.ny / 4),
+            Math.ceil(this.nz / 4)
+        ];
+        const particleWG = Math.ceil(particleCount / 64);
 
-        commandEncoder.setPipeline(this.normalizeGridPipeline);
-        commandEncoder.dispatchWorkgroups(Math.ceil((this.nx + 1) / 8), Math.ceil((this.ny + 1) / 4), Math.ceil((this.nz + 1) / 4));
+        pass.setBindGroup(0, this.simBindGroup);
 
-        commandEncoder.setPipeline(this.advectPipeline);
-        commandEncoder.dispatchWorkgroups(Math.ceil(particleCount / 64));
+        // 1. Clear grid (covers both velocity and scalar grids)
+        pass.setPipeline(this.clearGridPipeline);
+        pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
+
+        // 2. P2G: Transfer particle velocities to grid (staggered MAC)
+        pass.setPipeline(this.transferToGridPipeline);
+        pass.dispatchWorkgroups(particleWG);
+
+        // 3. Mark cells with fluid
+        pass.setPipeline(this.markCellsPipeline);
+        pass.dispatchWorkgroups(particleWG);
+
+        // 4. Normalize grid velocities
+        pass.setPipeline(this.normalizeGridPipeline);
+        pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
+
+        // 5. Add gravity
+        pass.setPipeline(this.addGravityPipeline);
+        pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
+
+        // 6. Enforce boundary conditions
+        pass.setPipeline(this.enforceBoundaryPipeline);
+        pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
+
+        // 7. Compute divergence (scalar grid)
+        pass.setPipeline(this.divergencePipeline);
+        pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+
+        // 8. Jacobi pressure solve (50 iterations)
+        for (let i = 0; i < 50; i++) {
+            pass.setPipeline(this.jacobiPipeline);
+            pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+        }
+
+        // 9. Apply pressure gradient (velocity grid)
+        pass.setPipeline(this.applyPressurePipeline);
+        pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
+
+        // 10. Enforce boundaries again after pressure
+        pass.setPipeline(this.enforceBoundaryPipeline);
+        pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
+
+        // 11. G2P: Transfer grid velocity back to particles (FLIP/PIC)
+        pass.setPipeline(this.gridToParticlePipeline);
+        pass.dispatchWorkgroups(particleWG);
+
+        // 12. Advect particles using grid velocity
+        pass.setPipeline(this.advectPipeline);
+        pass.dispatchWorkgroups(particleWG);
     }
 }
