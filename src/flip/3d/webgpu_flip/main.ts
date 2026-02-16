@@ -273,7 +273,7 @@ async function init() {
         `
     });
 
-    // ============ COMPOSITE PASS SHADER ============
+    // ============ COMPOSITE PASS SHADER (with Unity Scene) ============
     const compositeShaderModule = device.createShaderModule({
         code: `
             struct Uniforms {
@@ -282,6 +282,26 @@ async function init() {
                 resolution: vec2<f32>,
                 fov: f32,
                 shadowResolution: f32,
+                // Camera position for ray casting
+                cameraPos: vec3<f32>,
+                _pad0: f32,
+                // Scene parameters
+                dirToSun: vec3<f32>,
+                floorY: f32,
+                skyColorHorizon: vec3<f32>,
+                sunPower: f32,
+                skyColorZenith: vec3<f32>,
+                sunBrightness: f32,
+                skyColorGround: vec3<f32>,
+                floorSize: f32,
+                tileCol1: vec3<f32>,
+                tileScale: f32,
+                tileCol2: vec3<f32>,
+                tileDarkFactor: f32,
+                tileCol3: vec3<f32>,
+                _pad1: f32,
+                tileCol4: vec3<f32>,
+                _pad2: f32,
             };
 
             @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -306,7 +326,6 @@ async function init() {
                 );
                 var out: VertexOutput;
                 out.position = vec4<f32>(pos[vertexIndex], 0.0, 1.0);
-                // Flip Y for correct texture sampling in WebGPU
                 out.uv = vec2<f32>(pos[vertexIndex].x * 0.5 + 0.5, 0.5 - pos[vertexIndex].y * 0.5);
                 return out;
             }
@@ -317,6 +336,93 @@ async function init() {
                 return c.z * mix(K.xxx, clamp(p - K.xxx, vec3<f32>(0.0), vec3<f32>(1.0)), c.y);
             }
 
+            fn rgbToHsv(rgb: vec3<f32>) -> vec3<f32> {
+                let K = vec4<f32>(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+                let p = select(vec4<f32>(rgb.gb, K.xy), vec4<f32>(rgb.bg, K.wz), rgb.g < rgb.b);
+                let q = select(vec4<f32>(rgb.r, p.yzx), vec4<f32>(p.xyw, rgb.r), rgb.r < p.x);
+                let d = q.x - min(q.w, q.y);
+                let e = 1.0e-10;
+                return vec3<f32>(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+            }
+
+            fn tweakHsv(col: vec3<f32>, shift: vec3<f32>) -> vec3<f32> {
+                return clamp(hsvToRGB(rgbToHsv(col) + shift), vec3<f32>(0.0), vec3<f32>(1.0));
+            }
+
+            fn modulo(x: f32, y: f32) -> f32 { return x - y * floor(x / y); }
+
+            fn linearToSrgb(c: vec3<f32>) -> vec3<f32> { return pow(c, vec3<f32>(1.0/2.2)); }
+
+            fn hashInt2(v: vec2<i32>) -> u32 { return u32(v.x) * 5023u + u32(v.y) * 96456u; }
+
+            fn randomValue(state: ptr<function, u32>) -> f32 {
+                *state = *state * 747796405u + 2891336453u;
+                let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
+                return f32((word >> 22u) ^ word) / 4294967295.0;
+            }
+
+            fn randomSNorm3(state: ptr<function, u32>) -> vec3<f32> {
+                return vec3<f32>(
+                    randomValue(state) * 2.0 - 1.0,
+                    randomValue(state) * 2.0 - 1.0,
+                    randomValue(state) * 2.0 - 1.0
+                );
+            }
+
+            fn getSkyColor(dir: vec3<f32>) -> vec3<f32> {
+                let sun = pow(max(0.0, dot(dir, uniforms.dirToSun)), uniforms.sunPower);
+                let skyGradientT = pow(smoothstep(0.0, 0.4, dir.y), 0.35);
+                let groundToSkyT = smoothstep(-0.01, 0.0, dir.y);
+                let skyGradient = mix(uniforms.skyColorHorizon, uniforms.skyColorZenith, skyGradientT);
+                var res = mix(uniforms.skyColorGround, skyGradient, groundToSkyT);
+                if (dir.y >= -0.01) { res += sun * uniforms.sunBrightness; }
+                return res;
+            }
+
+            fn rayPlaneIntersect(ro: vec3<f32>, rd: vec3<f32>, planeY: f32) -> f32 {
+                if (abs(rd.y) < 0.0001) { return -1.0; }
+                let t = (planeY - ro.y) / rd.y;
+                return select(-1.0, t, t > 0.0);
+            }
+
+            fn getSceneBackground(rayDir: vec3<f32>) -> vec3<f32> {
+                let t = rayPlaneIntersect(uniforms.cameraPos, rayDir, uniforms.floorY);
+
+                if (t > 0.0) {
+                    let hitPos = uniforms.cameraPos + rayDir * t;
+                    let halfSize = uniforms.floorSize * 0.5;
+                    if (abs(hitPos.x) < halfSize && abs(hitPos.z) < halfSize) {
+                        let rotatedPos = vec2<f32>(-hitPos.z, hitPos.x);
+
+                        var tileCol: vec3<f32>;
+                        if (rotatedPos.x < 0.0) { tileCol = uniforms.tileCol1; }
+                        else { tileCol = uniforms.tileCol2; }
+                        if (rotatedPos.y < 0.0) {
+                            if (rotatedPos.x < 0.0) { tileCol = uniforms.tileCol3; }
+                            else { tileCol = uniforms.tileCol4; }
+                        }
+
+                        tileCol = linearToSrgb(tileCol);
+                        let tileCoord = floor(rotatedPos * uniforms.tileScale);
+
+                        // Random variation per tile
+                        var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
+                        let rv = randomSNorm3(&rngState) * vec3<f32>(0.2, 0.0, 0.73) * 0.1;
+                        tileCol = tweakHsv(tileCol, rv);
+
+                        // Checkerboard pattern
+                        let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
+                        if (isDarkTile) {
+                            tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, uniforms.tileDarkFactor));
+                        }
+
+                        return tileCol;
+                    }
+                }
+
+                return getSkyColor(rayDir);
+            }
+
             @fragment
             fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                 let data = textureSample(gBufferTex, linearSamp, in.uv);
@@ -325,7 +431,6 @@ async function init() {
                 let speed = data.b;
                 let viewSpaceZ = data.a;
 
-                // Reconstruct normal and position (do this unconditionally for uniform control flow)
                 let nx = data.r;
                 let ny = data.g;
                 let nz = sqrt(max(0.0, 1.0 - nx * nx - ny * ny));
@@ -333,18 +438,16 @@ async function init() {
                 let tanHalfFov = tan(uniforms.fov / 2.0);
                 let viewRay = vec3<f32>(
                     (in.uv.x * 2.0 - 1.0) * tanHalfFov * uniforms.resolution.x / uniforms.resolution.y,
-                    (1.0 - 2.0 * in.uv.y) * tanHalfFov,  // Adjusted for flipped UV
+                    (1.0 - 2.0 * in.uv.y) * tanHalfFov,
                     -1.0
                 );
                 let viewSpacePos = viewRay * max(-viewSpaceZ, 0.01);
                 let worldSpacePos = (uniforms.inverseViewMatrix * vec4<f32>(viewSpacePos, 1.0)).xyz;
 
-                // Shadow calculation with PCF (must be in uniform control flow)
+                // Shadow calculation with PCF
                 var lightSpacePos = uniforms.lightProjectionViewMatrix * vec4<f32>(worldSpacePos, 1.0);
                 lightSpacePos = lightSpacePos / lightSpacePos.w;
-                // XY still needs [-1,1] to [0,1] transform
                 let lightCoords = lightSpacePos.xy * 0.5 + 0.5;
-                // Z is already in [0,1] from WebGPU orthographic projection
                 let lightDepth = lightSpacePos.z;
 
                 var shadow = 0.0;
@@ -357,24 +460,21 @@ async function init() {
                 }
                 shadow /= 25.0;
 
-                // Now we can branch based on whether this is background or particle
                 let isBackground = speed < 0.0 || viewSpaceZ > -0.01;
 
-                // Background (vignette)
-                let dist = length(in.uv * 2.0 - 1.0);
-                let bgColor = vec3<f32>(1.0) - dist * 0.1;
+                // Compute ray direction for background
+                let rayDirNorm = normalize((uniforms.inverseViewMatrix * vec4<f32>(viewRay, 0.0)).xyz);
+                let bgColor = getSceneBackground(rayDirNorm);
 
-                // Particle color from speed (HSV to RGB)
+                // Particle color from speed
                 let hue = max(0.6 - speed * 0.0025, 0.52);
                 var particleColor = hsvToRGB(vec3<f32>(hue, 0.75, 1.0));
 
-                // Ambient and direct lighting (matching WebGL reference)
                 let clampedOcclusion = min(occlusion * 0.5, 1.0);
                 let ambient = 1.0 - clampedOcclusion * 0.7;
                 let direct = 1.0 - (1.0 - shadow) * 0.8;
                 particleColor *= ambient * direct;
 
-                // Select final color
                 let finalColor = select(particleColor, bgColor, isBackground);
                 return vec4<f32>(finalColor, 1.0);
             }
@@ -644,7 +744,7 @@ async function init() {
     });
 
     const compositeUniformBuffer = device.createBuffer({
-        size: 144,
+        size: 320, // Expanded for scene uniforms
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -816,7 +916,25 @@ async function init() {
     // Pre-allocated arrays for uniform writes (avoid allocations every frame)
     const sphereRadiusData = new Float32Array([sphereRadius]);
     const aoUniformData = new Float32Array(4);  // [width, height, FOV, sphereRadius]
-    const compositeUniformData = new Float32Array(4);  // [width, height, FOV, shadowMapSize]
+    const compositeUniformData = new Float32Array(40);  // Extended for scene uniforms (160 bytes)
+
+    // Scene configuration (Unity-style)
+    const sceneConfig = {
+        dirToSun: [-0.83, 0.42, -0.36],
+        floorY: 0.0,  // Floor at bottom of simulation
+        skyColorHorizon: [1.0, 1.0, 1.0],
+        sunPower: 500.0,
+        skyColorZenith: [0.08, 0.37, 0.73],
+        sunBrightness: 1.0,
+        skyColorGround: [0.55, 0.5, 0.55],
+        floorSize: 100.0,
+        tileCol1: [0.20392157, 0.5176471, 0.7764706],  // Light Blue
+        tileScale: 1.0,
+        tileCol2: [0.6081319, 0.36850303, 0.8584906],   // Purple
+        tileDarkFactor: -0.35,
+        tileCol3: [0.3019758, 0.735849, 0.45801795],    // Green
+        tileCol4: [0.8018868, 0.6434483, 0.36690104],   // Yellow/Brown
+    };
     const fxaaUniformData = new Float32Array(2);  // [width, height]
 
     function frame() {
@@ -954,7 +1072,61 @@ async function init() {
             // ============ 4. COMPOSITE PASS ============
             device.queue.writeBuffer(compositeUniformBuffer, 0, inverseViewMatrix);
             device.queue.writeBuffer(compositeUniformBuffer, 64, lightProjectionViewMatrix);
-            compositeUniformData[0] = canvas.width; compositeUniformData[1] = canvas.height; compositeUniformData[2] = FOV; compositeUniformData[3] = SHADOW_MAP_SIZE;
+
+            // Build extended composite uniforms including scene data
+            let cIdx = 0;
+            // resolution, fov, shadowResolution (offset 128)
+            compositeUniformData[cIdx++] = canvas.width;
+            compositeUniformData[cIdx++] = canvas.height;
+            compositeUniformData[cIdx++] = FOV;
+            compositeUniformData[cIdx++] = SHADOW_MAP_SIZE;
+            // cameraPos + pad (offset 144)
+            const camPos = camera.getPosition();
+            compositeUniformData[cIdx++] = camPos[0];
+            compositeUniformData[cIdx++] = camPos[1];
+            compositeUniformData[cIdx++] = camPos[2];
+            compositeUniformData[cIdx++] = 0;
+            // dirToSun + floorY (offset 160)
+            compositeUniformData[cIdx++] = sceneConfig.dirToSun[0];
+            compositeUniformData[cIdx++] = sceneConfig.dirToSun[1];
+            compositeUniformData[cIdx++] = sceneConfig.dirToSun[2];
+            compositeUniformData[cIdx++] = sceneConfig.floorY;
+            // skyColorHorizon + sunPower (offset 176)
+            compositeUniformData[cIdx++] = sceneConfig.skyColorHorizon[0];
+            compositeUniformData[cIdx++] = sceneConfig.skyColorHorizon[1];
+            compositeUniformData[cIdx++] = sceneConfig.skyColorHorizon[2];
+            compositeUniformData[cIdx++] = sceneConfig.sunPower;
+            // skyColorZenith + sunBrightness (offset 192)
+            compositeUniformData[cIdx++] = sceneConfig.skyColorZenith[0];
+            compositeUniformData[cIdx++] = sceneConfig.skyColorZenith[1];
+            compositeUniformData[cIdx++] = sceneConfig.skyColorZenith[2];
+            compositeUniformData[cIdx++] = sceneConfig.sunBrightness;
+            // skyColorGround + floorSize (offset 208)
+            compositeUniformData[cIdx++] = sceneConfig.skyColorGround[0];
+            compositeUniformData[cIdx++] = sceneConfig.skyColorGround[1];
+            compositeUniformData[cIdx++] = sceneConfig.skyColorGround[2];
+            compositeUniformData[cIdx++] = sceneConfig.floorSize;
+            // tileCol1 + tileScale (offset 224)
+            compositeUniformData[cIdx++] = sceneConfig.tileCol1[0];
+            compositeUniformData[cIdx++] = sceneConfig.tileCol1[1];
+            compositeUniformData[cIdx++] = sceneConfig.tileCol1[2];
+            compositeUniformData[cIdx++] = sceneConfig.tileScale;
+            // tileCol2 + tileDarkFactor (offset 240)
+            compositeUniformData[cIdx++] = sceneConfig.tileCol2[0];
+            compositeUniformData[cIdx++] = sceneConfig.tileCol2[1];
+            compositeUniformData[cIdx++] = sceneConfig.tileCol2[2];
+            compositeUniformData[cIdx++] = sceneConfig.tileDarkFactor;
+            // tileCol3 + pad (offset 256)
+            compositeUniformData[cIdx++] = sceneConfig.tileCol3[0];
+            compositeUniformData[cIdx++] = sceneConfig.tileCol3[1];
+            compositeUniformData[cIdx++] = sceneConfig.tileCol3[2];
+            compositeUniformData[cIdx++] = 0;
+            // tileCol4 + pad (offset 272)
+            compositeUniformData[cIdx++] = sceneConfig.tileCol4[0];
+            compositeUniformData[cIdx++] = sceneConfig.tileCol4[1];
+            compositeUniformData[cIdx++] = sceneConfig.tileCol4[2];
+            compositeUniformData[cIdx++] = 0;
+
             device.queue.writeBuffer(compositeUniformBuffer, 128, compositeUniformData);
 
             const compositePass = commandEncoder.beginRenderPass({
