@@ -31,7 +31,7 @@ export class Simulator {
     simBindGroupAlt: GPUBindGroup;
     frameNumber: number = 0;
 
-    constructor(device: GPUDevice, nx: number, ny: number, nz: number, width: number, height: number, depth: number, posBuffer: GPUBuffer, velBuffer: GPUBuffer) {
+    constructor(device: GPUDevice, nx: number, ny: number, nz: number, width: number, height: number, depth: number, posBuffer: GPUBuffer, velBuffer: GPUBuffer, randomBuffer: GPUBuffer) {
         this.device = device;
         this.nx = nx; this.ny = ny; this.nz = nz;
         this.gridWidth = width; this.gridHeight = height; this.gridDepth = depth;
@@ -85,6 +85,7 @@ export class Simulator {
             @group(0) @binding(7) var<storage, read_write> marker: array<u32>;            // scalar grid
             @group(0) @binding(8) var<storage, read_write> pressure: array<f32>;          // scalar grid
             @group(0) @binding(9) var<storage, read_write> divergence: array<f32>;        // scalar grid
+            @group(0) @binding(10) var<storage, read> randomDirs: array<vec4<f32>>;       // pre-computed random directions
 
             const SCALE: f32 = 10000.0;
             const GRAVITY: f32 = 40.0;
@@ -550,13 +551,6 @@ export class Simulator {
                 return vec3<f32>(sampleXVelocityOrig(g), sampleYVelocityOrig(g), sampleZVelocityOrig(g));
             }
 
-            // Hash function for turbulence
-            fn hash3(p: vec3<f32>, seed: f32) -> vec3<f32> {
-                var p3 = fract(p * vec3<f32>(0.1031, 0.1030, 0.0973) + seed);
-                p3 += dot(p3, p3.yxz + 33.33);
-                return normalize(fract((p3.xxy + p3.yxx) * p3.zyx) * 2.0 - 1.0);
-            }
-
             // ============ GRID TO PARTICLE (G2P) ============
             @compute @workgroup_size(64)
             fn gridToParticle(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -594,12 +588,12 @@ export class Simulator {
 
                 var step = v2 * uniforms.dt;
 
-                // Turbulence with time-varying random (like WebGL)
-                // WebGL uses pre-computed random texture sampled with slowly changing offset
-                // Simulate this with stable per-particle random that shifts slowly
-                let stableRandom = hash3(vec3<f32>(f32(pIdx) * 0.1, 0.0, 0.0), 0.0);
-                let timeOffset = uniforms.frameNumber * 0.005;  // Very slow variation
-                let randomDir = hash3(stableRandom + vec3<f32>(timeOffset), 0.0);
+                // Turbulence using pre-computed random directions (matching WebGL)
+                // WebGL: fract(v_coordinates + u_frameNumber / u_particlesResolution)
+                // We simulate this by offsetting the index based on frame number
+                let offset = u32(uniforms.frameNumber) % uniforms.particleCount;
+                let randomIdx = (pIdx + offset) % uniforms.particleCount;
+                let randomDir = randomDirs[randomIdx].xyz;
                 step += TURBULENCE * randomDir * length(v1) * uniforms.dt;
 
                 pos += step;
@@ -626,6 +620,7 @@ export class Simulator {
                 { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
                 { binding: 8, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
                 { binding: 9, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 10, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
             ]
         });
 
@@ -660,6 +655,7 @@ export class Simulator {
                 { binding: 7, resource: { buffer: this.gridMarkerBuffer } },
                 { binding: 8, resource: { buffer: this.pressureBuffer } },
                 { binding: 9, resource: { buffer: this.pressureTempBuffer } },
+                { binding: 10, resource: { buffer: randomBuffer } },
             ]
         });
 

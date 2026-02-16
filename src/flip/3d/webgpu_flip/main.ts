@@ -69,9 +69,26 @@ async function init() {
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
 
-    const simulator = new Simulator(device, RESOLUTION_X, RESOLUTION_Y, RESOLUTION_Z, GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH, particlePositionBuffer, particleVelocityBuffer);
+    // Pre-computed random directions (uniform on sphere, matching WebGL)
+    const particleRandomBuffer = device.createBuffer({
+        size: MAX_PARTICLES * 16,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    const randomData = new Float32Array(MAX_PARTICLES * 4);
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+        // Uniform distribution on sphere (same as WebGL)
+        const theta = Math.random() * 2.0 * Math.PI;
+        const u = Math.random() * 2.0 - 1.0;
+        randomData[i * 4 + 0] = Math.sqrt(1.0 - u * u) * Math.cos(theta);
+        randomData[i * 4 + 1] = Math.sqrt(1.0 - u * u) * Math.sin(theta);
+        randomData[i * 4 + 2] = u;
+        randomData[i * 4 + 3] = 0.0;
+    }
+    device.queue.writeBuffer(particleRandomBuffer, 0, randomData);
 
-    // Generate sphere geometry with normals (2 iterations is sufficient and faster)
+    const simulator = new Simulator(device, RESOLUTION_X, RESOLUTION_Y, RESOLUTION_Z, GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH, particlePositionBuffer, particleVelocityBuffer, particleRandomBuffer);
+
+    // Generate sphere geometry (2 iterations) for G-buffer - good balance of quality and performance
     const sphereGeom = generateSphereGeometry(2);
     const sphereVertexBuffer = device.createBuffer({
         size: sphereGeom.vertices.byteLength,
@@ -96,6 +113,24 @@ async function init() {
     });
     new Uint16Array(sphereIndexBuffer.getMappedRange()).set(sphereGeom.indices);
     sphereIndexBuffer.unmap();
+
+    // Generate low-poly sphere geometry (1 iteration) for AO pass - soft effect doesn't need detail
+    const aoSphereGeom = generateSphereGeometry(1);
+    const aoSphereVertexBuffer = device.createBuffer({
+        size: aoSphereGeom.vertices.byteLength,
+        usage: GPUBufferUsage.VERTEX,
+        mappedAtCreation: true,
+    });
+    new Float32Array(aoSphereVertexBuffer.getMappedRange()).set(aoSphereGeom.vertices);
+    aoSphereVertexBuffer.unmap();
+
+    const aoSphereIndexBuffer = device.createBuffer({
+        size: aoSphereGeom.indices.byteLength,
+        usage: GPUBufferUsage.INDEX,
+        mappedAtCreation: true,
+    });
+    new Uint16Array(aoSphereIndexBuffer.getMappedRange()).set(aoSphereGeom.indices);
+    aoSphereIndexBuffer.unmap();
 
     // Shadow map dimensions
     const SHADOW_MAP_SIZE = 256;
@@ -127,6 +162,13 @@ async function init() {
         format: 'depth32float',
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
+
+    // Cache texture views (avoid creating every frame)
+    let depthTextureView = depthTexture.createView();
+    let gBufferTextureView = gBufferTexture.createView();
+    let occlusionTextureView = occlusionTexture.createView();
+    let compositingTextureView = compositingTexture.createView();
+    const shadowDepthTextureView = shadowDepthTexture.createView();
 
     // Create samplers
     const linearSampler = device.createSampler({
@@ -761,6 +803,12 @@ async function init() {
 
     const sphereRadius = 7.0 / RESOLUTION_X;
 
+    // Pre-allocated arrays for uniform writes (avoid allocations every frame)
+    const sphereRadiusData = new Float32Array([sphereRadius]);
+    const aoUniformData = new Float32Array(4);  // [width, height, FOV, sphereRadius]
+    const compositeUniformData = new Float32Array(4);  // [width, height, FOV, shadowMapSize]
+    const fxaaUniformData = new Float32Array(2);  // [width, height]
+
     function frame() {
         const commandEncoder = device.createCommandEncoder();
 
@@ -822,17 +870,17 @@ async function init() {
             // ============ 1. G-BUFFER PASS ============
             device.queue.writeBuffer(gBufferUniformBuffer, 0, projectionMatrix);
             device.queue.writeBuffer(gBufferUniformBuffer, 64, viewMatrix);
-            device.queue.writeBuffer(gBufferUniformBuffer, 128, new Float32Array([sphereRadius]));
+            device.queue.writeBuffer(gBufferUniformBuffer, 128, sphereRadiusData);
 
             const gBufferPass = commandEncoder.beginRenderPass({
                 colorAttachments: [{
-                    view: gBufferTexture.createView(),
+                    view: gBufferTextureView,
                     clearValue: { r: 0, g: 0, b: -1, a: 0 },
                     loadOp: 'clear',
                     storeOp: 'store',
                 }],
                 depthStencilAttachment: {
-                    view: depthTexture.createView(),
+                    view: depthTextureView,
                     depthClearValue: 1.0,
                     depthLoadOp: 'clear',
                     depthStoreOp: 'store',
@@ -848,12 +896,12 @@ async function init() {
 
             // ============ 2. SHADOW PASS ============
             device.queue.writeBuffer(shadowUniformBuffer, 0, lightProjectionViewMatrix);
-            device.queue.writeBuffer(shadowUniformBuffer, 64, new Float32Array([sphereRadius]));
+            device.queue.writeBuffer(shadowUniformBuffer, 64, sphereRadiusData);
 
             const shadowPass = commandEncoder.beginRenderPass({
                 colorAttachments: [],
                 depthStencilAttachment: {
-                    view: shadowDepthTexture.createView(),
+                    view: shadowDepthTextureView,
                     depthClearValue: 1.0,
                     depthLoadOp: 'clear',
                     depthStoreOp: 'store',
@@ -861,47 +909,47 @@ async function init() {
             });
             shadowPass.setPipeline(shadowPipeline);
             shadowPass.setBindGroup(0, shadowBindGroup);
-            shadowPass.setVertexBuffer(0, sphereVertexBuffer);
-            shadowPass.setIndexBuffer(sphereIndexBuffer, 'uint16');
+            shadowPass.setVertexBuffer(0, aoSphereVertexBuffer);  // Use low-poly for 256x256 shadow map
+            shadowPass.setIndexBuffer(aoSphereIndexBuffer, 'uint16');
             shadowPass.setViewport(1, 1, SHADOW_MAP_SIZE - 2, SHADOW_MAP_SIZE - 2, 0, 1);
-            shadowPass.drawIndexed(sphereGeom.indices.length, particleCount);
+            shadowPass.drawIndexed(aoSphereGeom.indices.length, particleCount);
             shadowPass.end();
 
             // ============ 3. AMBIENT OCCLUSION PASS ============
             device.queue.writeBuffer(aoUniformBuffer, 0, projectionMatrix);
             device.queue.writeBuffer(aoUniformBuffer, 64, viewMatrix);
-            device.queue.writeBuffer(aoUniformBuffer, 128, new Float32Array([canvas.width, canvas.height, FOV, sphereRadius]));
+            aoUniformData[0] = canvas.width; aoUniformData[1] = canvas.height; aoUniformData[2] = FOV; aoUniformData[3] = sphereRadius;
+            device.queue.writeBuffer(aoUniformBuffer, 128, aoUniformData);
 
             const aoPass = commandEncoder.beginRenderPass({
                 colorAttachments: [{
-                    view: occlusionTexture.createView(),
+                    view: occlusionTextureView,
                     clearValue: { r: 0, g: 0, b: 0, a: 0 },
                     loadOp: 'clear',
                     storeOp: 'store',
                 }],
                 depthStencilAttachment: {
-                    view: depthTexture.createView(),
+                    view: depthTextureView,
                     depthLoadOp: 'load',
                     depthStoreOp: 'store',
                 },
             });
             aoPass.setPipeline(aoPipeline);
             aoPass.setBindGroup(0, aoBindGroup);
-            aoPass.setVertexBuffer(0, sphereVertexBuffer);
-            aoPass.setIndexBuffer(sphereIndexBuffer, 'uint16');
-            aoPass.drawIndexed(sphereGeom.indices.length, particleCount);
+            aoPass.setVertexBuffer(0, aoSphereVertexBuffer);
+            aoPass.setIndexBuffer(aoSphereIndexBuffer, 'uint16');
+            aoPass.drawIndexed(aoSphereGeom.indices.length, particleCount);
             aoPass.end();
 
             // ============ 4. COMPOSITE PASS ============
             device.queue.writeBuffer(compositeUniformBuffer, 0, inverseViewMatrix);
             device.queue.writeBuffer(compositeUniformBuffer, 64, lightProjectionViewMatrix);
-            device.queue.writeBuffer(compositeUniformBuffer, 128, new Float32Array([
-                canvas.width, canvas.height, FOV, SHADOW_MAP_SIZE
-            ]));
+            compositeUniformData[0] = canvas.width; compositeUniformData[1] = canvas.height; compositeUniformData[2] = FOV; compositeUniformData[3] = SHADOW_MAP_SIZE;
+            device.queue.writeBuffer(compositeUniformBuffer, 128, compositeUniformData);
 
             const compositePass = commandEncoder.beginRenderPass({
                 colorAttachments: [{
-                    view: compositingTexture.createView(),
+                    view: compositingTextureView,
                     clearValue: { r: 0.9, g: 0.9, b: 0.9, a: 1.0 },
                     loadOp: 'clear',
                     storeOp: 'store',
@@ -913,7 +961,8 @@ async function init() {
             compositePass.end();
 
             // ============ 5. FXAA PASS ============
-            device.queue.writeBuffer(fxaaUniformBuffer, 0, new Float32Array([canvas.width, canvas.height]));
+            fxaaUniformData[0] = canvas.width; fxaaUniformData[1] = canvas.height;
+            device.queue.writeBuffer(fxaaUniformBuffer, 0, fxaaUniformData);
 
             const fxaaPass = commandEncoder.beginRenderPass({
                 colorAttachments: [{
@@ -956,6 +1005,7 @@ async function init() {
             format: 'depth24plus',
             usage: GPUTextureUsage.RENDER_ATTACHMENT,
         });
+        depthTextureView = depthTexture.createView();
 
         gBufferTexture.destroy();
         gBufferTexture = device.createTexture({
@@ -963,6 +1013,7 @@ async function init() {
             format: 'rgba16float',
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         });
+        gBufferTextureView = gBufferTexture.createView();
 
         occlusionTexture.destroy();
         occlusionTexture = device.createTexture({
@@ -970,6 +1021,7 @@ async function init() {
             format: 'r16float',
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         });
+        occlusionTextureView = occlusionTexture.createView();
 
         compositingTexture.destroy();
         compositingTexture = device.createTexture({
@@ -977,6 +1029,7 @@ async function init() {
             format: presentationFormat,
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         });
+        compositingTextureView = compositingTexture.createView();
 
         createSizeDepedentBindGroups();
         updateProjectionMatrix();
