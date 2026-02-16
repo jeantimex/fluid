@@ -279,4 +279,26 @@ export const Utilities = {
 
         return matrix;
     },
+
+    // WebGPU orthographic projection - outputs z in [0, 1] instead of [-1, 1]
+    makeOrthographicMatrixWebGPU: function (matrix: Float32Array, left: number, right: number, bottom: number, top: number, near: number, far: number) {
+        matrix[0] = 2 / (right - left);
+        matrix[1] = 0;
+        matrix[2] = 0;
+        matrix[3] = 0;
+        matrix[4] = 0;
+        matrix[5] = 2 / (top - bottom);
+        matrix[6] = 0;
+        matrix[7] = 0;
+        matrix[8] = 0;
+        matrix[9] = 0;
+        matrix[10] = -1 / (far - near);  // Changed for [0,1] depth
+        matrix[11] = 0;
+        matrix[12] = -(right + left) / (right - left);
+        matrix[13] = -(top + bottom) / (top - bottom);
+        matrix[14] = -near / (far - near);  // Changed for [0,1] depth
+        matrix[15] = 1;
+
+        return matrix;
+    },
 };

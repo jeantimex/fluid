@@ -141,7 +141,8 @@ async function init() {
         [midpoint[0], midpoint[1] - 1.0, midpoint[2]],
         [0.0, 0.0, 1.0]
     );
-    const lightProjectionMatrix = Utilities.makeOrthographicMatrix(
+    // Use WebGPU orthographic projection (z in [0,1] instead of [-1,1])
+    const lightProjectionMatrix = Utilities.makeOrthographicMatrixWebGPU(
         new Float32Array(16),
         -GRID_WIDTH / 2, GRID_WIDTH / 2,
         -GRID_DEPTH / 2, GRID_DEPTH / 2,
@@ -256,8 +257,8 @@ async function init() {
                 );
                 var out: VertexOutput;
                 out.position = vec4<f32>(pos[vertexIndex], 0.0, 1.0);
-                // Flip Y for WebGPU's top-left origin (vs WebGL's bottom-left)
-                out.uv = vec2<f32>(pos[vertexIndex].x * 0.5 + 0.5, 1.0 - (pos[vertexIndex].y * 0.5 + 0.5));
+                // Flip Y for correct texture sampling in WebGPU
+                out.uv = vec2<f32>(pos[vertexIndex].x * 0.5 + 0.5, 0.5 - pos[vertexIndex].y * 0.5);
                 return out;
             }
 
@@ -283,7 +284,7 @@ async function init() {
                 let tanHalfFov = tan(uniforms.fov / 2.0);
                 let viewRay = vec3<f32>(
                     (in.uv.x * 2.0 - 1.0) * tanHalfFov * uniforms.resolution.x / uniforms.resolution.y,
-                    (1.0 - 2.0 * in.uv.y) * tanHalfFov,  // Corrected for flipped UV
+                    (1.0 - 2.0 * in.uv.y) * tanHalfFov,  // Adjusted for flipped UV
                     -1.0
                 );
                 let viewSpacePos = viewRay * max(-viewSpaceZ, 0.01);
@@ -292,15 +293,17 @@ async function init() {
                 // Shadow calculation with PCF (must be in uniform control flow)
                 var lightSpacePos = uniforms.lightProjectionViewMatrix * vec4<f32>(worldSpacePos, 1.0);
                 lightSpacePos = lightSpacePos / lightSpacePos.w;
+                // XY still needs [-1,1] to [0,1] transform
                 let lightCoords = lightSpacePos.xy * 0.5 + 0.5;
-                let lightDepth = lightSpacePos.z * 0.5 + 0.5;
+                // Z is already in [0,1] from WebGPU orthographic projection
+                let lightDepth = lightSpacePos.z;
 
                 var shadow = 0.0;
                 let texelSize = 5.0 / uniforms.shadowResolution;
                 for (var x = -2; x <= 2; x++) {
                     for (var y = -2; y <= 2; y++) {
                         let offset = vec2<f32>(f32(x), f32(y)) * texelSize;
-                        shadow += textureSampleCompare(shadowTex, shadowSamp, lightCoords + offset, lightDepth - 0.001);
+                        shadow += textureSampleCompare(shadowTex, shadowSamp, lightCoords + offset, lightDepth - 0.002);
                     }
                 }
                 shadow /= 25.0;
@@ -316,8 +319,9 @@ async function init() {
                 let hue = max(0.6 - speed * 0.0025, 0.52);
                 var particleColor = hsvToRGB(vec3<f32>(hue, 0.75, 1.0));
 
-                // Ambient and direct lighting
-                let ambient = 1.0 - occlusion * 0.7;
+                // Ambient and direct lighting (matching WebGL reference)
+                let clampedOcclusion = min(occlusion * 0.5, 1.0);
+                let ambient = 1.0 - clampedOcclusion * 0.7;
                 let direct = 1.0 - (1.0 - shadow) * 0.8;
                 particleColor *= ambient * direct;
 
@@ -388,7 +392,7 @@ async function init() {
                 let tanHalfFov = tan(uniforms.fov / 2.0);
                 let viewRay = vec3<f32>(
                     (coords.x * 2.0 - 1.0) * tanHalfFov * uniforms.resolution.x / uniforms.resolution.y,
-                    (1.0 - 2.0 * coords.y) * tanHalfFov,  // Corrected for WebGPU screen coords
+                    (1.0 - 2.0 * coords.y) * tanHalfFov,  // Adjusted for WebGPU screen coords (Y=0 at top)
                     -1.0
                 );
                 let viewSpacePos = viewRay * -viewSpaceZ;

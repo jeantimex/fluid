@@ -31,6 +31,7 @@ export class Simulator {
 
     simBindGroup: GPUBindGroup;
     simBindGroupAlt: GPUBindGroup;
+    frameNumber: number = 0;
 
     constructor(device: GPUDevice, nx: number, ny: number, nz: number, width: number, height: number, depth: number, posBuffer: GPUBuffer, velBuffer: GPUBuffer) {
         this.device = device;
@@ -58,12 +59,13 @@ export class Simulator {
         this.pressureBuffer = createBuffer(scalarGridCount * 4);
         this.pressureTempBuffer = createBuffer(scalarGridCount * 4);
 
-        this.uniformBuffer = createBuffer(32, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
+        this.uniformBuffer = createBuffer(48, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
 
         const shaderSource = `
             struct Uniforms {
                 nx: u32, ny: u32, nz: u32, particleCount: u32,
                 width: f32, height: f32, depth: f32, dt: f32,
+                frameNumber: f32, _pad1: f32, _pad2: f32, _pad3: f32,
             };
 
             @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -84,9 +86,9 @@ export class Simulator {
 
             const SCALE: f32 = 10000.0;
             const GRAVITY: f32 = 40.0;
-            const FLIP_RATIO: f32 = 0.99;
+            const FLIP_RATIO: f32 = 0.95;  // Slightly more PIC for stability
             const PARTICLE_DENSITY: f32 = 10.0;
-            const TURBULENCE: f32 = 0.05;
+            const TURBULENCE: f32 = 0.08;  // Increased for more active particles
 
             // Velocity grid index (nx+1) x (ny+1) x (nz+1)
             fn velIdx(x: u32, y: u32, z: u32) -> u32 {
@@ -560,8 +562,9 @@ export class Simulator {
 
                 var step = v2 * uniforms.dt;
 
-                // Turbulence (uses v1 magnitude like WebGL)
-                let randomDir = hash3(pos, f32(pIdx) * 0.001);
+                // Turbulence with time-varying random (like WebGL)
+                // Use frame number to create changing random directions
+                let randomDir = hash3(pos, f32(pIdx) * 0.001 + uniforms.frameNumber * 0.1);
                 step += TURBULENCE * randomDir * length(v1) * uniforms.dt;
 
                 pos += step;
@@ -632,7 +635,7 @@ export class Simulator {
     }
 
     updateUniforms(particleCount: number) {
-        const data = new ArrayBuffer(32);
+        const data = new ArrayBuffer(48);
         const u32 = new Uint32Array(data);
         const f32 = new Float32Array(data);
         u32[0] = this.nx;
@@ -643,7 +646,12 @@ export class Simulator {
         f32[5] = this.gridHeight;
         f32[6] = this.gridDepth;
         f32[7] = 1.0 / 60.0;
+        f32[8] = this.frameNumber;  // Frame number for time-varying turbulence
+        f32[9] = 0.0;  // padding
+        f32[10] = 0.0; // padding
+        f32[11] = 0.0; // padding
         this.device.queue.writeBuffer(this.uniformBuffer, 0, data);
+        this.frameNumber++;
     }
 
     step(pass: GPUComputePassEncoder, particleCount: number) {
