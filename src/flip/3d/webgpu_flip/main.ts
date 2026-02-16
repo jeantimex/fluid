@@ -55,7 +55,12 @@ async function init() {
 
     const PARTICLES_PER_CELL = 10;
 
-    const camera = new Camera(canvas, [GRID_WIDTH / 2, GRID_HEIGHT / 3, GRID_DEPTH / 2]);
+    // Simulation offset to center fluid on tiles (world origin)
+    const SIM_OFFSET_X = -GRID_WIDTH / 2;
+    const SIM_OFFSET_Y = 0;  // Floor at y=0
+    const SIM_OFFSET_Z = -GRID_DEPTH / 2;
+
+    const camera = new Camera(canvas, [0, GRID_HEIGHT / 3, 0]);  // Orbit around world center
     const boxEditor = new BoxEditor(device, presentationFormat, [GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH]);
 
     // --- Particle Setup ---
@@ -182,12 +187,12 @@ async function init() {
         compare: 'less',
     });
 
-    // Calculate light matrices (light from above)
-    const midpoint = [GRID_WIDTH / 2, GRID_HEIGHT / 2, GRID_DEPTH / 2];
+    // Calculate light matrices (light from above, centered on world origin)
+    const lightMidpoint = [0, GRID_HEIGHT / 2, 0];  // World center of fluid
     const lightViewMatrix = Utilities.makeLookAtMatrix(
         new Float32Array(16),
-        midpoint,
-        [midpoint[0], midpoint[1] - 1.0, midpoint[2]],
+        lightMidpoint,
+        [lightMidpoint[0], lightMidpoint[1] - 1.0, lightMidpoint[2]],
         [0.0, 0.0, 1.0]
     );
     // Use WebGPU orthographic projection (z in [0,1] instead of [-1,1])
@@ -207,6 +212,9 @@ async function init() {
                 projectionMatrix: mat4x4<f32>,
                 viewMatrix: mat4x4<f32>,
                 sphereRadius: f32,
+                simOffsetX: f32,
+                simOffsetY: f32,
+                simOffsetZ: f32,
             };
 
             @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -228,7 +236,8 @@ async function init() {
             ) -> VertexOutput {
                 let spherePos = positions[instanceIndex].xyz;
                 let velocity = velocities[instanceIndex].xyz;
-                let worldPos = vertexPos * uniforms.sphereRadius + spherePos;
+                let simOffset = vec3<f32>(uniforms.simOffsetX, uniforms.simOffsetY, uniforms.simOffsetZ);
+                let worldPos = vertexPos * uniforms.sphereRadius + spherePos + simOffset;
                 let viewPos = uniforms.viewMatrix * vec4<f32>(worldPos, 1.0);
 
                 var out: VertexOutput;
@@ -253,6 +262,9 @@ async function init() {
             struct Uniforms {
                 projectionViewMatrix: mat4x4<f32>,
                 sphereRadius: f32,
+                simOffsetX: f32,
+                simOffsetY: f32,
+                simOffsetZ: f32,
             };
 
             @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -264,7 +276,8 @@ async function init() {
                 @builtin(instance_index) instanceIndex: u32
             ) -> @builtin(position) vec4<f32> {
                 let spherePos = positions[instanceIndex].xyz;
-                let worldPos = vertexPos * uniforms.sphereRadius + spherePos;
+                let simOffset = vec3<f32>(uniforms.simOffsetX, uniforms.simOffsetY, uniforms.simOffsetZ);
+                let worldPos = vertexPos * uniforms.sphereRadius + spherePos + simOffset;
                 return uniforms.projectionViewMatrix * vec4<f32>(worldPos, 1.0);
             }
 
@@ -572,6 +585,9 @@ async function init() {
                 resolution: vec2<f32>,
                 fov: f32,
                 sphereRadius: f32,
+                simOffsetX: f32,
+                simOffsetY: f32,
+                simOffsetZ: f32,
             };
 
             @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -593,11 +609,13 @@ async function init() {
                 @builtin(instance_index) instanceIndex: u32
             ) -> VertexOutput {
                 let spherePos = positions[instanceIndex].xyz;
-                let viewSpherPos = (uniforms.viewMatrix * vec4<f32>(spherePos, 1.0)).xyz;
+                let simOffset = vec3<f32>(uniforms.simOffsetX, uniforms.simOffsetY, uniforms.simOffsetZ);
+                let worldSpherePos = spherePos + simOffset;
+                let viewSpherPos = (uniforms.viewMatrix * vec4<f32>(worldSpherePos, 1.0)).xyz;
 
                 // Extrude sphere 3x for AO range (reduced for performance)
                 let extrudedRadius = uniforms.sphereRadius * 3.0;
-                let worldPos = vertexPos * extrudedRadius + spherePos;
+                let worldPos = vertexPos * extrudedRadius + worldSpherePos;
 
                 var out: VertexOutput;
                 out.position = uniforms.projectionMatrix * uniforms.viewMatrix * vec4<f32>(worldPos, 1.0);
@@ -729,17 +747,17 @@ async function init() {
 
     // Create uniform buffers
     const gBufferUniformBuffer = device.createBuffer({
-        size: 144,
+        size: 160,  // projMatrix(64) + viewMatrix(64) + sphereRadius(4) + simOffset(12) + pad(16)
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     const shadowUniformBuffer = device.createBuffer({
-        size: 80,
+        size: 96,   // projViewMatrix(64) + sphereRadius(4) + simOffset(12) + pad(16)
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     const aoUniformBuffer = device.createBuffer({
-        size: 160,
+        size: 176,  // projMatrix(64) + viewMatrix(64) + resolution/fov/radius(16) + simOffset(12) + pad(20)
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -914,8 +932,15 @@ async function init() {
     const sphereRadius = 7.0 / RESOLUTION_X;
 
     // Pre-allocated arrays for uniform writes (avoid allocations every frame)
-    const sphereRadiusData = new Float32Array([sphereRadius]);
-    const aoUniformData = new Float32Array(4);  // [width, height, FOV, sphereRadius]
+    // Pre-allocated arrays including simulation offset
+    const gBufferUniformData = new Float32Array([sphereRadius, SIM_OFFSET_X, SIM_OFFSET_Y, SIM_OFFSET_Z]);
+    const shadowUniformData = new Float32Array([sphereRadius, SIM_OFFSET_X, SIM_OFFSET_Y, SIM_OFFSET_Z]);
+    const aoUniformData = new Float32Array(8);  // [width, height, FOV, sphereRadius, simOffsetX, Y, Z, pad]
+    aoUniformData[3] = sphereRadius;
+    aoUniformData[4] = SIM_OFFSET_X;
+    aoUniformData[5] = SIM_OFFSET_Y;
+    aoUniformData[6] = SIM_OFFSET_Z;
+    aoUniformData[7] = 0;
     const compositeUniformData = new Float32Array(40);  // Extended for scene uniforms (160 bytes)
 
     // Scene configuration (Unity-style)
@@ -998,7 +1023,7 @@ async function init() {
             // ============ 1. G-BUFFER PASS ============
             device.queue.writeBuffer(gBufferUniformBuffer, 0, projectionMatrix);
             device.queue.writeBuffer(gBufferUniformBuffer, 64, viewMatrix);
-            device.queue.writeBuffer(gBufferUniformBuffer, 128, sphereRadiusData);
+            device.queue.writeBuffer(gBufferUniformBuffer, 128, gBufferUniformData);
 
             const gBufferPass = commandEncoder.beginRenderPass({
                 colorAttachments: [{
@@ -1024,7 +1049,7 @@ async function init() {
 
             // ============ 2. SHADOW PASS ============
             device.queue.writeBuffer(shadowUniformBuffer, 0, lightProjectionViewMatrix);
-            device.queue.writeBuffer(shadowUniformBuffer, 64, sphereRadiusData);
+            device.queue.writeBuffer(shadowUniformBuffer, 64, shadowUniformData);
 
             const shadowPass = commandEncoder.beginRenderPass({
                 colorAttachments: [],
@@ -1046,7 +1071,8 @@ async function init() {
             // ============ 3. AMBIENT OCCLUSION PASS ============
             device.queue.writeBuffer(aoUniformBuffer, 0, projectionMatrix);
             device.queue.writeBuffer(aoUniformBuffer, 64, viewMatrix);
-            aoUniformData[0] = canvas.width; aoUniformData[1] = canvas.height; aoUniformData[2] = FOV; aoUniformData[3] = sphereRadius;
+            aoUniformData[0] = canvas.width; aoUniformData[1] = canvas.height; aoUniformData[2] = FOV;
+            // aoUniformData[3-7] are pre-set with sphereRadius and simOffset
             device.queue.writeBuffer(aoUniformBuffer, 128, aoUniformData);
 
             const aoPass = commandEncoder.beginRenderPass({
