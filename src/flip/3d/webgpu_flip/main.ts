@@ -786,12 +786,22 @@ async function init() {
     let lastMousePlaneX = 0;
     let lastMousePlaneY = 0;
 
-    canvas.addEventListener('mousedown', (e) => camera.onMouseDown(e));
-    window.addEventListener('mouseup', () => camera.onMouseUp());
-    window.addEventListener('mousemove', (e) => {
+    canvas.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        camera.onMouseDown(e);
+    });
+    document.addEventListener('pointerup', (e) => {
+        e.preventDefault();
+        camera.onMouseUp();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+        e.preventDefault();
+
         const position = Utilities.getMousePosition(e, canvas);
-        const normalizedX = position.x / canvas.width;
-        const normalizedY = position.y / canvas.height;
+        // Use CSS dimensions (getBoundingClientRect), not canvas device pixel dimensions
+        const rect = canvas.getBoundingClientRect();
+        const normalizedX = position.x / rect.width;
+        const normalizedY = position.y / rect.height;
 
         mouseX = normalizedX * 2.0 - 1.0;
         mouseY = (1.0 - normalizedY) * 2.0 - 1.0;
