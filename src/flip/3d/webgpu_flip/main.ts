@@ -114,6 +114,13 @@ async function init() {
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
 
+    // Compositing texture (for FXAA input)
+    let compositingTexture = device.createTexture({
+        size: [canvas.width, canvas.height],
+        format: presentationFormat,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
     // Shadow map depth texture
     const shadowDepthTexture = device.createTexture({
         size: [SHADOW_MAP_SIZE, SHADOW_MAP_SIZE],
@@ -332,6 +339,88 @@ async function init() {
         `
     });
 
+    // ============ FXAA PASS SHADER ============
+    const fxaaShaderModule = device.createShaderModule({
+        code: `
+            struct Uniforms {
+                resolution: vec2<f32>,
+            };
+
+            @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+            @group(0) @binding(1) var inputTex: texture_2d<f32>;
+            @group(0) @binding(2) var linearSamp: sampler;
+
+            struct VertexOutput {
+                @builtin(position) position: vec4<f32>,
+                @location(0) uv: vec2<f32>,
+            };
+
+            const FXAA_SPAN_MAX: f32 = 8.0;
+            const FXAA_REDUCE_MUL: f32 = 1.0 / 8.0;
+            const FXAA_REDUCE_MIN: f32 = 1.0 / 128.0;
+
+            @vertex
+            fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+                var pos = array<vec2<f32>, 4>(
+                    vec2<f32>(-1.0, -1.0),
+                    vec2<f32>(1.0, -1.0),
+                    vec2<f32>(-1.0, 1.0),
+                    vec2<f32>(1.0, 1.0)
+                );
+                var out: VertexOutput;
+                out.position = vec4<f32>(pos[vertexIndex], 0.0, 1.0);
+                out.uv = vec2<f32>(pos[vertexIndex].x * 0.5 + 0.5, 0.5 - pos[vertexIndex].y * 0.5);
+                return out;
+            }
+
+            @fragment
+            fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+                let delta = 1.0 / uniforms.resolution;
+
+                let rgbNW = textureSample(inputTex, linearSamp, in.uv + vec2<f32>(-1.0, -1.0) * delta).rgb;
+                let rgbNE = textureSample(inputTex, linearSamp, in.uv + vec2<f32>(1.0, -1.0) * delta).rgb;
+                let rgbSW = textureSample(inputTex, linearSamp, in.uv + vec2<f32>(-1.0, 1.0) * delta).rgb;
+                let rgbSE = textureSample(inputTex, linearSamp, in.uv + vec2<f32>(1.0, 1.0) * delta).rgb;
+                let rgbM = textureSample(inputTex, linearSamp, in.uv).rgb;
+
+                let luma = vec3<f32>(0.299, 0.587, 0.114);
+                let lumaNW = dot(rgbNW, luma);
+                let lumaNE = dot(rgbNE, luma);
+                let lumaSW = dot(rgbSW, luma);
+                let lumaSE = dot(rgbSE, luma);
+                let lumaM = dot(rgbM, luma);
+
+                let lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+                let lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+
+                var dir = vec2<f32>(
+                    -((lumaNW + lumaNE) - (lumaSW + lumaSE)),
+                    ((lumaNW + lumaSW) - (lumaNE + lumaSE))
+                );
+
+                let dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) * (0.25 * FXAA_REDUCE_MUL), FXAA_REDUCE_MIN);
+                let rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+                dir = min(vec2<f32>(FXAA_SPAN_MAX), max(vec2<f32>(-FXAA_SPAN_MAX), dir * rcpDirMin)) * delta;
+
+                let rgbA = 0.5 * (
+                    textureSample(inputTex, linearSamp, in.uv + dir * (1.0 / 3.0 - 0.5)).rgb +
+                    textureSample(inputTex, linearSamp, in.uv + dir * (2.0 / 3.0 - 0.5)).rgb
+                );
+                let rgbB = rgbA * 0.5 + 0.25 * (
+                    textureSample(inputTex, linearSamp, in.uv + dir * -0.5).rgb +
+                    textureSample(inputTex, linearSamp, in.uv + dir * 0.5).rgb
+                );
+                let lumaB = dot(rgbB, luma);
+
+                if (lumaB < lumaMin || lumaB > lumaMax) {
+                    return vec4<f32>(rgbA, 1.0);
+                } else {
+                    return vec4<f32>(rgbB, 1.0);
+                }
+            }
+        `
+    });
+
     // ============ AMBIENT OCCLUSION PASS SHADER ============
     const aoShaderModule = device.createShaderModule({
         code: `
@@ -485,6 +574,17 @@ async function init() {
         primitive: { topology: 'triangle-strip' }
     });
 
+    const fxaaPipeline = device.createRenderPipeline({
+        layout: 'auto',
+        vertex: { module: fxaaShaderModule, entryPoint: 'vs_main' },
+        fragment: {
+            module: fxaaShaderModule,
+            entryPoint: 'fs_main',
+            targets: [{ format: presentationFormat }]
+        },
+        primitive: { topology: 'triangle-strip' }
+    });
+
     // Create uniform buffers
     const gBufferUniformBuffer = device.createBuffer({
         size: 144,
@@ -503,6 +603,11 @@ async function init() {
 
     const compositeUniformBuffer = device.createBuffer({
         size: 144,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const fxaaUniformBuffer = device.createBuffer({
+        size: 16, // vec2 + padding
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -526,6 +631,7 @@ async function init() {
 
     let aoBindGroup: GPUBindGroup;
     let compositeBindGroup: GPUBindGroup;
+    let fxaaBindGroup: GPUBindGroup;
 
     function createSizeDepedentBindGroups() {
         aoBindGroup = device.createBindGroup({
@@ -547,6 +653,15 @@ async function init() {
                 { binding: 3, resource: shadowDepthTexture.createView() },
                 { binding: 4, resource: linearSampler },
                 { binding: 5, resource: shadowSampler },
+            ]
+        });
+
+        fxaaBindGroup = device.createBindGroup({
+            layout: fxaaPipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: fxaaUniformBuffer } },
+                { binding: 1, resource: compositingTexture.createView() },
+                { binding: 2, resource: linearSampler },
             ]
         });
     }
@@ -786,7 +901,7 @@ async function init() {
 
             const compositePass = commandEncoder.beginRenderPass({
                 colorAttachments: [{
-                    view: context.getCurrentTexture().createView(),
+                    view: compositingTexture.createView(),
                     clearValue: { r: 0.9, g: 0.9, b: 0.9, a: 1.0 },
                     loadOp: 'clear',
                     storeOp: 'store',
@@ -796,6 +911,22 @@ async function init() {
             compositePass.setBindGroup(0, compositeBindGroup);
             compositePass.draw(4);
             compositePass.end();
+
+            // ============ 5. FXAA PASS ============
+            device.queue.writeBuffer(fxaaUniformBuffer, 0, new Float32Array([canvas.width, canvas.height]));
+
+            const fxaaPass = commandEncoder.beginRenderPass({
+                colorAttachments: [{
+                    view: context.getCurrentTexture().createView(),
+                    clearValue: { r: 0.9, g: 0.9, b: 0.9, a: 1.0 },
+                    loadOp: 'clear',
+                    storeOp: 'store',
+                }],
+            });
+            fxaaPass.setPipeline(fxaaPipeline);
+            fxaaPass.setBindGroup(0, fxaaBindGroup);
+            fxaaPass.draw(4);
+            fxaaPass.end();
         } else {
             // No particles - just clear
             const passEncoder = commandEncoder.beginRenderPass({
@@ -837,6 +968,13 @@ async function init() {
         occlusionTexture = device.createTexture({
             size: [canvas.width, canvas.height],
             format: 'r16float',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        });
+
+        compositingTexture.destroy();
+        compositingTexture = device.createTexture({
+            size: [canvas.width, canvas.height],
+            format: presentationFormat,
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         });
 
