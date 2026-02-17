@@ -621,10 +621,20 @@ async function init() {
     // Create GUI inside the container
     const gui = new GUI({ container: contentWrapper, title: 'Simulation Settings' });
 
+    // Simulation config (adjustable parameters)
+    const BASE_PARTICLE_RADIUS = 0.22;  // Base radius for position scale calculation (7.0 / 32)
+    const simConfig = {
+        particleRadius: 0.15,  // Default particle radius (can be adjusted)
+    };
+
+    // Helper to calculate position scale based on current radius vs base radius
+    const getPositionScale = () => simConfig.particleRadius / BASE_PARTICLE_RADIUS;
+
     // Simulation folder
     const simFolder = gui.addFolder('Simulation');
     const simDisplay = { particleCount: 0 };
     const particleCountController = simFolder.add(simDisplay, 'particleCount').name('Particle Count').disable();
+    simFolder.add(simConfig, 'particleRadius', 0.05, 0.5, 0.01).name('Particle Radius');
     simFolder.close();
 
     // Environment folder
@@ -711,9 +721,11 @@ async function init() {
                 projectionMatrix: mat4x4<f32>,
                 viewMatrix: mat4x4<f32>,
                 sphereRadius: f32,
+                positionScale: f32,
                 simOffsetX: f32,
                 simOffsetY: f32,
                 simOffsetZ: f32,
+                _pad: f32,
             };
 
             @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -733,7 +745,7 @@ async function init() {
                 @location(1) vertexNormal: vec3<f32>,
                 @builtin(instance_index) instanceIndex: u32
             ) -> VertexOutput {
-                let spherePos = positions[instanceIndex].xyz;
+                let spherePos = positions[instanceIndex].xyz * uniforms.positionScale;
                 let velocity = velocities[instanceIndex].xyz;
                 let simOffset = vec3<f32>(uniforms.simOffsetX, uniforms.simOffsetY, uniforms.simOffsetZ);
                 let worldPos = vertexPos * uniforms.sphereRadius + spherePos + simOffset;
@@ -761,9 +773,11 @@ async function init() {
             struct Uniforms {
                 projectionViewMatrix: mat4x4<f32>,
                 sphereRadius: f32,
+                positionScale: f32,
                 simOffsetX: f32,
                 simOffsetY: f32,
                 simOffsetZ: f32,
+                _pad: vec3<f32>,
             };
 
             @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -774,7 +788,7 @@ async function init() {
                 @location(0) vertexPos: vec3<f32>,
                 @builtin(instance_index) instanceIndex: u32
             ) -> @builtin(position) vec4<f32> {
-                let spherePos = positions[instanceIndex].xyz;
+                let spherePos = positions[instanceIndex].xyz * uniforms.positionScale;
                 let simOffset = vec3<f32>(uniforms.simOffsetX, uniforms.simOffsetY, uniforms.simOffsetZ);
                 let worldPos = vertexPos * uniforms.sphereRadius + spherePos + simOffset;
                 return uniforms.projectionViewMatrix * vec4<f32>(worldPos, 1.0);
@@ -1123,9 +1137,11 @@ async function init() {
                 resolution: vec2<f32>,
                 fov: f32,
                 sphereRadius: f32,
+                positionScale: f32,
                 simOffsetX: f32,
                 simOffsetY: f32,
                 simOffsetZ: f32,
+                _pad: vec3<f32>,
             };
 
             @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -1146,7 +1162,7 @@ async function init() {
                 @location(0) vertexPos: vec3<f32>,
                 @builtin(instance_index) instanceIndex: u32
             ) -> VertexOutput {
-                let spherePos = positions[instanceIndex].xyz;
+                let spherePos = positions[instanceIndex].xyz * uniforms.positionScale;
                 let simOffset = vec3<f32>(uniforms.simOffsetX, uniforms.simOffsetY, uniforms.simOffsetZ);
                 let worldSpherePos = spherePos + simOffset;
                 let viewSpherPos = (uniforms.viewMatrix * vec4<f32>(worldSpherePos, 1.0)).xyz;
@@ -1285,17 +1301,17 @@ async function init() {
 
     // Create uniform buffers
     const gBufferUniformBuffer = device.createBuffer({
-        size: 160,  // projMatrix(64) + viewMatrix(64) + sphereRadius(4) + simOffset(12) + pad(16)
+        size: 160,  // projMatrix(64) + viewMatrix(64) + sphereRadius/positionScale/simOffset/pad(32)
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     const shadowUniformBuffer = device.createBuffer({
-        size: 96,   // projViewMatrix(64) + sphereRadius(4) + simOffset(12) + pad(16)
+        size: 112,  // projViewMatrix(64) + sphereRadius/positionScale/simOffset/pad(48) - vec3 pad needs 16-byte alignment
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     const aoUniformBuffer = device.createBuffer({
-        size: 176,  // projMatrix(64) + viewMatrix(64) + resolution/fov/radius(16) + simOffset(12) + pad(20)
+        size: 192,  // projMatrix(64) + viewMatrix(64) + resolution/fov/radius/scale/simOffset/pad(64)
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -1477,18 +1493,31 @@ async function init() {
 
     console.log("WebGPU Initialized with Particles");
 
-    const sphereRadius = 7.0 / RESOLUTION_X;
-
     // Pre-allocated arrays for uniform writes (avoid allocations every frame)
-    // Pre-allocated arrays including simulation offset
-    const gBufferUniformData = new Float32Array([sphereRadius, SIM_OFFSET_X, SIM_OFFSET_Y, SIM_OFFSET_Z]);
-    const shadowUniformData = new Float32Array([sphereRadius, SIM_OFFSET_X, SIM_OFFSET_Y, SIM_OFFSET_Z]);
-    const aoUniformData = new Float32Array(8);  // [width, height, FOV, sphereRadius, simOffsetX, Y, Z, pad]
-    aoUniformData[3] = sphereRadius;
-    aoUniformData[4] = SIM_OFFSET_X;
-    aoUniformData[5] = SIM_OFFSET_Y;
-    aoUniformData[6] = SIM_OFFSET_Z;
-    aoUniformData[7] = 0;
+    // Particle radius and position scale are now controlled by simConfig.particleRadius
+    // gBuffer: [sphereRadius, positionScale, simOffsetX, simOffsetY, simOffsetZ, pad]
+    const gBufferUniformData = new Float32Array(8);
+    gBufferUniformData[0] = simConfig.particleRadius;
+    gBufferUniformData[1] = getPositionScale();
+    gBufferUniformData[2] = SIM_OFFSET_X;
+    gBufferUniformData[3] = SIM_OFFSET_Y;
+    gBufferUniformData[4] = SIM_OFFSET_Z;
+
+    // shadow: [sphereRadius, positionScale, simOffsetX, simOffsetY, simOffsetZ, pad, pad, pad]
+    const shadowUniformData = new Float32Array(8);
+    shadowUniformData[0] = simConfig.particleRadius;
+    shadowUniformData[1] = getPositionScale();
+    shadowUniformData[2] = SIM_OFFSET_X;
+    shadowUniformData[3] = SIM_OFFSET_Y;
+    shadowUniformData[4] = SIM_OFFSET_Z;
+
+    // ao: [width, height, FOV, sphereRadius, positionScale, simOffsetX, simOffsetY, simOffsetZ, pad, pad, pad]
+    const aoUniformData = new Float32Array(12);
+    aoUniformData[3] = simConfig.particleRadius;
+    aoUniformData[4] = getPositionScale();
+    aoUniformData[5] = SIM_OFFSET_X;
+    aoUniformData[6] = SIM_OFFSET_Y;
+    aoUniformData[7] = SIM_OFFSET_Z;
     const compositeUniformData = new Float32Array(40);  // Extended for scene uniforms (160 bytes)
 
     const fxaaUniformData = new Float32Array(2);  // [width, height]
@@ -1560,6 +1589,15 @@ async function init() {
         }
 
         if (particleCount > 0) {
+            // Update particle radius and position scale from GUI config
+            const positionScale = getPositionScale();
+            gBufferUniformData[0] = simConfig.particleRadius;
+            gBufferUniformData[1] = positionScale;
+            shadowUniformData[0] = simConfig.particleRadius;
+            shadowUniformData[1] = positionScale;
+            aoUniformData[3] = simConfig.particleRadius;
+            aoUniformData[4] = positionScale;
+
             // ============ 1. G-BUFFER PASS ============
             device.queue.writeBuffer(gBufferUniformBuffer, 0, projectionMatrix);
             device.queue.writeBuffer(gBufferUniformBuffer, 64, viewMatrix);
