@@ -1745,6 +1745,22 @@ async function init() {
             compositePass.draw(4);
             compositePass.end();
 
+            // ============ 4.1 WIREFRAME PASS ============
+            const wireframePass = commandEncoder.beginRenderPass({
+                colorAttachments: [{
+                    view: compositingTextureView,
+                    loadOp: 'load',
+                    storeOp: 'store',
+                }],
+                depthStencilAttachment: {
+                    view: depthTextureView,
+                    depthLoadOp: 'load',
+                    depthStoreOp: 'store',
+                },
+            });
+            boxEditor.draw(wireframePass, projectionMatrix, camera, [SIM_OFFSET_X, SIM_OFFSET_Y, SIM_OFFSET_Z], simConfig.particleRadius, getPositionScale());
+            wireframePass.end();
+
             // ============ 5. FXAA PASS ============
             fxaaUniformData[0] = canvas.width; fxaaUniformData[1] = canvas.height;
             device.queue.writeBuffer(fxaaUniformBuffer, 0, fxaaUniformData);
