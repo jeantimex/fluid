@@ -1565,20 +1565,22 @@ async function init() {
         const cameraRight = [viewMatrix[0], viewMatrix[4], viewMatrix[8]];
         const cameraUp = [viewMatrix[1], viewMatrix[5], viewMatrix[9]];
 
-        // Compute world space mouse velocity
+        const positionScale = getPositionScale();
+
+        // Compute world space mouse velocity (adjusted for position scale)
         const mouseVelocity = [
-            mouseVelocityX * cameraRight[0] + mouseVelocityY * cameraUp[0],
-            mouseVelocityX * cameraRight[1] + mouseVelocityY * cameraUp[1],
-            mouseVelocityX * cameraRight[2] + mouseVelocityY * cameraUp[2]
+            (mouseVelocityX * cameraRight[0] + mouseVelocityY * cameraUp[0]) / positionScale,
+            (mouseVelocityX * cameraRight[1] + mouseVelocityY * cameraUp[1]) / positionScale,
+            (mouseVelocityX * cameraRight[2] + mouseVelocityY * cameraUp[2]) / positionScale
         ];
 
         // Mouse ray origin is camera position
         const mouseRayOrigin = camera.getPosition();
-        // Transform mouse ray origin to simulation space (subtract simulation offset)
+        // Transform mouse ray origin to simulation space (subtract simulation offset and adjust for position scale)
         const simMouseRayOrigin = [
-            mouseRayOrigin[0] - SIM_OFFSET_X,
-            mouseRayOrigin[1] - SIM_OFFSET_Y,
-            mouseRayOrigin[2] - SIM_OFFSET_Z
+            (mouseRayOrigin[0] - SIM_OFFSET_X) / positionScale,
+            (mouseRayOrigin[1] - SIM_OFFSET_Y) / positionScale,
+            (mouseRayOrigin[2] - SIM_OFFSET_Z) / positionScale
         ];
 
         // Compute Pass (skip if paused)
