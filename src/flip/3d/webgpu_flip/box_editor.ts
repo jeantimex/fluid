@@ -160,26 +160,15 @@ export class BoxEditor {
         return buffer;
     }
 
-    draw(passEncoder: GPURenderPassEncoder, projectionMatrix: Float32Array, camera: Camera, simOffset: number[] = [0, 0, 0], particleRadius: number = 0, positionScale: number = 1.0) {
+    draw(passEncoder: GPURenderPassEncoder, projectionMatrix: Float32Array, camera: Camera, simOffset: number[] = [0, 0, 0], gridDimensions: number[] = [1, 1, 1]) {
         this.device.queue.writeBuffer(this.uniformBuffer, 0, projectionMatrix);
         this.device.queue.writeBuffer(this.uniformBuffer, 64, camera.getViewMatrix());
 
-        // 1. Draw Boundary Grid (adjusted for position scale and expanded by particle radius)
+        // 1. Draw Boundary Grid
         passEncoder.setPipeline(this.linePipeline);
         passEncoder.setBindGroup(0, this.bindGroup);
         
-        const adjustedOffset = [
-            simOffset[0] - particleRadius,
-            simOffset[1] - particleRadius,
-            simOffset[2] - particleRadius
-        ];
-        const adjustedDimensions = [
-            this.gridDimensions[0] * positionScale + 2 * particleRadius,
-            this.gridDimensions[1] * positionScale + 2 * particleRadius,
-            this.gridDimensions[2] * positionScale + 2 * particleRadius
-        ];
-
-        this.updateUniforms(adjustedOffset, adjustedDimensions, [1.0, 1.0, 1.0, 1.0]);
+        this.updateUniforms(simOffset, gridDimensions, [1.0, 1.0, 1.0, 1.0]);
         passEncoder.setVertexBuffer(0, this.gridVertexBuffer);
         passEncoder.draw(24);
 

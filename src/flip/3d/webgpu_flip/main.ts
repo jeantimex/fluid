@@ -61,9 +61,14 @@ async function init() {
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
-    const GRID_WIDTH = 40;
-    const GRID_HEIGHT = 20;
-    const GRID_DEPTH = 20;
+    // --- Simulation config ---
+    const simConfig = {
+        particleRadius: 0.15,
+        gridWidth: 40,
+        gridHeight: 20,
+        gridDepth: 20,
+    };
+    const POSITION_SCALE = 1.0;
 
     // WebGL uses gridCellDensity = 0.5 by default
     // gridCells = 40 * 20 * 20 * 0.5 = 8000
@@ -76,12 +81,12 @@ async function init() {
     const PARTICLES_PER_CELL = 10;
 
     // Simulation offset to center fluid on tiles (world origin)
-    const SIM_OFFSET_X = -GRID_WIDTH / 2;
-    const SIM_OFFSET_Y = 0;  // Floor at y=0
-    const SIM_OFFSET_Z = -GRID_DEPTH / 2;
+    const getSimOffsetX = () => -simConfig.gridWidth / 2;
+    const getSimOffsetY = () => 0;
+    const getSimOffsetZ = () => -simConfig.gridDepth / 2;
 
-    const camera = new Camera(canvas, [0, GRID_HEIGHT / 3, 0]);  // Orbit around world center
-    const boxEditor = new BoxEditor(device, presentationFormat, [GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH]);
+    const camera = new Camera(canvas, [0, simConfig.gridHeight / 3, 0]);  // Orbit around world center
+    const boxEditor = new BoxEditor(device, presentationFormat, [simConfig.gridWidth, simConfig.gridHeight, simConfig.gridDepth]);
 
     // --- Particle Setup ---
     const MAX_PARTICLES = 100000;
@@ -111,7 +116,7 @@ async function init() {
     }
     device.queue.writeBuffer(particleRandomBuffer, 0, randomData);
 
-    const simulator = new Simulator(device, RESOLUTION_X, RESOLUTION_Y, RESOLUTION_Z, GRID_WIDTH, GRID_HEIGHT, GRID_DEPTH, particlePositionBuffer, particleVelocityBuffer, particleRandomBuffer);
+    const simulator = new Simulator(device, RESOLUTION_X, RESOLUTION_Y, RESOLUTION_Z, simConfig.gridWidth, simConfig.gridHeight, simConfig.gridDepth, particlePositionBuffer, particleVelocityBuffer, particleRandomBuffer);
 
     // Generate sphere geometry (2 iterations) for G-buffer - good balance of quality and performance
     const sphereGeom = generateSphereGeometry(2);
@@ -621,20 +626,23 @@ async function init() {
     // Create GUI inside the container
     const gui = new GUI({ container: contentWrapper, title: 'Simulation Settings' });
 
-    // Simulation config (adjustable parameters)
-    const BASE_PARTICLE_RADIUS = 0.22;  // Base radius for position scale calculation (7.0 / 32)
-    const simConfig = {
-        particleRadius: 0.15,  // Default particle radius (can be adjusted)
-    };
-
-    // Helper to calculate position scale based on current radius vs base radius
-    const getPositionScale = () => simConfig.particleRadius / BASE_PARTICLE_RADIUS;
-
     // Simulation folder
     const simFolder = gui.addFolder('Simulation');
     const simDisplay = { particleCount: 0 };
     const particleCountController = simFolder.add(simDisplay, 'particleCount').name('Particle Count').disable();
     simFolder.add(simConfig, 'particleRadius', 0.05, 0.5, 0.01).name('Particle Radius');
+    simFolder.add(simConfig, 'gridWidth', 10, 100, 1).name('Grid Width').onChange((val: number) => {
+        simulator.gridWidth = val;
+    });
+    simFolder.add(simConfig, 'gridHeight', 5, 50, 1).name('Grid Height').onChange((val: number) => {
+        simulator.gridHeight = val;
+        // Update camera orbit point if needed
+        camera.orbitPoint[1] = val / 3;
+        camera.recomputeViewMatrix();
+    });
+    simFolder.add(simConfig, 'gridDepth', 5, 50, 1).name('Grid Depth').onChange((val: number) => {
+        simulator.gridDepth = val;
+    });
     simFolder.close();
 
     // Environment folder
@@ -1395,7 +1403,7 @@ async function init() {
             }
 
             // Calculate particle count (matching WebGL formula)
-            const totalGridVolume = GRID_WIDTH * GRID_HEIGHT * GRID_DEPTH;
+            const totalGridVolume = simConfig.gridWidth * simConfig.gridHeight * simConfig.gridDepth;
             const fractionFilled = totalBoxVolume / totalGridVolume;
             const totalGridCells = RESOLUTION_X * RESOLUTION_Y * RESOLUTION_Z;
             const desiredParticleCount = Math.floor(fractionFilled * totalGridCells * PARTICLES_PER_CELL);
@@ -1494,30 +1502,29 @@ async function init() {
     console.log("WebGPU Initialized with Particles");
 
     // Pre-allocated arrays for uniform writes (avoid allocations every frame)
-    // Particle radius and position scale are now controlled by simConfig.particleRadius
     // gBuffer: [sphereRadius, positionScale, simOffsetX, simOffsetY, simOffsetZ, pad]
     const gBufferUniformData = new Float32Array(8);
     gBufferUniformData[0] = simConfig.particleRadius;
-    gBufferUniformData[1] = getPositionScale();
-    gBufferUniformData[2] = SIM_OFFSET_X;
-    gBufferUniformData[3] = SIM_OFFSET_Y;
-    gBufferUniformData[4] = SIM_OFFSET_Z;
+    gBufferUniformData[1] = POSITION_SCALE;
+    gBufferUniformData[2] = getSimOffsetX();
+    gBufferUniformData[3] = getSimOffsetY();
+    gBufferUniformData[4] = getSimOffsetZ();
 
     // shadow: [sphereRadius, positionScale, simOffsetX, simOffsetY, simOffsetZ, pad, pad, pad]
     const shadowUniformData = new Float32Array(8);
     shadowUniformData[0] = simConfig.particleRadius;
-    shadowUniformData[1] = getPositionScale();
-    shadowUniformData[2] = SIM_OFFSET_X;
-    shadowUniformData[3] = SIM_OFFSET_Y;
-    shadowUniformData[4] = SIM_OFFSET_Z;
+    shadowUniformData[1] = POSITION_SCALE;
+    shadowUniformData[2] = getSimOffsetX();
+    shadowUniformData[3] = getSimOffsetY();
+    shadowUniformData[4] = getSimOffsetZ();
 
     // ao: [width, height, FOV, sphereRadius, positionScale, simOffsetX, simOffsetY, simOffsetZ, pad, pad, pad]
     const aoUniformData = new Float32Array(12);
     aoUniformData[3] = simConfig.particleRadius;
-    aoUniformData[4] = getPositionScale();
-    aoUniformData[5] = SIM_OFFSET_X;
-    aoUniformData[6] = SIM_OFFSET_Y;
-    aoUniformData[7] = SIM_OFFSET_Z;
+    aoUniformData[4] = POSITION_SCALE;
+    aoUniformData[5] = getSimOffsetX();
+    aoUniformData[6] = getSimOffsetY();
+    aoUniformData[7] = getSimOffsetZ();
     const compositeUniformData = new Float32Array(40);  // Extended for scene uniforms (160 bytes)
 
     const fxaaUniformData = new Float32Array(2);  // [width, height]
@@ -1565,22 +1572,20 @@ async function init() {
         const cameraRight = [viewMatrix[0], viewMatrix[4], viewMatrix[8]];
         const cameraUp = [viewMatrix[1], viewMatrix[5], viewMatrix[9]];
 
-        const positionScale = getPositionScale();
-
         // Compute world space mouse velocity (adjusted for position scale)
         const mouseVelocity = [
-            (mouseVelocityX * cameraRight[0] + mouseVelocityY * cameraUp[0]) / positionScale,
-            (mouseVelocityX * cameraRight[1] + mouseVelocityY * cameraUp[1]) / positionScale,
-            (mouseVelocityX * cameraRight[2] + mouseVelocityY * cameraUp[2]) / positionScale
+            (mouseVelocityX * cameraRight[0] + mouseVelocityY * cameraUp[0]) / POSITION_SCALE,
+            (mouseVelocityX * cameraRight[1] + mouseVelocityY * cameraUp[1]) / POSITION_SCALE,
+            (mouseVelocityX * cameraRight[2] + mouseVelocityY * cameraUp[2]) / POSITION_SCALE
         ];
 
         // Mouse ray origin is camera position
         const mouseRayOrigin = camera.getPosition();
         // Transform mouse ray origin to simulation space (subtract simulation offset and adjust for position scale)
         const simMouseRayOrigin = [
-            (mouseRayOrigin[0] - SIM_OFFSET_X) / positionScale,
-            (mouseRayOrigin[1] - SIM_OFFSET_Y) / positionScale,
-            (mouseRayOrigin[2] - SIM_OFFSET_Z) / positionScale
+            (mouseRayOrigin[0] - getSimOffsetX()) / POSITION_SCALE,
+            (mouseRayOrigin[1] - getSimOffsetY()) / POSITION_SCALE,
+            (mouseRayOrigin[2] - getSimOffsetZ()) / POSITION_SCALE
         ];
 
         // Compute Pass (skip if paused)
@@ -1591,14 +1596,28 @@ async function init() {
         }
 
         if (particleCount > 0) {
-            // Update particle radius and position scale from GUI config
-            const positionScale = getPositionScale();
+            // Update particle radius, position scale and offsets from current config
+            const currentSimOffsetX = getSimOffsetX();
+            const currentSimOffsetY = getSimOffsetY();
+            const currentSimOffsetZ = getSimOffsetZ();
+
             gBufferUniformData[0] = simConfig.particleRadius;
-            gBufferUniformData[1] = positionScale;
+            gBufferUniformData[1] = POSITION_SCALE;
+            gBufferUniformData[2] = currentSimOffsetX;
+            gBufferUniformData[3] = currentSimOffsetY;
+            gBufferUniformData[4] = currentSimOffsetZ;
+
             shadowUniformData[0] = simConfig.particleRadius;
-            shadowUniformData[1] = positionScale;
+            shadowUniformData[1] = POSITION_SCALE;
+            shadowUniformData[2] = currentSimOffsetX;
+            shadowUniformData[3] = currentSimOffsetY;
+            shadowUniformData[4] = currentSimOffsetZ;
+
             aoUniformData[3] = simConfig.particleRadius;
-            aoUniformData[4] = positionScale;
+            aoUniformData[4] = POSITION_SCALE;
+            aoUniformData[5] = currentSimOffsetX;
+            aoUniformData[6] = currentSimOffsetY;
+            aoUniformData[7] = currentSimOffsetZ;
 
             // ============ 1. G-BUFFER PASS ============
             device.queue.writeBuffer(gBufferUniformBuffer, 0, projectionMatrix);
@@ -1760,7 +1779,7 @@ async function init() {
                     depthStoreOp: 'store',
                 },
             });
-            boxEditor.draw(wireframePass, projectionMatrix, camera, [SIM_OFFSET_X, SIM_OFFSET_Y, SIM_OFFSET_Z], simConfig.particleRadius, getPositionScale());
+            boxEditor.draw(wireframePass, projectionMatrix, camera, [currentSimOffsetX, currentSimOffsetY, currentSimOffsetZ], [simConfig.gridWidth, simConfig.gridHeight, simConfig.gridDepth]);
             wireframePass.end();
 
             // ============ 5. FXAA PASS ============
