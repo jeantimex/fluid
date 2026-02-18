@@ -64,7 +64,7 @@ export class Simulator {
             struct Uniforms {
                 nx: u32, ny: u32, nz: u32, particleCount: u32,
                 width: f32, height: f32, depth: f32, dt: f32,
-                frameNumber: f32, _pad1: f32, _pad2: f32, _pad3: f32,
+                frameNumber: f32, fluidity: f32, _pad2: f32, _pad3: f32,
                 mouseVelocity: vec3<f32>, _pad4: f32,
                 mouseRayOrigin: vec3<f32>, _pad5: f32,
                 mouseRayDirection: vec3<f32>, _pad6: f32,
@@ -89,7 +89,6 @@ export class Simulator {
 
             const SCALE: f32 = 10000.0;
             const GRAVITY: f32 = 40.0;
-            const FLIP_RATIO: f32 = 0.99;  // Match WebGL (0 = PIC, 1 = FLIP)
             const PARTICLE_DENSITY: f32 = 10.0;
             const TURBULENCE: f32 = 0.05;  // Match WebGL
 
@@ -568,7 +567,7 @@ export class Simulator {
                 // PIC: just use grid velocity
                 let vPic = vGridNew;
                 // Blend
-                let vNew = mix(vPic, vFlip, FLIP_RATIO);
+                let vNew = mix(vPic, vFlip, uniforms.fluidity);
 
                 velocities[pIdx] = vec4<f32>(vNew, 0.0);
             }
@@ -662,10 +661,10 @@ export class Simulator {
         // Alt bind group not needed for current implementation
         this.simBindGroupAlt = this.simBindGroup;
 
-        this.updateUniforms(0, [0, 0, 0], [0, 0, 0], [0, 0, 1]);
+        this.updateUniforms(0, 0.99, [0, 0, 0], [0, 0, 0], [0, 0, 1]);
     }
 
-    updateUniforms(particleCount: number, mouseVelocity: number[], mouseRayOrigin: number[], mouseRayDirection: number[]) {
+    updateUniforms(particleCount: number, fluidity: number, mouseVelocity: number[], mouseRayOrigin: number[], mouseRayDirection: number[]) {
         const data = new ArrayBuffer(112);
         const u32 = new Uint32Array(data);
         const f32 = new Float32Array(data);
@@ -678,7 +677,7 @@ export class Simulator {
         f32[6] = this.gridDepth;
         f32[7] = 1.0 / 60.0;
         f32[8] = this.frameNumber;  // Frame number for time-varying turbulence
-        f32[9] = 0.0;  // padding
+        f32[9] = fluidity;  // fluidity (FLIP ratio)
         f32[10] = 0.0; // padding
         f32[11] = 0.0; // padding
         // Mouse velocity (vec3 + padding)
@@ -700,8 +699,8 @@ export class Simulator {
         this.frameNumber++;
     }
 
-    step(pass: GPUComputePassEncoder, particleCount: number, mouseVelocity: number[], mouseRayOrigin: number[], mouseRayDirection: number[]) {
-        this.updateUniforms(particleCount, mouseVelocity, mouseRayOrigin, mouseRayDirection);
+    step(pass: GPUComputePassEncoder, particleCount: number, fluidity: number, mouseVelocity: number[], mouseRayOrigin: number[], mouseRayDirection: number[]) {
+        this.updateUniforms(particleCount, fluidity, mouseVelocity, mouseRayOrigin, mouseRayDirection);
 
         const velGridWG = [
             Math.ceil((this.nx + 1) / 8),

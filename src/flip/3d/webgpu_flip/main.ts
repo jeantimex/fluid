@@ -69,6 +69,7 @@ async function init() {
         boxHeight: 10,
         boxDepth: 15,
         particleCount: 35000,
+        fluidity: 0.99,
     };
     
     // Smooth configuration for gradual transitions
@@ -646,6 +647,7 @@ async function init() {
     };
 
     simFolder.add(simConfig, 'particleRadius', 0.05, 0.5, 0.01).name('Particle Radius').onChange(syncSimulator);
+    simFolder.add(simConfig, 'fluidity', 0.5, 0.99, 0.01).name('Fluidity');
     simFolder.add(simConfig, 'particleCount', 1000, MAX_PARTICLES, 1000).name('Target Count').onFinishChange(() => {
         controls.reset();
     });
@@ -1609,7 +1611,7 @@ async function init() {
         // Compute Pass (skip if paused)
         if (!guiState.paused) {
             const computePass = commandEncoder.beginComputePass();
-            simulator.step(computePass, particleCount, mouseVelocity, simMouseRayOrigin, worldSpaceMouseRay);
+            simulator.step(computePass, particleCount, simConfig.fluidity, mouseVelocity, simMouseRayOrigin, worldSpaceMouseRay);
             computePass.end();
         }
 
