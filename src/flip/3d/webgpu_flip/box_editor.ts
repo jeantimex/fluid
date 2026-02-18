@@ -29,7 +29,7 @@ export class BoxEditor {
         this.gridDimensions = gridDimensions;
 
         // Default box for verification
-        this.boxes.push(new AABB([0, 0, 0], [15, 20, 20]));
+        this.boxes.push(new AABB([0, 0, 0], [12, 10, 15]));
 
         const shaderCode = `
             struct Uniforms {

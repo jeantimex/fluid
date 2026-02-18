@@ -64,10 +64,11 @@ async function init() {
     // --- Simulation config ---
     const BASE_PARTICLE_RADIUS = 0.22;
     const simConfig = {
-        particleRadius: 0.15,
-        boxWidth: 40,
-        boxHeight: 20,
-        boxDepth: 20,
+        particleRadius: 0.1,
+        boxWidth: 24,
+        boxHeight: 10,
+        boxDepth: 15,
+        particleCount: 35000,
     };
     
     // Smooth configuration for gradual transitions
@@ -94,7 +95,7 @@ async function init() {
 
     const PARTICLES_PER_CELL = 10;
 
-    const camera = new Camera(canvas, [0, simConfig.boxHeight / 3, 0]);  // Orbit around world center
+    const camera = new Camera(canvas, [0, 0, 0]);  // Orbit around world origin
     const boxEditor = new BoxEditor(device, presentationFormat, [simConfig.boxWidth, simConfig.boxHeight, simConfig.boxDepth]);
 
     // --- Particle Setup ---
@@ -645,6 +646,9 @@ async function init() {
     };
 
     simFolder.add(simConfig, 'particleRadius', 0.05, 0.5, 0.01).name('Particle Radius').onChange(syncSimulator);
+    simFolder.add(simConfig, 'particleCount', 1000, MAX_PARTICLES, 1000).name('Target Count').onFinishChange(() => {
+        controls.reset();
+    });
     simFolder.add(simConfig, 'boxWidth', 10, 100, 1).name('Box Width');
     simFolder.add(simConfig, 'boxHeight', 5, 50, 1).name('Box Height');
     simFolder.add(simConfig, 'boxDepth', 5, 50, 1).name('Box Depth');
@@ -1407,14 +1411,10 @@ async function init() {
                 totalBoxVolume += box.computeVolume();
             }
 
-            // Calculate particle count (matching WebGL formula)
-            const totalGridVolume = getInternalGridWidth() * getInternalGridHeight() * getInternalGridDepth();
-            const fractionFilled = totalBoxVolume / totalGridVolume;
-            const totalGridCells = RESOLUTION_X * RESOLUTION_Y * RESOLUTION_Z;
-            const desiredParticleCount = Math.floor(fractionFilled * totalGridCells * PARTICLES_PER_CELL);
-            particleCount = Math.min(desiredParticleCount, MAX_PARTICLES);
+            // Use the user-defined particle count
+            particleCount = Math.min(simConfig.particleCount, MAX_PARTICLES);
 
-            console.log(`Spawning ${particleCount} particles (fraction: ${fractionFilled.toFixed(3)}, cells: ${totalGridCells})`);
+            console.log(`Spawning ${particleCount} particles`);
 
             // Distribute particles across boxes proportionally
             let particlesCreated = 0;
