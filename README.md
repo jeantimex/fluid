@@ -68,6 +68,8 @@ A high-end rendering pipeline that treats fluid as a continuous surface.
 
 A high-performance PIC/FLIP hybrid simulation with dynamic boundaries.
 
+https://github.com/user-attachments/assets/c08f3cfe-9c4f-4e7b-96e9-47bd4d6f9934
+
 - **Techniques**: Hybrid particle-grid solver using a staggered MAC grid for pressure projection.
 - **Dynamic Boundaries**: Features a smoothly interpolating bounding box that reacts to physics in real-time.
 - **Visual Decoupling**: Particle rendering radius is independent of physical spacing, allowing for highly customizable visual densities.
