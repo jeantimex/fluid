@@ -706,6 +706,18 @@ async function init() {
     pauseController = gui.add(controls, 'togglePause').name('Pause');
     gui.add(controls, 'reset').name('Reset Simulation');
 
+    // Add keydown listener for keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+        // Ignore if typing in an input/textarea
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+            return;
+        }
+
+        if (e.key === 'p' || e.key === 'P') {
+            controls.togglePause();
+        }
+    });
+
     // Calculate light matrices (aligned with scene sun direction)
     const sunDir = sceneConfig.dirToSun;
     const lightDistance = 50.0;
