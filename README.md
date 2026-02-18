@@ -1,15 +1,15 @@
 # WebGPU Fluid Simulation
 
-WebGPU fluid simulation using Smoothed Particle Hydrodynamics (SPH).
+WebGPU fluid simulation using Smoothed Particle Hydrodynamics (SPH) and PIC/FLIP methods.
 
-This project is ported from [Sebastian Lague](https://github.com/SebLague)'s [Fluid-Sim](https://github.com/SebLague/Fluid-Sim) Unity project, which explores various rendering and simulation techniques for real-time fluids in the browser, leveraging the power of WebGPU for both compute-heavy physics and advanced visualization pipelines.
+This project is ported from [Sebastian Lague](https://github.com/SebLague)'s [Fluid-Sim](https://github.com/SebLague/Fluid-Sim) Unity project and [David Li](https://github.com/dli)'s [Fluid Particles](https://github.com/dli/fluid) WebGL project. It explores various rendering and simulation techniques for real-time fluids in the browser, leveraging the power of WebGPU for both compute-heavy physics and advanced visualization pipelines.
 
 ## Key Features
 
-- **GPU-Accelerated SPH**: Physics calculations (Density, Pressure, Viscosity) run entirely in WebGPU compute shaders.
+- **GPU-Accelerated Physics**: SPH calculations (Density, Pressure, Viscosity) and PIC/FLIP grid-based solving run entirely in WebGPU compute shaders.
 - **Efficient Spatial Sorting**: Uses a parallel Prefix-Sum and Linear Grid approach to handle tens of thousands of particles at 60 FPS.
 - **Diverse Renderers**: From simple billboards to complex screen-space refraction and volumetric raymarching.
-- **Interactive Simulation**: Real-time particle interaction (push/pull) and dynamic obstacle manipulation.
+- **Interactive Simulation**: Real-time particle interaction (push/pull), dynamic obstacle manipulation, and smoothly interpolating bounding boxes.
 - **Cross-Platform UI**: Responsive settings panel with Material Icons and performance statistics.
 
 ## Project Structure
@@ -29,7 +29,7 @@ https://github.com/user-attachments/assets/26b13e45-8f26-4896-9a95-ab9bfaddc907
 
 [Live Demo](https://jeantimex.github.io/fluid/)
 
-The project features several specialized 3D rendering techniques, all sharing a unified SPH simulation core:
+The project features several specialized 3D rendering techniques and simulation methods:
 
 #### 1. Billboard Particles (webgpu_particles)
 
@@ -64,7 +64,15 @@ A high-end rendering pipeline that treats fluid as a continuous surface.
   5. **Foam Simulation**: Advects foam particles based on trapped air and kinetic energy.
   6. **Composite**: Final shading with refraction, Fresnel effects, and shadows.
 
-#### 5. Unified Dashboard (webgpu_fluid)
+#### 5. FLIP Fluid (webgpu_flip)
+
+A high-performance PIC/FLIP hybrid simulation with dynamic boundaries.
+
+- **Techniques**: Hybrid particle-grid solver using a staggered MAC grid for pressure projection.
+- **Dynamic Boundaries**: Features a smoothly interpolating bounding box that reacts to physics in real-time.
+- **Visual Decoupling**: Particle rendering radius is independent of physical spacing, allowing for highly customizable visual densities.
+
+#### 6. Unified Dashboard (webgpu_fluid)
 
 The main entry point that allows hot-swapping between all 3D renderers while preserving the simulation state (gravity, bounds, particle positions).
 
@@ -102,7 +110,8 @@ npm run build
 ## Inspiration and Credits
 
 - Inspired by [Sebastian Lague](https://github.com/SebLague)'s "[Coding Adventure: Simulating Fluids](youtube.com/watch?si=oe9BznpAUnMWUslT&v=rSKMYc1CQHE&feature=youtu.be)" and "[Rendering Fluids](https://www.youtube.com/watch?v=kOkfC5fLfgE)".
-- Based on the Smoothed Particle Hydrodynamics (SPH) formulation for incompressible flow.
+- Based on the Smoothed Particle Hydrodynamics (SPH) formulation for incompressible flow and the PIC/FLIP hybrid method.
+- Heavily influenced by [David Li](https://github.com/dli)'s work on real-time WebGL fluid simulations.
 
 ## License
 
