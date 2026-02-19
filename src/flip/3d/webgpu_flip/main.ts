@@ -132,12 +132,20 @@ async function init() {
     gravity: 40,
 
     /**
-     * Number of Jacobi iterations for pressure solve (1-100).
+     * Number of pressure solver iterations (1-100).
      * - Higher: More accurate incompressibility, slower
      * - Lower: Faster but may have compression artifacts
-     * - Default 50 is conservative; 25-30 often sufficient
+     * - With Jacobi: 50 is conservative; 25-30 often sufficient
+     * - With Red-Black GS: Can use ~half the iterations for same quality
      */
     jacobiIterations: 50,
+
+    /**
+     * Use Red-Black Gauss-Seidel instead of Jacobi for pressure solve.
+     * - Red-Black GS converges ~2x faster than Jacobi
+     * - Can reduce iterations to 25 with similar quality to 50 Jacobi
+     */
+    useRedBlackGS: true,
 
     /**
      * Workgroup size for particle compute kernels.
@@ -603,7 +611,8 @@ async function init() {
         simConfig.fluidity,
         simConfig.gravity,
         targetDensity,
-        simConfig.jacobiIterations, // Configurable pressure solve iterations
+        simConfig.jacobiIterations,
+        simConfig.useRedBlackGS, // Use Red-Black Gauss-Seidel for ~2x faster convergence
         interaction.mouseVelocity,
         interaction.simMouseRayOrigin,
         interaction.worldSpaceMouseRay
