@@ -1,8 +1,8 @@
 import './style.css';
 import { setupGui } from './gui';
 
-const canvas = document.getElementById("myCanvas") as HTMLCanvasElement;
-const gl = canvas.getContext("webgl")!;
+const canvas = document.getElementById('myCanvas') as HTMLCanvasElement;
+const gl = canvas.getContext('webgl')!;
 
 canvas.focus();
 
@@ -469,7 +469,10 @@ class FlipFluid {
         for (let i = 0; i < this.fNumX; i++) {
           for (let j = 0; j < this.fNumY; j++) {
             const solid = this.cellType[i * n + j] === SOLID_CELL;
-            if (solid || (i > 0 && this.cellType[(i - 1) * n + j] === SOLID_CELL))
+            if (
+              solid ||
+              (i > 0 && this.cellType[(i - 1) * n + j] === SOLID_CELL)
+            )
               this.u[i * n + j] = this.prevU[i * n + j];
             if (solid || (j > 0 && this.cellType[i * n + j - 1] === SOLID_CELL))
               this.v[i * n + j] = this.prevV[i * n + j];
@@ -539,7 +542,11 @@ class FlipFluid {
     for (let i = 0; i < this.numParticles; i++) {
       const s_step = 0.01;
 
-      this.particleColor[3 * i] = clamp(this.particleColor[3 * i] - s_step, 0.0, 1.0);
+      this.particleColor[3 * i] = clamp(
+        this.particleColor[3 * i] - s_step,
+        0.0,
+        1.0
+      );
       this.particleColor[3 * i + 1] = clamp(
         this.particleColor[3 * i + 1] - s_step,
         0.0,
@@ -758,7 +765,8 @@ function setupScene() {
   let p_idx = 0;
   for (let i = 0; i < numX; i++) {
     for (let j = 0; j < numY; j++) {
-      f_sim.particlePos[p_idx++] = h + r + dx_spawn * i + (j % 2 === 0 ? 0.0 : r);
+      f_sim.particlePos[p_idx++] =
+        h + r + dx_spawn * i + (j % 2 === 0 ? 0.0 : r);
       f_sim.particlePos[p_idx++] = h + r + dy_spawn * j;
     }
   }
@@ -848,18 +856,26 @@ const meshFragmentShader = `
 		}
 	`;
 
-function createShader(gl_ctx: WebGLRenderingContext, vsSource: string, fsSource: string) {
+function createShader(
+  gl_ctx: WebGLRenderingContext,
+  vsSource: string,
+  fsSource: string
+) {
   const vsShader = gl_ctx.createShader(gl_ctx.VERTEX_SHADER)!;
   gl_ctx.shaderSource(vsShader, vsSource);
   gl_ctx.compileShader(vsShader);
   if (!gl_ctx.getShaderParameter(vsShader, gl_ctx.COMPILE_STATUS))
-    console.log("vertex shader compile error: " + gl_ctx.getShaderInfoLog(vsShader));
+    console.log(
+      'vertex shader compile error: ' + gl_ctx.getShaderInfoLog(vsShader)
+    );
 
   const fsShader = gl_ctx.createShader(gl_ctx.FRAGMENT_SHADER)!;
   gl_ctx.shaderSource(fsShader, fsSource);
   gl_ctx.compileShader(fsShader);
   if (!gl_ctx.getShaderParameter(fsShader, gl_ctx.COMPILE_STATUS))
-    console.log("fragment shader compile error: " + gl_ctx.getShaderInfoLog(fsShader));
+    console.log(
+      'fragment shader compile error: ' + gl_ctx.getShaderInfoLog(fsShader)
+    );
 
   const shader_prog = gl_ctx.createProgram()!;
   gl_ctx.attachShader(shader_prog, vsShader);
@@ -916,26 +932,26 @@ function draw() {
   if (gridColorBuffer == null) gridColorBuffer = gl.createBuffer();
 
   if (scene.showGrid) {
-    const pointSize = (0.9 * scene.fluid!.h) / simWidth * canvas.width;
+    const pointSize = ((0.9 * scene.fluid!.h) / simWidth) * canvas.width;
 
     gl.useProgram(pointShader);
     gl.uniform2f(
-      gl.getUniformLocation(pointShader!, "domainSize"),
+      gl.getUniformLocation(pointShader!, 'domainSize'),
       simWidth,
       simHeight
     );
-    gl.uniform1f(gl.getUniformLocation(pointShader!, "pointSize"), pointSize);
-    gl.uniform1f(gl.getUniformLocation(pointShader!, "drawDisk"), 0.0);
+    gl.uniform1f(gl.getUniformLocation(pointShader!, 'pointSize'), pointSize);
+    gl.uniform1f(gl.getUniformLocation(pointShader!, 'drawDisk'), 0.0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, gridVertBuffer);
-    const posLoc = gl.getAttribLocation(pointShader!, "attrPosition");
+    const posLoc = gl.getAttribLocation(pointShader!, 'attrPosition');
     gl.enableVertexAttribArray(posLoc);
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, gridColorBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, scene.fluid!.cellColor, gl.DYNAMIC_DRAW);
 
-    const colorLoc = gl.getAttribLocation(pointShader!, "attrColor");
+    const colorLoc = gl.getAttribLocation(pointShader!, 'attrColor');
     gl.enableVertexAttribArray(colorLoc);
     gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
 
@@ -952,16 +968,17 @@ function draw() {
   if (scene.showParticles) {
     gl.clear(gl.DEPTH_BUFFER_BIT);
 
-    const pointSize = (2.0 * scene.fluid!.particleRadius) / simWidth * canvas.width;
+    const pointSize =
+      ((2.0 * scene.fluid!.particleRadius) / simWidth) * canvas.width;
 
     gl.useProgram(pointShader);
     gl.uniform2f(
-      gl.getUniformLocation(pointShader!, "domainSize"),
+      gl.getUniformLocation(pointShader!, 'domainSize'),
       simWidth,
       simHeight
     );
-    gl.uniform1f(gl.getUniformLocation(pointShader!, "pointSize"), pointSize);
-    gl.uniform1f(gl.getUniformLocation(pointShader!, "drawDisk"), 1.0);
+    gl.uniform1f(gl.getUniformLocation(pointShader!, 'pointSize'), pointSize);
+    gl.uniform1f(gl.getUniformLocation(pointShader!, 'drawDisk'), 1.0);
 
     if (pointVertexBuffer == null) pointVertexBuffer = gl.createBuffer();
     if (pointColorBuffer == null) pointColorBuffer = gl.createBuffer();
@@ -969,14 +986,14 @@ function draw() {
     gl.bindBuffer(gl.ARRAY_BUFFER, pointVertexBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, scene.fluid!.particlePos, gl.DYNAMIC_DRAW);
 
-    const posLoc = gl.getAttribLocation(pointShader!, "attrPosition");
+    const posLoc = gl.getAttribLocation(pointShader!, 'attrPosition');
     gl.enableVertexAttribArray(posLoc);
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, pointColorBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, scene.fluid!.particleColor, gl.DYNAMIC_DRAW);
 
-    const colorLoc = gl.getAttribLocation(pointShader!, "attrColor");
+    const colorLoc = gl.getAttribLocation(pointShader!, 'attrColor');
     gl.enableVertexAttribArray(colorLoc);
     gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
 
@@ -1029,27 +1046,27 @@ function draw() {
 
   gl.useProgram(meshShader);
   gl.uniform2f(
-    gl.getUniformLocation(meshShader!, "domainSize"),
+    gl.getUniformLocation(meshShader!, 'domainSize'),
     simWidth,
     simHeight
   );
   gl.uniform3f(
-    gl.getUniformLocation(meshShader!, "color"),
+    gl.getUniformLocation(meshShader!, 'color'),
     diskColor[0],
     diskColor[1],
     diskColor[2]
   );
   gl.uniform2f(
-    gl.getUniformLocation(meshShader!, "translation"),
+    gl.getUniformLocation(meshShader!, 'translation'),
     scene.obstacleX,
     scene.obstacleY
   );
   gl.uniform1f(
-    gl.getUniformLocation(meshShader!, "scale"),
+    gl.getUniformLocation(meshShader!, 'scale'),
     scene.obstacleRadius + scene.fluid!.particleRadius
   );
 
-  const meshPosLoc = gl.getAttribLocation(meshShader!, "attrPosition");
+  const meshPosLoc = gl.getAttribLocation(meshShader!, 'attrPosition');
   gl.enableVertexAttribArray(meshPosLoc);
   gl.bindBuffer(gl.ARRAY_BUFFER, diskVertBuffer);
   gl.vertexAttribPointer(meshPosLoc, 2, gl.FLOAT, false, 0, 0);
@@ -1134,28 +1151,28 @@ function endDrag() {
   scene.obstacleVelY = 0.0;
 }
 
-canvas.addEventListener("mousedown", (event) => {
+canvas.addEventListener('mousedown', (event) => {
   startDrag(event.clientX, event.clientY);
 });
 
-canvas.addEventListener("mouseup", (_event) => {
+canvas.addEventListener('mouseup', (_event) => {
   endDrag();
 });
 
-canvas.addEventListener("mousemove", (event) => {
+canvas.addEventListener('mousemove', (event) => {
   drag(event.clientX, event.clientY);
 });
 
-canvas.addEventListener("touchstart", (event) => {
+canvas.addEventListener('touchstart', (event) => {
   startDrag(event.touches[0].clientX, event.touches[0].clientY);
 });
 
-canvas.addEventListener("touchend", (_event) => {
+canvas.addEventListener('touchend', (_event) => {
   endDrag();
 });
 
 canvas.addEventListener(
-  "touchmove",
+  'touchmove',
   (event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -1164,12 +1181,12 @@ canvas.addEventListener(
   { passive: false }
 );
 
-document.addEventListener("keydown", (event) => {
+document.addEventListener('keydown', (event) => {
   switch (event.key) {
-    case "p":
+    case 'p':
       scene.paused = !scene.paused;
       break;
-    case "m":
+    case 'm':
       scene.paused = false;
       simulate();
       scene.paused = true;
@@ -1202,18 +1219,20 @@ const { stats, gui } = setupGui(
       'Staggered MAC Grid',
       'Incompressible Pressure Solver',
       'Interactive Obstacle',
-      'Particle Drift Compensation'
+      'Particle Drift Compensation',
     ],
     interactions: [
       'Click & Drag: Move Obstacle',
       'P: Pause/Resume',
-      'M: Step Simulation'
+      'M: Step Simulation',
     ],
     githubUrl: 'https://github.com/jeantimex/fluid',
   }
 );
 
-pauseController = gui.add(guiState, 'togglePause').name(scene.paused ? 'Resume' : 'Pause');
+pauseController = gui
+  .add(guiState, 'togglePause')
+  .name(scene.paused ? 'Resume' : 'Pause');
 gui.add(guiState, 'reset').name('Reset Simulation');
 
 // main -------------------------------------------------------
@@ -1245,5 +1264,5 @@ function update() {
 
 setupScene();
 resize();
-window.addEventListener("resize", resize);
+window.addEventListener('resize', resize);
 update();
