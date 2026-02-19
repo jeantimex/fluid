@@ -139,6 +139,15 @@ async function init() {
      */
     jacobiIterations: 50,
 
+    /**
+     * Workgroup size for particle compute kernels.
+     * - 32: Smaller, may help on some GPUs
+     * - 64: Default, good baseline
+     * - 128: Often better occupancy
+     * - 256: Best for modern GPUs with many cores
+     */
+    particleWorkgroupSize: 64,
+
     /** Toggle wireframe rendering of container bounds. */
     showWireframe: true,
   };
@@ -225,7 +234,8 @@ async function init() {
     getInternalGridDepth(),
     particlePositionBuffer,
     particleVelocityBuffer,
-    particleRandomBuffer
+    particleRandomBuffer,
+    simConfig.particleWorkgroupSize
   );
 
   // Generate sphere geometry (2 iterations) for G-buffer - good balance of quality and performance
@@ -313,6 +323,10 @@ async function init() {
     maxParticles: MAX_PARTICLES,
     onParticleSpawnRequested: () => {
       spawnParticles();
+    },
+    onWorkgroupSizeChanged: () => {
+      // Recreate pipelines with new workgroup size
+      simulator.updateWorkgroupSize(simConfig.particleWorkgroupSize);
     },
   });
   const guiState = guiApi.guiState;

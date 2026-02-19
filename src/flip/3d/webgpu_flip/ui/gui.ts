@@ -12,6 +12,7 @@ export interface SimulationGuiConfig {
   fluidity: number;
   gravity: number;
   jacobiIterations: number;
+  particleWorkgroupSize: number;
   showWireframe: boolean;
 }
 
@@ -47,6 +48,7 @@ export function createGui(params: {
   sceneConfig: SceneConfig;
   maxParticles: number;
   onParticleSpawnRequested: () => void;
+  onWorkgroupSizeChanged?: () => void;
 }): GuiApi {
   const guiState = {
     paused: false,
@@ -474,6 +476,13 @@ export function createGui(params: {
   simFolder
     .add(params.simConfig, 'jacobiIterations', 1, 100, 1)
     .name('Jacobi Iterations');
+  simFolder
+    .add(params.simConfig, 'particleWorkgroupSize', [32, 64, 128, 256])
+    .name('Workgroup Size')
+    .onChange(() => {
+      // Workgroup size change requires pipeline recreation
+      params.onWorkgroupSizeChanged?.();
+    });
   simFolder
     .add(params.simConfig, 'particleCount', 1000, params.maxParticles, 1000)
     .name('Target Count')

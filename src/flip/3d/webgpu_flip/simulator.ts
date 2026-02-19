@@ -135,6 +135,13 @@ export class Simulator {
   /** Frame counter for temporal effects (turbulence sampling). */
   frameNumber: number = 0;
 
+  /** Current workgroup size for particle kernels (32, 64, 128, or 256). */
+  particleWorkgroupSize: number = 64;
+
+  /** Cached references for pipeline recreation. */
+  private shaderModule: GPUShaderModule;
+  private pipelineLayout: GPUPipelineLayout;
+
   constructor(
     device: GPUDevice,
     nx: number,
@@ -145,7 +152,8 @@ export class Simulator {
     depth: number,
     posBuffer: GPUBuffer,
     velBuffer: GPUBuffer,
-    randomBuffer: GPUBuffer
+    randomBuffer: GPUBuffer,
+    particleWorkgroupSize: number = 64
   ) {
     this.device = device;
     this.nx = nx;
@@ -154,6 +162,7 @@ export class Simulator {
     this.gridWidth = width;
     this.gridHeight = height;
     this.gridDepth = depth;
+    this.particleWorkgroupSize = particleWorkgroupSize;
 
     // Velocity grid has one extra sample per axis for MAC staggering.
     const velGridCount = (nx + 1) * (ny + 1) * (nz + 1);
@@ -183,7 +192,7 @@ export class Simulator {
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     );
 
-    const shaderModule = device.createShaderModule({
+    this.shaderModule = device.createShaderModule({
       code: flipSimulationShader,
     });
 
@@ -247,26 +256,12 @@ export class Simulator {
       ],
     });
 
-    const pipelineLayout = device.createPipelineLayout({
+    this.pipelineLayout = device.createPipelineLayout({
       bindGroupLayouts: [bindGroupLayout],
     });
-    const makePipeline = (entry: string) =>
-      device.createComputePipeline({
-        layout: pipelineLayout,
-        compute: { module: shaderModule, entryPoint: entry },
-      });
 
-    this.clearGridPipeline = makePipeline('clearGrid');
-    this.transferToGridPipeline = makePipeline('transferToGrid');
-    this.normalizeGridPipeline = makePipeline('normalizeGrid');
-    this.markCellsPipeline = makePipeline('markCells');
-    this.addGravityPipeline = makePipeline('addGravity');
-    this.enforceBoundaryPipeline = makePipeline('enforceBoundary');
-    this.divergencePipeline = makePipeline('computeDivergence');
-    this.jacobiPipeline = makePipeline('jacobi');
-    this.applyPressurePipeline = makePipeline('applyPressure');
-    this.gridToParticlePipeline = makePipeline('gridToParticle');
-    this.advectPipeline = makePipeline('advect');
+    // Create all compute pipelines
+    this.createPipelines();
 
     this.simBindGroup = device.createBindGroup({
       layout: bindGroupLayout,
@@ -289,6 +284,59 @@ export class Simulator {
     this.simBindGroupAlt = this.simBindGroup;
 
     this.updateUniforms(0, 0.99, 40.0, 10.0, [0, 0, 0], [0, 0, 0], [0, 0, 1]);
+  }
+
+  /**
+   * Create or recreate all compute pipelines.
+   * Called during construction and when workgroup size changes.
+   */
+  private createPipelines() {
+    // Helper to create grid pipelines (fixed workgroup size 8x4x4)
+    const makeGridPipeline = (entry: string) =>
+      this.device.createComputePipeline({
+        layout: this.pipelineLayout,
+        compute: { module: this.shaderModule, entryPoint: entry },
+      });
+
+    // Helper to create particle pipelines (configurable workgroup size)
+    const makeParticlePipeline = (entry: string) =>
+      this.device.createComputePipeline({
+        layout: this.pipelineLayout,
+        compute: {
+          module: this.shaderModule,
+          entryPoint: entry,
+          constants: {
+            PARTICLE_WORKGROUP_SIZE: this.particleWorkgroupSize,
+          },
+        },
+      });
+
+    // Grid-based pipelines (use fixed 8x4x4 workgroup size)
+    this.clearGridPipeline = makeGridPipeline('clearGrid');
+    this.normalizeGridPipeline = makeGridPipeline('normalizeGrid');
+    this.addGravityPipeline = makeGridPipeline('addGravity');
+    this.enforceBoundaryPipeline = makeGridPipeline('enforceBoundary');
+    this.divergencePipeline = makeGridPipeline('computeDivergence');
+    this.jacobiPipeline = makeGridPipeline('jacobi');
+    this.applyPressurePipeline = makeGridPipeline('applyPressure');
+
+    // Particle-based pipelines (use configurable workgroup size)
+    this.transferToGridPipeline = makeParticlePipeline('transferToGrid');
+    this.markCellsPipeline = makeParticlePipeline('markCells');
+    this.gridToParticlePipeline = makeParticlePipeline('gridToParticle');
+    this.advectPipeline = makeParticlePipeline('advect');
+  }
+
+  /**
+   * Update the workgroup size for particle kernels.
+   * This recreates the affected pipelines.
+   * @param size - New workgroup size (32, 64, 128, or 256)
+   */
+  updateWorkgroupSize(size: number) {
+    if (size === this.particleWorkgroupSize) return;
+    this.particleWorkgroupSize = size;
+    this.createPipelines();
+    console.log(`Workgroup size updated to ${size}`);
   }
 
   updateUniforms(
@@ -393,8 +441,8 @@ export class Simulator {
       Math.ceil(this.nz / 4),
     ];
 
-    // Particles: 1D dispatch, workgroup size 64
-    const particleWG = Math.ceil(particleCount / 64);
+    // Particles: 1D dispatch, uses configurable workgroup size
+    const particleWG = Math.ceil(particleCount / this.particleWorkgroupSize);
 
     pass.setBindGroup(0, this.simBindGroup);
 

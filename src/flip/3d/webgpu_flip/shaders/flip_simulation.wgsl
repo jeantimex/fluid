@@ -200,6 +200,13 @@ const TURBULENCE: f32 = 0.05;
 const MOUSE_RADIUS: f32 = 5.0;
 
 // =============================================================================
+// Configurable Workgroup Size (via override constants)
+// =============================================================================
+// These can be set at pipeline creation time for performance tuning.
+// Typical values: 32, 64, 128, 256 depending on GPU architecture.
+override PARTICLE_WORKGROUP_SIZE: u32 = 64;
+
+// =============================================================================
 // INDEX HELPER FUNCTIONS
 // =============================================================================
 // The simulation uses two grid indexing schemes:
@@ -364,7 +371,7 @@ fn clearGrid(@builtin(global_invocation_id) id: vec3<u32>) {
 // Dispatch: ceil(particleCount / 64) workgroups
 // =============================================================================
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(PARTICLE_WORKGROUP_SIZE)
 fn transferToGrid(@builtin(global_invocation_id) id: vec3<u32>) {
   let pIdx = id.x;
   if (pIdx >= uniforms.particleCount) { return; }
@@ -449,7 +456,7 @@ fn transferToGrid(@builtin(global_invocation_id) id: vec3<u32>) {
 // are handled separately in enforceBoundary by zeroing wall-normal velocities.
 // =============================================================================
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(PARTICLE_WORKGROUP_SIZE)
 fn markCells(@builtin(global_invocation_id) id: vec3<u32>) {
   let pIdx = id.x;
   if (pIdx >= uniforms.particleCount) { return; }
@@ -1009,7 +1016,7 @@ fn sampleVelocityOrig(p: vec3<f32>) -> vec3<f32> {
 // correction and external forces applied to the grid.
 // =============================================================================
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(PARTICLE_WORKGROUP_SIZE)
 fn gridToParticle(@builtin(global_invocation_id) id: vec3<u32>) {
   let pIdx = id.x;
   if (pIdx >= uniforms.particleCount) { return; }
@@ -1068,7 +1075,7 @@ fn gridToParticle(@builtin(global_invocation_id) id: vec3<u32>) {
 // This prevents particles from getting stuck exactly on walls.
 // =============================================================================
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(PARTICLE_WORKGROUP_SIZE)
 fn advect(@builtin(global_invocation_id) id: vec3<u32>) {
   let pIdx = id.x;
   if (pIdx >= uniforms.particleCount) { return; }
