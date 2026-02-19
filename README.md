@@ -73,6 +73,7 @@ https://github.com/user-attachments/assets/c08f3cfe-9c4f-4e7b-96e9-47bd4d6f9934
 [Live Demo](https://jeantimex.github.io/fluid/src/flip/3d/webgpu_flip/)
 
 - **Techniques**: Hybrid particle-grid solver using a staggered MAC grid for pressure projection.
+- **Red-Black Gauss-Seidel Solver**: Optimized pressure solver that converges ~2x faster than standard Jacobi iteration by updating cells in alternating parity phases.
 - **Dynamic Boundaries**: Features a smoothly interpolating bounding box that reacts to physics in real-time.
 - **Visual Decoupling**: Particle rendering radius is independent of physical spacing, allowing for highly customizable visual densities.
 
