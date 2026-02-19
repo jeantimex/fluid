@@ -64,7 +64,8 @@ async function init() {
     // --- Simulation config ---
     const BASE_PARTICLE_RADIUS = 0.22;
     const simConfig = {
-        particleRadius: 0.1,
+        particleRadius: 0.12,
+        spacingFactor: 3.0,
         boxWidth: 24,
         boxHeight: 10,
         boxDepth: 15,
@@ -650,6 +651,7 @@ async function init() {
         syncSimulator();
         spawnParticles();
     });
+    simFolder.add(simConfig, 'spacingFactor', 1.0, 10.0, 0.1).name('Spacing Factor').onChange(spawnParticles);
     simFolder.add(simConfig, 'fluidity', 0.5, 0.99, 0.01).name('Fluidity');
     simFolder.add(simConfig, 'particleCount', 1000, MAX_PARTICLES, 1000).name('Target Count').onFinishChange(() => {
         controls.reset();
@@ -1430,8 +1432,8 @@ async function init() {
                 totalBoxVolumeWorld += box.computeVolume();
             }
 
-            // Natural packing: we want particles to be ~1.9x radius apart in world space
-            const naturalSpacingWorld = 1.9 * simConfig.particleRadius;
+            // Natural packing: we want particles to be ~spacingFactor*radius apart in world space
+            const naturalSpacingWorld = simConfig.spacingFactor * simConfig.particleRadius;
             const naturalVolumeWorld = particleCount * Math.pow(naturalSpacingWorld, 3);
             
             // Fill ratio determines how much of the user's boxes we fill to maintain this density
@@ -1658,8 +1660,9 @@ async function init() {
             
             // Calculate natural density for consistency
             const cellSize = smoothConfig.boxWidth / 32.0;
-            const targetSpacing = 1.9 * simConfig.particleRadius;
-            const targetDensity = Math.max(0.1, Math.min(500.0, Math.pow(cellSize / targetSpacing, 3.0)));
+            const targetSpacing = simConfig.spacingFactor * simConfig.particleRadius;
+            // Ensure targetDensity doesn't drop too low to maintain solver stability
+            const targetDensity = Math.max(0.5, Math.min(500.0, Math.pow(cellSize / targetSpacing, 3.0)));
             
             simulator.step(computePass, particleCount, simConfig.fluidity, gravity, targetDensity, mouseVelocity, simMouseRayOrigin, worldSpaceMouseRay);
             computePass.end();
