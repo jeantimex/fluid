@@ -1,12 +1,6 @@
 import { AABB } from './aabb';
 import { Camera } from './camera';
-
-export enum InteractionMode {
-  RESIZING = 0,
-  TRANSLATING = 1,
-  DRAWING = 2,
-  EXTRUDING = 3,
-}
+import boxEditorShader from './shaders/box_editor.wgsl?raw';
 
 export class BoxEditor {
   device: GPUDevice;
@@ -44,36 +38,7 @@ export class BoxEditor {
       )
     );
 
-    const shaderCode = `
-            struct Uniforms {
-                projectionMatrix: mat4x4<f32>,
-                viewMatrix: mat4x4<f32>,
-                translation: vec3<f32>,
-                scale: vec3<f32>,
-                color: vec4<f32>,
-            };
-
-            @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-
-            struct VertexOutput {
-                @builtin(position) position: vec4<f32>,
-            };
-
-            @vertex
-            fn vs_main(@location(0) position: vec3<f32>) -> VertexOutput {
-                var out: VertexOutput;
-                let scaledPos = position * uniforms.scale + uniforms.translation;
-                out.position = uniforms.projectionMatrix * uniforms.viewMatrix * vec4<f32>(scaledPos, 1.0);
-                return out;
-            }
-
-            @fragment
-            fn fs_main() -> @location(0) vec4<f32> {
-                return uniforms.color;
-            }
-        `;
-
-    const shaderModule = device.createShaderModule({ code: shaderCode });
+    const shaderModule = device.createShaderModule({ code: boxEditorShader });
 
     // Explicitly define the Bind Group Layout for sharing
     const bindGroupLayout = device.createBindGroupLayout({
@@ -312,41 +277,6 @@ export class BoxEditor {
     this.updateUniforms(simOffset, gridDimensions, [1.0, 1.0, 1.0, 1.0]);
     passEncoder.setVertexBuffer(0, this.gridVertexBuffer);
     passEncoder.draw(24);
-
-    /*
-        // 2. Draw Solid Boxes (Disabled to show only particles)
-        passEncoder.setPipeline(this.solidPipeline);
-        for (const box of this.boxes) {
-            const translation = [
-                box.min[0] + simOffset[0],
-                box.min[1] + simOffset[1],
-                box.min[2] + simOffset[2]
-            ];
-            const scale = [box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]];
-            this.updateUniforms(translation, scale, [0.97, 0.97, 0.97, 1.0]);
-            
-            passEncoder.setVertexBuffer(0, this.cubeVertexBuffer);
-            passEncoder.setIndexBuffer(this.cubeIndexBuffer, 'uint16');
-            passEncoder.drawIndexed(36);
-        }
-        */
-
-    /*
-        // 3. Draw Box Wireframes
-        passEncoder.setPipeline(this.linePipeline);
-        for (const box of this.boxes) {
-            const translation = [
-                box.min[0] + simOffset[0],
-                box.min[1] + simOffset[1],
-                box.min[2] + simOffset[2]
-            ];
-            const scale = [box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]];
-            this.updateUniforms(translation, scale, [0.5, 0.5, 0.5, 1.0]);
-            
-            passEncoder.setVertexBuffer(0, this.gridVertexBuffer); // Reuse grid wireframe for unit cube
-            passEncoder.draw(24);
-        }
-        */
   }
 
   private updateUniforms(

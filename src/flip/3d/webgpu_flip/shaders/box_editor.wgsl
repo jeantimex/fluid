@@ -1,3 +1,6 @@
+// Box Editor Shader
+// Renders wireframe boxes for the simulation boundary
+
 struct Uniforms {
     projectionMatrix: mat4x4<f32>,
     viewMatrix: mat4x4<f32>,
@@ -8,10 +11,16 @@ struct Uniforms {
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+};
+
 @vertex
-fn vs_main(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
+fn vs_main(@location(0) position: vec3<f32>) -> VertexOutput {
+    var out: VertexOutput;
     let scaledPos = position * uniforms.scale + uniforms.translation;
-    return uniforms.projectionMatrix * uniforms.viewMatrix * vec4<f32>(scaledPos, 1.0);
+    out.position = uniforms.projectionMatrix * uniforms.viewMatrix * vec4<f32>(scaledPos, 1.0);
+    return out;
 }
 
 @fragment
