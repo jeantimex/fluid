@@ -8,6 +8,7 @@ import { ShadowPass } from './render/passes/shadow_pass';
 import { AOPass } from './render/passes/ao_pass';
 import { CompositePass } from './render/passes/composite_pass';
 import { FXAAPass } from './render/passes/fxaa_pass';
+import { RenderResources } from './render/resources';
 import type { SceneConfig } from './render/types';
 import { MouseInteractionController } from './input/mouse_interaction';
 import { createGui } from './ui/gui';
@@ -53,12 +54,6 @@ async function init() {
     device,
     format: presentationFormat,
     alphaMode: 'premultiplied',
-  });
-
-  let depthTexture = device.createTexture({
-    size: [canvas.width, canvas.height],
-    format: 'depth24plus',
-    usage: GPUTextureUsage.RENDER_ATTACHMENT,
   });
 
   // --- Simulation config ---
@@ -202,52 +197,13 @@ async function init() {
   // Shadow map dimensions
   const SHADOW_MAP_SIZE = 1024;
 
-  // Create G-buffer texture (normal.xy, speed, depth) - using rgba16float
-  let gBufferTexture = device.createTexture({
-    size: [canvas.width, canvas.height],
-    format: 'rgba16float',
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-  });
-
-  // Occlusion texture
-  let occlusionTexture = device.createTexture({
-    size: [canvas.width, canvas.height],
-    format: 'r16float',
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-  });
-
-  // Compositing texture (for FXAA input)
-  let compositingTexture = device.createTexture({
-    size: [canvas.width, canvas.height],
-    format: presentationFormat,
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-  });
-
-  // Shadow map depth texture
-  const shadowDepthTexture = device.createTexture({
-    size: [SHADOW_MAP_SIZE, SHADOW_MAP_SIZE],
-    format: 'depth32float',
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-  });
-
-  // Cache texture views (avoid creating every frame)
-  let depthTextureView = depthTexture.createView();
-  let gBufferTextureView = gBufferTexture.createView();
-  let occlusionTextureView = occlusionTexture.createView();
-  let compositingTextureView = compositingTexture.createView();
-  const shadowDepthTextureView = shadowDepthTexture.createView();
-
-  // Create samplers
-  const linearSampler = device.createSampler({
-    magFilter: 'linear',
-    minFilter: 'linear',
-  });
-
-  const shadowSampler = device.createSampler({
-    magFilter: 'linear',
-    minFilter: 'linear',
-    compare: 'less',
-  });
+  const resources = new RenderResources(
+    device,
+    presentationFormat,
+    canvas.width,
+    canvas.height,
+    SHADOW_MAP_SIZE
+  );
 
   // Scene configuration (Unity-style)
   const sceneConfig: SceneConfig = {
@@ -317,23 +273,31 @@ async function init() {
     particleVelocityBuffer
   );
   const shadowPass = new ShadowPass(device, particlePositionBuffer);
-  const aoPass = new AOPass(device, particlePositionBuffer, linearSampler);
+  const aoPass = new AOPass(
+    device,
+    particlePositionBuffer,
+    resources.linearSampler
+  );
   const compositePass = new CompositePass(
     device,
     presentationFormat,
-    linearSampler,
-    shadowSampler
+    resources.linearSampler,
+    resources.shadowSampler
   );
-  const fxaaPass = new FXAAPass(device, presentationFormat, linearSampler);
+  const fxaaPass = new FXAAPass(
+    device,
+    presentationFormat,
+    resources.linearSampler
+  );
 
   function updateSizeDependentBindings() {
-    aoPass.updateSizeDependentBindings(gBufferTextureView);
+    aoPass.updateSizeDependentBindings(resources.gBufferView);
     compositePass.updateSizeDependentBindings(
-      gBufferTextureView,
-      occlusionTextureView,
-      shadowDepthTextureView
+      resources.gBufferView,
+      resources.occlusionView,
+      resources.shadowDepthView
     );
-    fxaaPass.updateSizeDependentBindings(compositingTextureView);
+    fxaaPass.updateSizeDependentBindings(resources.compositingView);
   }
   updateSizeDependentBindings();
 
@@ -542,8 +506,8 @@ async function init() {
         particleRadius: simConfig.particleRadius,
         simOffset,
         particleCount,
-        colorView: gBufferTextureView,
-        depthView: depthTextureView,
+        colorView: resources.gBufferView,
+        depthView: resources.depthView,
         sphereVertexBuffer,
         sphereNormalBuffer,
         sphereIndexBuffer,
@@ -556,7 +520,7 @@ async function init() {
         particleRadius: simConfig.particleRadius,
         simOffset,
         particleCount,
-        depthView: shadowDepthTextureView,
+        depthView: resources.shadowDepthView,
         sphereVertexBuffer: aoSphereVertexBuffer,
         sphereIndexBuffer: aoSphereIndexBuffer,
         sphereIndexCount: aoSphereGeom.indices.length,
@@ -572,8 +536,8 @@ async function init() {
         particleRadius: simConfig.particleRadius,
         simOffset,
         particleCount,
-        colorView: occlusionTextureView,
-        depthView: depthTextureView,
+        colorView: resources.occlusionView,
+        depthView: resources.depthView,
         sphereVertexBuffer: aoSphereVertexBuffer,
         sphereIndexBuffer: aoSphereIndexBuffer,
         sphereIndexCount: aoSphereGeom.indices.length,
@@ -589,7 +553,7 @@ async function init() {
         shadowMapSize: SHADOW_MAP_SIZE,
         cameraPosition: camera.getPosition(),
         sceneConfig,
-        targetView: compositingTextureView,
+        targetView: resources.compositingView,
       });
 
       // ============ 4.1 WIREFRAME PASS ============
@@ -598,13 +562,13 @@ async function init() {
         const wireframePass = commandEncoder.beginRenderPass({
           colorAttachments: [
             {
-              view: compositingTextureView,
+              view: resources.compositingView,
               loadOp: 'load',
               storeOp: 'store',
             },
           ],
           depthStencilAttachment: {
-            view: depthTextureView,
+            view: resources.depthView,
             depthLoadOp: 'load',
             depthStoreOp: 'store',
           },
@@ -649,45 +613,9 @@ async function init() {
   requestAnimationFrame(frame);
 
   window.addEventListener('resize', () => {
-    // Recreate all size-dependent attachments and rebuild dependent bind groups.
     canvas.width = window.innerWidth * devicePixelRatio;
     canvas.height = window.innerHeight * devicePixelRatio;
-
-    depthTexture.destroy();
-    depthTexture = device.createTexture({
-      size: [canvas.width, canvas.height],
-      format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-    depthTextureView = depthTexture.createView();
-
-    gBufferTexture.destroy();
-    gBufferTexture = device.createTexture({
-      size: [canvas.width, canvas.height],
-      format: 'rgba16float',
-      usage:
-        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-    gBufferTextureView = gBufferTexture.createView();
-
-    occlusionTexture.destroy();
-    occlusionTexture = device.createTexture({
-      size: [canvas.width, canvas.height],
-      format: 'r16float',
-      usage:
-        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-    occlusionTextureView = occlusionTexture.createView();
-
-    compositingTexture.destroy();
-    compositingTexture = device.createTexture({
-      size: [canvas.width, canvas.height],
-      format: presentationFormat,
-      usage:
-        GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-    compositingTextureView = compositingTexture.createView();
-
+    resources.resize(canvas.width, canvas.height);
     updateSizeDependentBindings();
     updateProjectionMatrix();
   });
