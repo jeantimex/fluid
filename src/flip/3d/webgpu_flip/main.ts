@@ -9,6 +9,7 @@ import { AOPass } from './render/passes/ao_pass';
 import { CompositePass } from './render/passes/composite_pass';
 import { FXAAPass } from './render/passes/fxaa_pass';
 import type { SceneConfig } from './render/types';
+import { MouseInteractionController } from './input/mouse_interaction';
 import GUI from 'lil-gui';
 import Stats from 'stats-gl';
 
@@ -1000,34 +1001,7 @@ async function init() {
   }
   updateProjectionMatrix();
 
-  // Mouse interaction state (matching WebGL simulatorrenderer.js)
-  let mouseX = 0; // Normalized mouse position in [-1, 1]
-  let mouseY = 0;
-  let lastMousePlaneX = 0;
-  let lastMousePlaneY = 0;
-
-  canvas.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    camera.onMouseDown(e);
-  });
-  document.addEventListener('pointerup', (e) => {
-    e.preventDefault();
-    camera.onMouseUp();
-  });
-  canvas.addEventListener('pointermove', (e) => {
-    e.preventDefault();
-
-    const position = Utilities.getMousePosition(e, canvas);
-    // Use CSS dimensions (getBoundingClientRect), not canvas device pixel dimensions
-    const rect = canvas.getBoundingClientRect();
-    const normalizedX = position.x / rect.width;
-    const normalizedY = position.y / rect.height;
-
-    mouseX = normalizedX * 2.0 - 1.0;
-    mouseY = (1.0 - normalizedY) * 2.0 - 1.0;
-
-    camera.onMouseMove(e);
-  });
+  const mouseInteraction = new MouseInteractionController(canvas, camera);
 
   console.log('WebGPU Initialized with Particles');
 
@@ -1050,66 +1024,13 @@ async function init() {
     simulator.gridHeight = getInternalGridHeight();
     simulator.gridDepth = getInternalGridDepth();
 
-    // Compute mouse world-space influence ray and velocity.
-    const tanHalfFov = Math.tan(FOV / 2.0);
-    const aspect = canvas.width / canvas.height;
-
-    // View space mouse ray
-    const viewSpaceMouseRay = [
-      mouseX * tanHalfFov * aspect,
-      mouseY * tanHalfFov,
-      -1.0,
-    ];
-
-    // Mouse plane position at camera distance (orbit point)
-    const mousePlaneX = viewSpaceMouseRay[0] * camera.distance;
-    const mousePlaneY = viewSpaceMouseRay[1] * camera.distance;
-
-    // Mouse velocity (delta from last frame)
-    let mouseVelocityX = mousePlaneX - lastMousePlaneX;
-    let mouseVelocityY = mousePlaneY - lastMousePlaneY;
-
-    // If camera is being dragged, zero out mouse velocity
-    if (camera.isMouseDown()) {
-      mouseVelocityX = 0.0;
-      mouseVelocityY = 0.0;
-    }
-
-    lastMousePlaneX = mousePlaneX;
-    lastMousePlaneY = mousePlaneY;
-
-    // Transform mouse ray to world space
-    const viewMatrix = camera.getViewMatrix();
-    const inverseViewMatrix =
-      Utilities.invertMatrix(new Float32Array(16), viewMatrix) ||
-      new Float32Array(16);
-    const worldSpaceMouseRay: number[] = [0, 0, 0];
-    Utilities.transformDirectionByMatrix(
-      worldSpaceMouseRay,
-      viewSpaceMouseRay,
-      inverseViewMatrix
-    );
-    Utilities.normalizeVector(worldSpaceMouseRay, worldSpaceMouseRay);
-
-    // Get camera right and up vectors from view matrix
-    const cameraRight = [viewMatrix[0], viewMatrix[4], viewMatrix[8]];
-    const cameraUp = [viewMatrix[1], viewMatrix[5], viewMatrix[9]];
-
-    // Compute world space mouse velocity
-    const mouseVelocity = [
-      mouseVelocityX * cameraRight[0] + mouseVelocityY * cameraUp[0],
-      mouseVelocityX * cameraRight[1] + mouseVelocityY * cameraUp[1],
-      mouseVelocityX * cameraRight[2] + mouseVelocityY * cameraUp[2],
-    ];
-
-    // Mouse ray origin is camera position
-    const mouseRayOrigin = camera.getPosition();
-    // Transform mouse ray origin to simulation space
-    const simMouseRayOrigin = [
-      mouseRayOrigin[0] - getSimOffsetX(),
-      mouseRayOrigin[1] - getSimOffsetY(),
-      mouseRayOrigin[2] - getSimOffsetZ(),
-    ];
+    const interaction = mouseInteraction.sample(FOV, [
+      getSimOffsetX(),
+      getSimOffsetY(),
+      getSimOffsetZ(),
+    ]);
+    const viewMatrix = interaction.viewMatrix;
+    const inverseViewMatrix = interaction.inverseViewMatrix;
 
     // Compute Pass (skip if paused)
     if (!guiState.paused) {
@@ -1131,9 +1052,9 @@ async function init() {
         simConfig.fluidity,
         gravity,
         targetDensity,
-        mouseVelocity,
-        simMouseRayOrigin,
-        worldSpaceMouseRay
+        interaction.mouseVelocity,
+        interaction.simMouseRayOrigin,
+        interaction.worldSpaceMouseRay
       );
       computePass.end();
     }
