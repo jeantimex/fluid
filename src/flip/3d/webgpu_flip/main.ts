@@ -123,6 +123,14 @@ async function init() {
      */
     fluidity: 0.99,
 
+    /**
+     * Gravity magnitude (-50 to 50).
+     * - Positive: Downward gravity (normal)
+     * - Negative: Upward gravity (anti-gravity)
+     * - 0: Zero gravity (floating)
+     */
+    gravity: 40,
+
     /** Toggle wireframe rendering of container bounds. */
     showWireframe: true,
   };
@@ -550,9 +558,6 @@ async function init() {
     if (!guiState.paused) {
       const computePass = commandEncoder.beginComputePass();
 
-      // Gravity in world units per second squared (pointing downward)
-      const gravity = 40.0;
-
       // -----------------------------------------------------------------------
       // Target Density Calculation
       // -----------------------------------------------------------------------
@@ -574,7 +579,7 @@ async function init() {
         computePass,
         particleCount,
         simConfig.fluidity,
-        gravity,
+        simConfig.gravity, // Use configurable gravity from GUI
         targetDensity,
         interaction.mouseVelocity,
         interaction.simMouseRayOrigin,

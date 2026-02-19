@@ -10,6 +10,7 @@ export interface SimulationGuiConfig {
   boxDepth: number;
   particleCount: number;
   fluidity: number;
+  gravity: number;
   showWireframe: boolean;
 }
 
@@ -430,7 +431,7 @@ export function createGui(params: {
     title: 'Simulation Settings',
   });
 
-  const simFolder = gui.addFolder('Simulation');
+  const simFolder = gui.addFolder('Fluid');
   const simDisplay = { particleCount: 0 };
   const particleCountController = simFolder
     .add(simDisplay, 'particleCount')
@@ -468,6 +469,7 @@ export function createGui(params: {
     .name('Spacing Factor')
     .onChange(params.onParticleSpawnRequested);
   simFolder.add(params.simConfig, 'fluidity', 0.5, 0.99, 0.01).name('Fluidity');
+  simFolder.add(params.simConfig, 'gravity', -50, 50, 1).name('Gravity');
   simFolder
     .add(params.simConfig, 'particleCount', 1000, params.maxParticles, 1000)
     .name('Target Count')
