@@ -94,43 +94,43 @@ export class Simulator {
   // =========================================================================
 
   /** Step 1: Zero all grid buffers at start of frame. */
-  clearGridPipeline: GPUComputePipeline;
+  clearGridPipeline!: GPUComputePipeline;
 
   /** Step 2: P2G - Splat particle velocity/mass to grid nodes. */
-  transferToGridPipeline: GPUComputePipeline;
+  transferToGridPipeline!: GPUComputePipeline;
 
   /** Step 4: Convert atomic weighted sums to float averages. */
-  normalizeGridPipeline: GPUComputePipeline;
+  normalizeGridPipeline!: GPUComputePipeline;
 
   /** Step 3: Mark cells containing particles as fluid (vs air). */
-  markCellsPipeline: GPUComputePipeline;
+  markCellsPipeline!: GPUComputePipeline;
 
   /** Step 5: Apply gravity and mouse interaction forces. */
-  addGravityPipeline: GPUComputePipeline;
+  addGravityPipeline!: GPUComputePipeline;
 
   /** Steps 6 & 10: Set wall-normal velocities to zero. */
-  enforceBoundaryPipeline: GPUComputePipeline;
+  enforceBoundaryPipeline!: GPUComputePipeline;
 
   /** Step 7: Compute velocity divergence per cell. */
-  divergencePipeline: GPUComputePipeline;
+  divergencePipeline!: GPUComputePipeline;
 
   /** Step 8: One Jacobi iteration for pressure Poisson solve. */
-  jacobiPipeline: GPUComputePipeline;
+  jacobiPipeline!: GPUComputePipeline;
 
   /** Step 8 (Red-Black GS): Update red cells (parity 0). */
-  jacobiRedPipeline: GPUComputePipeline;
+  jacobiRedPipeline!: GPUComputePipeline;
 
   /** Step 8 (Red-Black GS): Update black cells (parity 1). */
-  jacobiBlackPipeline: GPUComputePipeline;
+  jacobiBlackPipeline!: GPUComputePipeline;
 
   /** Step 9: Subtract pressure gradient from velocity. */
-  applyPressurePipeline: GPUComputePipeline;
+  applyPressurePipeline!: GPUComputePipeline;
 
   /** Step 11: G2P - Blend PIC/FLIP velocity update to particles. */
-  gridToParticlePipeline: GPUComputePipeline;
+  gridToParticlePipeline!: GPUComputePipeline;
 
   /** Step 12: Move particles through velocity field (RK2). */
-  advectPipeline: GPUComputePipeline;
+  advectPipeline!: GPUComputePipeline;
 
   /** Primary bind group containing all simulation buffers. */
   simBindGroup: GPUBindGroup;
