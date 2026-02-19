@@ -744,6 +744,79 @@ fn jacobi(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 // =============================================================================
+// STEP 8 (ALTERNATIVE): RED-BLACK GAUSS-SEIDEL PRESSURE SOLVE
+// =============================================================================
+// Red-Black Gauss-Seidel is a more efficient iterative solver than Jacobi.
+// It divides cells into two groups based on parity:
+//   - RED cells: (x + y + z) % 2 == 0
+//   - BLACK cells: (x + y + z) % 2 == 1
+//
+// Key insight: In a 3D grid, all neighbors of a red cell are black, and
+// all neighbors of a black cell are red. This means:
+//   1. Update all red cells first (neighbors are black, unchanged)
+//   2. Update all black cells (neighbors are red, already updated!)
+//
+// This gives ~2x faster convergence than Jacobi because updates propagate
+// within a single iteration instead of requiring multiple iterations.
+//
+// Convergence comparison (for same accuracy):
+//   - Jacobi: ~50 iterations
+//   - Red-Black GS: ~25 iterations
+// =============================================================================
+
+/// Red phase: Update cells where (x + y + z) is even
+@compute @workgroup_size(8, 4, 4)
+fn jacobiRed(@builtin(global_invocation_id) id: vec3<u32>) {
+  if (id.x >= uniforms.nx || id.y >= uniforms.ny || id.z >= uniforms.nz) { return; }
+
+  // Only process RED cells (parity == 0)
+  let parity = (id.x + id.y + id.z) % 2u;
+  if (parity != 0u) { return; }
+
+  let si = scalarIdx(id.x, id.y, id.z);
+  if (marker[si] == 0u) { return; }
+
+  let div = divergence[si];
+
+  var pL = 0.0; var pR = 0.0; var pB = 0.0; var pT = 0.0; var pBk = 0.0; var pFr = 0.0;
+
+  if (id.x > 0u) { pL = pressure[scalarIdx(id.x - 1u, id.y, id.z)]; }
+  if (id.x < uniforms.nx - 1u) { pR = pressure[scalarIdx(id.x + 1u, id.y, id.z)]; }
+  if (id.y > 0u) { pB = pressure[scalarIdx(id.x, id.y - 1u, id.z)]; }
+  if (id.y < uniforms.ny - 1u) { pT = pressure[scalarIdx(id.x, id.y + 1u, id.z)]; }
+  if (id.z > 0u) { pBk = pressure[scalarIdx(id.x, id.y, id.z - 1u)]; }
+  if (id.z < uniforms.nz - 1u) { pFr = pressure[scalarIdx(id.x, id.y, id.z + 1u)]; }
+
+  pressure[si] = (pL + pR + pB + pT + pBk + pFr - div) / 6.0;
+}
+
+/// Black phase: Update cells where (x + y + z) is odd
+@compute @workgroup_size(8, 4, 4)
+fn jacobiBlack(@builtin(global_invocation_id) id: vec3<u32>) {
+  if (id.x >= uniforms.nx || id.y >= uniforms.ny || id.z >= uniforms.nz) { return; }
+
+  // Only process BLACK cells (parity == 1)
+  let parity = (id.x + id.y + id.z) % 2u;
+  if (parity != 1u) { return; }
+
+  let si = scalarIdx(id.x, id.y, id.z);
+  if (marker[si] == 0u) { return; }
+
+  let div = divergence[si];
+
+  var pL = 0.0; var pR = 0.0; var pB = 0.0; var pT = 0.0; var pBk = 0.0; var pFr = 0.0;
+
+  if (id.x > 0u) { pL = pressure[scalarIdx(id.x - 1u, id.y, id.z)]; }
+  if (id.x < uniforms.nx - 1u) { pR = pressure[scalarIdx(id.x + 1u, id.y, id.z)]; }
+  if (id.y > 0u) { pB = pressure[scalarIdx(id.x, id.y - 1u, id.z)]; }
+  if (id.y < uniforms.ny - 1u) { pT = pressure[scalarIdx(id.x, id.y + 1u, id.z)]; }
+  if (id.z > 0u) { pBk = pressure[scalarIdx(id.x, id.y, id.z - 1u)]; }
+  if (id.z < uniforms.nz - 1u) { pFr = pressure[scalarIdx(id.x, id.y, id.z + 1u)]; }
+
+  pressure[si] = (pL + pR + pB + pT + pBk + pFr - div) / 6.0;
+}
+
+// =============================================================================
 // STEP 9: APPLY PRESSURE GRADIENT - Project velocity to divergence-free field
 // =============================================================================
 // This is the "projection" step that enforces incompressibility.

@@ -12,6 +12,7 @@ export interface SimulationGuiConfig {
   fluidity: number;
   gravity: number;
   jacobiIterations: number;
+  useRedBlackGS: boolean;
   particleWorkgroupSize: number;
   showWireframe: boolean;
 }
@@ -475,7 +476,10 @@ export function createGui(params: {
   simFolder.add(params.simConfig, 'gravity', -50, 50, 1).name('Gravity');
   simFolder
     .add(params.simConfig, 'jacobiIterations', 1, 100, 1)
-    .name('Jacobi Iterations');
+    .name('Pressure Iterations');
+  simFolder
+    .add(params.simConfig, 'useRedBlackGS')
+    .name('Red-Black GS');
   simFolder
     .add(params.simConfig, 'particleWorkgroupSize', [32, 64, 128, 256])
     .name('Workgroup Size')

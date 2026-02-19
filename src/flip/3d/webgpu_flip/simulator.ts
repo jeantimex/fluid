@@ -117,6 +117,12 @@ export class Simulator {
   /** Step 8: One Jacobi iteration for pressure Poisson solve. */
   jacobiPipeline: GPUComputePipeline;
 
+  /** Step 8 (Red-Black GS): Update red cells (parity 0). */
+  jacobiRedPipeline: GPUComputePipeline;
+
+  /** Step 8 (Red-Black GS): Update black cells (parity 1). */
+  jacobiBlackPipeline: GPUComputePipeline;
+
   /** Step 9: Subtract pressure gradient from velocity. */
   applyPressurePipeline: GPUComputePipeline;
 
@@ -318,6 +324,8 @@ export class Simulator {
     this.enforceBoundaryPipeline = makeGridPipeline('enforceBoundary');
     this.divergencePipeline = makeGridPipeline('computeDivergence');
     this.jacobiPipeline = makeGridPipeline('jacobi');
+    this.jacobiRedPipeline = makeGridPipeline('jacobiRed');
+    this.jacobiBlackPipeline = makeGridPipeline('jacobiBlack');
     this.applyPressurePipeline = makeGridPipeline('applyPressure');
 
     // Particle-based pipelines (use configurable workgroup size)
@@ -395,6 +403,7 @@ export class Simulator {
    * @param gravity - Gravity magnitude (positive = downward)
    * @param particleDensity - Target density for compression correction
    * @param jacobiIterations - Number of pressure solve iterations (1-100)
+   * @param useRedBlackGS - Use Red-Black Gauss-Seidel instead of Jacobi
    * @param mouseVelocity - World-space velocity from mouse interaction
    * @param mouseRayOrigin - Mouse ray origin in world space
    * @param mouseRayDirection - Mouse ray direction (normalized)
@@ -406,6 +415,7 @@ export class Simulator {
     gravity: number,
     particleDensity: number,
     jacobiIterations: number,
+    useRedBlackGS: boolean,
     mouseVelocity: number[],
     mouseRayOrigin: number[],
     mouseRayDirection: number[]
@@ -482,18 +492,41 @@ export class Simulator {
     pass.setPipeline(this.divergencePipeline);
     pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
 
-    // Step 8: Pressure solve - Jacobi iteration (configurable iterations)
-    // Iteratively solve ∇²P = divergence to find pressure field
-    // Note: Each iteration reads from and writes to the same buffer,
-    // which is a Jacobi (not Gauss-Seidel) update due to parallel execution.
-    // More iterations = better accuracy but slower; 25-50 is typical range.
-    for (let i = 0; i < jacobiIterations; i++) {
-      pass.setPipeline(this.jacobiPipeline);
-      pass.dispatchWorkgroups(
-        scalarGridWG[0],
-        scalarGridWG[1],
-        scalarGridWG[2]
-      );
+    // Step 8: Pressure solve (configurable iterations)
+    // Two solver options:
+    //   - Jacobi: Simple, updates all cells simultaneously. Slower convergence.
+    //   - Red-Black GS: Updates cells in two phases by parity. ~2x faster convergence.
+    if (useRedBlackGS) {
+      // Red-Black Gauss-Seidel: Each iteration has two phases
+      // Red phase updates cells where (x+y+z) is even
+      // Black phase updates cells where (x+y+z) is odd
+      // Black cells see the updated red values, improving convergence
+      for (let i = 0; i < jacobiIterations; i++) {
+        // Red phase
+        pass.setPipeline(this.jacobiRedPipeline);
+        pass.dispatchWorkgroups(
+          scalarGridWG[0],
+          scalarGridWG[1],
+          scalarGridWG[2]
+        );
+        // Black phase
+        pass.setPipeline(this.jacobiBlackPipeline);
+        pass.dispatchWorkgroups(
+          scalarGridWG[0],
+          scalarGridWG[1],
+          scalarGridWG[2]
+        );
+      }
+    } else {
+      // Standard Jacobi iteration
+      for (let i = 0; i < jacobiIterations; i++) {
+        pass.setPipeline(this.jacobiPipeline);
+        pass.dispatchWorkgroups(
+          scalarGridWG[0],
+          scalarGridWG[1],
+          scalarGridWG[2]
+        );
+      }
     }
 
     // Step 9: Pressure projection - Subtract pressure gradient from velocity
