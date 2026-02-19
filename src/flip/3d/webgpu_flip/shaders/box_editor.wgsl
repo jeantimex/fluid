@@ -1,11 +1,20 @@
-// Box Editor Shader
-// Renders wireframe boxes for the simulation boundary
+// Box editor wireframe shader.
+//
+// Purpose:
+// - Render the container boundary overlay in world space.
+// - Keep transforms simple: unit geometry scaled + translated by uniforms.
+//
+// Coordinate flow:
+// model(unit cube) -> world(simOffset + size) -> view -> clip.
 
 struct Uniforms {
+  // Standard camera matrices shared with scene rendering.
   projectionMatrix: mat4x4<f32>,
   viewMatrix: mat4x4<f32>,
+  // Per-draw transform for a unit cube.
   translation: vec3<f32>,
   scale: vec3<f32>,
+  // Output line color.
   color: vec4<f32>,
 };
 
@@ -18,6 +27,7 @@ struct VertexOutput {
 @vertex
 fn vs_main(@location(0) position: vec3<f32>) -> VertexOutput {
   var out: VertexOutput;
+  // Transform unit-geometry vertex into world space.
   let scaledPos = position * uniforms.scale + uniforms.translation;
   out.position = uniforms.projectionMatrix * uniforms.viewMatrix * vec4<f32>(scaledPos, 1.0);
   return out;

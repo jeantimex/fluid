@@ -13,6 +13,18 @@ import compositeShaderCode from './shaders/composite.wgsl?raw';
 import fxaaShaderCode from './shaders/fxaa.wgsl?raw';
 import aoShaderCode from './shaders/ao.wgsl?raw';
 
+/**
+ * Application entry point.
+ *
+ * Responsibilities in this file:
+ * 1) Initialize WebGPU device/context and GPU resources.
+ * 2) Configure simulation state + UI controls.
+ * 3) Build render/compute pipelines and bind groups.
+ * 4) Execute per-frame compute + multi-pass rendering.
+ *
+ * Frame order (when particles exist):
+ * compute FLIP -> G-buffer -> shadow -> AO -> composite -> wireframe -> FXAA.
+ */
 // Helper functions for color conversion
 function rgbToHex(rgb: number[]): string {
   const r = Math.round(Math.pow(rgb[0], 1 / 2.2) * 255);
@@ -69,6 +81,7 @@ async function init() {
   });
 
   // --- Simulation config ---
+  // World-space fluid/container tuning values surfaced to GUI.
   const BASE_PARTICLE_RADIUS = 0.22;
   const simConfig = {
     particleRadius: 0.12,
@@ -82,6 +95,7 @@ async function init() {
   };
 
   // Smooth configuration for gradual transitions
+  // Keeps container changes visually/physically stable over several frames.
   const smoothConfig = {
     boxWidth: simConfig.boxWidth,
     boxHeight: simConfig.boxHeight,
@@ -92,6 +106,7 @@ async function init() {
     simConfig.particleRadius / BASE_PARTICLE_RADIUS;
 
   // Simulation offset to center fluid on tiles (world origin)
+  // Simulation uses positive [0,width] coordinates; render space is centered.
   const getSimOffsetX = () => -smoothConfig.boxWidth / 2;
   const getSimOffsetY = () => 0;
   const getSimOffsetZ = () => -smoothConfig.boxDepth / 2;
@@ -112,6 +127,7 @@ async function init() {
   ]);
 
   // --- Particle Setup ---
+  // Buffers are allocated for max capacity once, then subranges are used.
   const MAX_PARTICLES = 200000;
   const particlePositionBuffer = device.createBuffer({
     size: MAX_PARTICLES * 16,
@@ -271,6 +287,7 @@ async function init() {
   };
 
   // ============ GUI SETUP ============
+  // GUI mutates config objects; render/sim read them each frame.
   // GUI state
   const guiState = {
     paused: false,
@@ -1008,6 +1025,8 @@ async function init() {
   let fxaaBindGroup: GPUBindGroup;
 
   function createSizeDepedentBindGroups() {
+    // These bindings reference size-dependent textures, so they must be rebuilt
+    // whenever canvas textures are recreated (resize path).
     aoBindGroup = device.createBindGroup({
       layout: aoPipeline.getBindGroupLayout(0),
       entries: [
@@ -1043,6 +1062,8 @@ async function init() {
 
   let particleCount = 0;
   function spawnParticles() {
+    // Rebuild particle state from current box layout + target count.
+    // Positions/velocities are rewritten from scratch.
     const positions = new Float32Array(MAX_PARTICLES * 4);
     const velocities = new Float32Array(MAX_PARTICLES * 4);
     const positionScale = getPositionScale();
@@ -1232,7 +1253,8 @@ async function init() {
     stats.begin();
     const commandEncoder = device.createCommandEncoder();
 
-    // Interpolate box dimensions for smooth transition (ease-out)
+    // Interpolate GUI target dimensions -> simulation dimensions.
+    // This avoids abrupt pressure shocks when container size changes.
     const lerpSpeed = 0.1;
     smoothConfig.boxWidth +=
       (simConfig.boxWidth - smoothConfig.boxWidth) * lerpSpeed;
@@ -1241,12 +1263,12 @@ async function init() {
     smoothConfig.boxDepth +=
       (simConfig.boxDepth - smoothConfig.boxDepth) * lerpSpeed;
 
-    // Sync simulator properties every frame for smooth physics reaction
+    // Solver reads these values from uniforms each dispatch.
     simulator.gridWidth = getInternalGridWidth();
     simulator.gridHeight = getInternalGridHeight();
     simulator.gridDepth = getInternalGridDepth();
 
-    // Compute mouse interaction (matching WebGL simulatorrenderer.js)
+    // Compute mouse world-space influence ray and velocity.
     const tanHalfFov = Math.tan(FOV / 2.0);
     const aspect = canvas.width / canvas.height;
 
@@ -1312,10 +1334,10 @@ async function init() {
       const computePass = commandEncoder.beginComputePass();
       const gravity = 40.0; // Fixed gravity for 1:1 world scale
 
-      // Calculate natural density for consistency
+      // Derive rest-density estimate from current cell size and spacing.
       const cellSize = smoothConfig.boxWidth / 32.0;
       const targetSpacing = simConfig.spacingFactor * simConfig.particleRadius;
-      // Ensure targetDensity doesn't drop too low to maintain solver stability
+      // Clamp to keep pressure solve stable across extreme slider values.
       const targetDensity = Math.max(
         0.5,
         Math.min(500.0, Math.pow(cellSize / targetSpacing, 3.0))
@@ -1359,6 +1381,7 @@ async function init() {
       aoUniformData[7] = currentSimOffsetZ;
 
       // ============ 1. G-BUFFER PASS ============
+      // Writes: normal.xy + speed + view-space depth.
       device.queue.writeBuffer(
         gBufferUniformBuffer,
         0,
@@ -1392,6 +1415,7 @@ async function init() {
       gBufferPass.end();
 
       // ============ 2. SHADOW PASS ============
+      // Writes only depth from light POV.
       device.queue.writeBuffer(
         shadowUniformBuffer,
         0,
@@ -1416,6 +1440,7 @@ async function init() {
       shadowPass.end();
 
       // ============ 3. AMBIENT OCCLUSION PASS ============
+      // Accumulates per-particle occlusion contribution in screen space.
       device.queue.writeBuffer(aoUniformBuffer, 0, projectionMatrix as any);
       device.queue.writeBuffer(aoUniformBuffer, 64, viewMatrix as any);
       aoUniformData[0] = canvas.width;
@@ -1447,6 +1472,7 @@ async function init() {
       aoPass.end();
 
       // ============ 4. COMPOSITE PASS ============
+      // Reconstructs world/view information and shades fluid + floor + sky.
       device.queue.writeBuffer(
         compositeUniformBuffer,
         0,
@@ -1534,6 +1560,7 @@ async function init() {
       compositePass.end();
 
       // ============ 4.1 WIREFRAME PASS ============
+      // Optional debug/authoring overlay for container bounds.
       if (simConfig.showWireframe) {
         const wireframePass = commandEncoder.beginRenderPass({
           colorAttachments: [
@@ -1560,6 +1587,7 @@ async function init() {
       }
 
       // ============ 5. FXAA PASS ============
+      // Final post-process edge smoothing before present.
       fxaaUniformData[0] = canvas.width;
       fxaaUniformData[1] = canvas.height;
       device.queue.writeBuffer(fxaaUniformBuffer, 0, fxaaUniformData);
@@ -1602,6 +1630,7 @@ async function init() {
   requestAnimationFrame(frame);
 
   window.addEventListener('resize', () => {
+    // Recreate all size-dependent attachments and rebuild dependent bind groups.
     canvas.width = window.innerWidth * devicePixelRatio;
     canvas.height = window.innerHeight * devicePixelRatio;
 

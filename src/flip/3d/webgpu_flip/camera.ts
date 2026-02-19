@@ -1,9 +1,21 @@
 import { Utilities } from './utilities';
 
+// Orbit camera tuning constants. The camera intentionally stays fairly far
+// because the fluid container and floor are large world-space objects.
 const SENSITIVITY = 0.005;
 const MIN_DISTANCE = 25.0;
 const MAX_DISTANCE = 60.0;
 
+/**
+ * Simple orbit camera around a fixed point.
+ *
+ * Input model:
+ * - Drag: rotate (azimuth + elevation)
+ * - Wheel: dolly in/out
+ *
+ * Output:
+ * - A view matrix consumed by every render pass (G-buffer, AO, wireframe, etc.)
+ */
 export class Camera {
   element: HTMLElement;
   distance: number = 30.0;
@@ -26,6 +38,7 @@ export class Camera {
     this.recomputeViewMatrix();
 
     element.addEventListener('wheel', (event: WheelEvent) => {
+      // Wheel delta is translated to coarse distance steps for predictable zoom.
       const scrollDelta = event.deltaY;
       this.distance += (scrollDelta > 0 ? 1 : -1) * 2.0;
 
@@ -37,6 +50,9 @@ export class Camera {
   }
 
   recomputeViewMatrix() {
+    // Compose view matrix as:
+    // T(-orbitPoint) -> Ry(azimuth) -> Rx(elevation) -> T(0, 0, -distance)
+    // premultiplyMatrix(out, A, B) computes out = B * A in this codebase.
     const xRotationMatrix = new Float32Array(16);
     const yRotationMatrix = new Float32Array(16);
     const distanceTranslationMatrix = Utilities.makeIdentityMatrix(
@@ -80,6 +96,7 @@ export class Camera {
   }
 
   getPosition(): number[] {
+    // Convert spherical orbit coordinates to world-space camera position.
     return [
       this.distance *
         Math.sin(Math.PI / 2 - this.elevation) *
@@ -99,6 +116,7 @@ export class Camera {
   }
 
   setBounds(minElevation: number, maxElevation: number) {
+    // Bounds prevent flipping over the top/bottom poles.
     this.minElevation = minElevation;
     this.maxElevation = maxElevation;
 
@@ -109,6 +127,7 @@ export class Camera {
   }
 
   onMouseDown(event: MouseEvent) {
+    // Capture current cursor location to compute drag deltas in onMouseMove.
     const { x, y } = Utilities.getMousePosition(event, this.element);
     this.mouseDown = true;
     this.lastMouseX = x;
@@ -127,6 +146,7 @@ export class Camera {
     const { x, y } = Utilities.getMousePosition(event, this.element);
 
     if (this.mouseDown) {
+      // Horizontal drag rotates around Y; vertical drag tilts camera.
       const deltaAzimuth = (x - this.lastMouseX) * SENSITIVITY;
       const deltaElevation = (y - this.lastMouseY) * SENSITIVITY;
 

@@ -1,5 +1,7 @@
-// Sphere Rendering Shader
-// Simple instanced sphere rendering with velocity-based coloring
+// Debug sphere shader.
+//
+// Not used in the deferred path by default, but useful for direct rendering
+// experiments: draws instanced particles and colors them by speed.
 
 struct Uniforms {
   projectionMatrix: mat4x4<f32>,
@@ -23,6 +25,7 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
+  // Particle center + velocity fetched by instance index.
   let particlePos = positions[input.instanceIndex].xyz;
   let velocity = velocities[input.instanceIndex].xyz;
 
@@ -31,7 +34,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
   var out: VertexOutput;
   out.clip_position = uniforms.projectionMatrix * uniforms.viewMatrix * vec4<f32>(worldPos, 1.0);
 
-  // Simple color based on speed (blue for slow, red for fast)
+  // Speed-based gradient: blue (slow) -> red (fast).
   let speed = length(velocity);
   let colorMix = clamp(speed * 0.1, 0.0, 1.0);
   out.color = mix(vec4<f32>(0.0, 0.4, 0.9, 1.0), vec4<f32>(1.0, 0.2, 0.1, 1.0), colorMix);

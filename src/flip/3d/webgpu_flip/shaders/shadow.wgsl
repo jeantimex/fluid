@@ -1,10 +1,14 @@
-// Shadow Pass Shader
-// Renders particles to shadow depth map
+// Shadow-map depth pass.
+//
+// Only depth is needed, so the fragment stage is empty.
+// Particles are instanced spheres transformed by light projection-view.
 
 struct Uniforms {
+  // Light camera transform.
   projectionViewMatrix: mat4x4<f32>,
   sphereRadius: f32,
   positionScale: f32,
+  // Simulation-space to world-space offset.
   simOffsetX: f32,
   simOffsetY: f32,
   simOffsetZ: f32,
@@ -22,6 +26,7 @@ fn vs_main(
   let spherePos = positions[instanceIndex].xyz * uniforms.positionScale;
   let simOffset = vec3<f32>(uniforms.simOffsetX, uniforms.simOffsetY, uniforms.simOffsetZ);
   let worldPos = vertexPos * uniforms.sphereRadius + spherePos + simOffset;
+  // Clip-space output from the light's point of view.
   return uniforms.projectionViewMatrix * vec4<f32>(worldPos, 1.0);
 }
 

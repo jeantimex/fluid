@@ -1,5 +1,13 @@
 import flipSimulationShader from './shaders/flip_simulation.wgsl?raw';
 
+/**
+ * GPU FLIP solver driver.
+ *
+ * This class owns all simulation buffers, compute pipelines, and the exact
+ * pass order used every frame:
+ * clear -> P2G -> mark -> normalize -> forces -> boundaries -> divergence
+ * -> pressure iterations -> project -> boundaries -> G2P -> advect.
+ */
 export class Simulator {
   device: GPUDevice;
   nx: number;
@@ -57,28 +65,29 @@ export class Simulator {
     this.gridHeight = height;
     this.gridDepth = depth;
 
-    // Velocity grid is (nx+1) x (ny+1) x (nz+1) for staggered MAC grid
+    // Velocity grid has one extra sample per axis for MAC staggering.
     const velGridCount = (nx + 1) * (ny + 1) * (nz + 1);
-    // Scalar grid (pressure, markers) is nx x ny x nz
+    // Scalar quantities (pressure/markers/divergence) live at cell centers.
     const scalarGridCount = nx * ny * nz;
 
     const createBuffer = (size: number, usage = GPUBufferUsage.STORAGE) =>
       device.createBuffer({ size, usage });
 
-    // Velocity buffers use vel grid size
-    this.gridVelocityBuffer = createBuffer(velGridCount * 16); // vec4<i32> atomic
-    this.gridWeightBuffer = createBuffer(velGridCount * 16); // vec4<i32> atomic weights
+    // Atomic accumulators store integer-scaled weighted sums during P2G.
+    this.gridVelocityBuffer = createBuffer(velGridCount * 16); // vec4<i32>
+    this.gridWeightBuffer = createBuffer(velGridCount * 16); // vec4<i32>
+    // Float velocities after normalization; Orig preserves pre-pressure state.
     this.gridVelocityFloatBuffer = createBuffer(velGridCount * 16); // vec4<f32>
     this.gridVelocityOrigBuffer = createBuffer(velGridCount * 16); // vec4<f32>
 
-    // Marker uses scalar grid size
+    // Cell markers: 0 = air, 1 = fluid.
     this.gridMarkerBuffer = createBuffer(scalarGridCount * 4);
 
-    // Pressure uses scalar grid size
+    // Pressure + divergence/temp buffers.
     this.pressureBuffer = createBuffer(scalarGridCount * 4);
-    this.pressureTempBuffer = createBuffer(scalarGridCount * 4);
+    this.pressureTempBuffer = createBuffer(scalarGridCount * 4); // divergence
 
-    // Increased buffer size to accommodate mouse data
+    // Uniform block mirrors `Uniforms` in `flip_simulation.wgsl` (112 bytes).
     this.uniformBuffer = createBuffer(
       112,
       GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
@@ -186,7 +195,7 @@ export class Simulator {
       ],
     });
 
-    // Alt bind group not needed for current implementation
+    // Reserved for ping-pong variants; current solver uses a single group.
     this.simBindGroupAlt = this.simBindGroup;
 
     this.updateUniforms(0, 0.99, 40.0, 10.0, [0, 0, 0], [0, 0, 0], [0, 0, 1]);
@@ -201,6 +210,7 @@ export class Simulator {
     mouseRayOrigin: number[],
     mouseRayDirection: number[]
   ) {
+    // Explicit packing to avoid accidental layout drift between TS and WGSL.
     const data = new ArrayBuffer(112);
     const u32 = new Uint32Array(data);
     const f32 = new Float32Array(data);
@@ -212,10 +222,10 @@ export class Simulator {
     f32[5] = this.gridHeight;
     f32[6] = this.gridDepth;
     f32[7] = 1.0 / 60.0;
-    f32[8] = this.frameNumber; // Frame number for time-varying turbulence
-    f32[9] = fluidity; // fluidity (FLIP ratio)
-    f32[10] = gravity; // gravity
-    f32[11] = particleDensity; // target density
+    f32[8] = this.frameNumber; // Drives temporal turbulence pattern.
+    f32[9] = fluidity; // PIC/FLIP blend (0=PIC, 1=FLIP).
+    f32[10] = gravity; // Gravity magnitude along -Y.
+    f32[11] = particleDensity; // Density-restoring target.
     // Mouse velocity (vec3 + padding)
     f32[12] = mouseVelocity[0];
     f32[13] = mouseVelocity[1];
@@ -245,6 +255,7 @@ export class Simulator {
     mouseRayOrigin: number[],
     mouseRayDirection: number[]
   ) {
+    // Upload current frame uniforms once before dispatch sequence.
     this.updateUniforms(
       particleCount,
       fluidity,
@@ -255,6 +266,7 @@ export class Simulator {
       mouseRayDirection
     );
 
+    // Workgroup counts mirror shader workgroup_size declarations.
     const velGridWG = [
       Math.ceil((this.nx + 1) / 8),
       Math.ceil((this.ny + 1) / 4),
@@ -265,39 +277,39 @@ export class Simulator {
       Math.ceil(this.ny / 4),
       Math.ceil(this.nz / 4),
     ];
-    const particleWG = Math.ceil(particleCount / 64);
+    const particleWG = Math.ceil(particleCount / 64); // @workgroup_size(64)
 
     pass.setBindGroup(0, this.simBindGroup);
 
-    // 1. Clear grid (covers both velocity and scalar grids)
+    // 1) Clear all simulation fields.
     pass.setPipeline(this.clearGridPipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 2. P2G: Transfer particle velocities to grid (staggered MAC)
+    // 2) P2G: splat particle momentum to staggered grid nodes.
     pass.setPipeline(this.transferToGridPipeline);
     pass.dispatchWorkgroups(particleWG);
 
-    // 3. Mark cells with fluid
+    // 3) Mark occupied scalar cells.
     pass.setPipeline(this.markCellsPipeline);
     pass.dispatchWorkgroups(particleWG);
 
-    // 4. Normalize grid velocities
+    // 4) Convert weighted sums into average velocities.
     pass.setPipeline(this.normalizeGridPipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 5. Add gravity
+    // 5) External forces (gravity + mouse impulse).
     pass.setPipeline(this.addGravityPipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 6. Enforce boundary conditions
+    // 6) Enforce container wall constraints.
     pass.setPipeline(this.enforceBoundaryPipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 7. Compute divergence (scalar grid)
+    // 7) Compute velocity divergence.
     pass.setPipeline(this.divergencePipeline);
     pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
 
-    // 8. Jacobi pressure solve (50 iterations - match WebGL)
+    // 8) Jacobi pressure iterations for incompressibility projection.
     for (let i = 0; i < 50; i++) {
       pass.setPipeline(this.jacobiPipeline);
       pass.dispatchWorkgroups(
@@ -307,19 +319,19 @@ export class Simulator {
       );
     }
 
-    // 9. Apply pressure gradient (velocity grid)
+    // 9) Subtract pressure gradient from velocity field.
     pass.setPipeline(this.applyPressurePipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 10. Enforce boundaries again after pressure
+    // 10) Re-apply boundaries after projection.
     pass.setPipeline(this.enforceBoundaryPipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 11. G2P: Transfer grid velocity back to particles (FLIP/PIC)
+    // 11) G2P: blend PIC and FLIP updates back to particles.
     pass.setPipeline(this.gridToParticlePipeline);
     pass.dispatchWorkgroups(particleWG);
 
-    // 12. Advect particles using grid velocity
+    // 12) Advect particle positions with midpoint integration.
     pass.setPipeline(this.advectPipeline);
     pass.dispatchWorkgroups(particleWG);
   }

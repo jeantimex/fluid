@@ -1,13 +1,23 @@
+/**
+ * Generates an icosphere mesh by recursively subdividing an icosahedron.
+ *
+ * Why this mesh:
+ * - Uniform-ish triangle distribution gives stable normal shading.
+ * - Adjustable `iterations` allows quality/perf tradeoff per render pass.
+ *   (This project uses a denser sphere for G-buffer and a cheaper one for AO.)
+ */
 export function generateSphereGeometry(iterations: number) {
   let vertices: number[][] = [];
 
   const addVertex = (v: number[]) => {
+    // Project each generated vertex onto the unit sphere.
     const mag = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
     const normalized = [v[0] / mag, v[1] / mag, v[2] / mag];
     vertices.push(normalized);
   };
 
   const getMiddlePoint = (p1: number, p2: number) => {
+    // Midpoint in Euclidean space, then normalized by addVertex.
     const v1 = vertices[p1];
     const v2 = vertices[p2];
     const middle = [
@@ -59,6 +69,7 @@ export function generateSphereGeometry(iterations: number) {
   ];
 
   for (let i = 0; i < iterations; i++) {
+    // Split each triangle into four triangles.
     const faces2: number[][] = [];
     for (const face of faces) {
       const a = getMiddlePoint(face[0], face[1]);
@@ -75,7 +86,7 @@ export function generateSphereGeometry(iterations: number) {
   const packedVertices = new Float32Array(vertices.length * 3);
   const packedNormals = new Float32Array(vertices.length * 3);
   for (let i = 0; i < vertices.length; i++) {
-    // For a unit sphere, normals are the same as vertex positions
+    // For a unit sphere centered at origin, position == normal.
     packedVertices[i * 3 + 0] = vertices[i][0];
     packedVertices[i * 3 + 1] = vertices[i][1];
     packedVertices[i * 3 + 2] = vertices[i][2];

@@ -1,12 +1,20 @@
-// Composite Pass Shader
-// Combines G-buffer, AO, shadows with scene rendering (floor, sky)
+// Composite shading pass.
+//
+// Responsibilities:
+// - Reconstruct per-pixel fluid surface data from G-buffer.
+// - Apply AO and shadowing to fluid shading.
+// - Render procedural floor + sky for background pixels.
+// - Output final lit scene prior to FXAA.
 
 struct Uniforms {
+  // Camera inverse view to reconstruct world rays/positions.
   inverseViewMatrix: mat4x4<f32>,
+  // Light view-projection for shadow-map lookup.
   lightProjectionViewMatrix: mat4x4<f32>,
   resolution: vec2<f32>,
   fov: f32,
   shadowResolution: f32,
+  // World-space camera origin for ray-plane intersection.
   cameraPos: vec3<f32>,
   _pad0: f32,
   dirToSun: vec3<f32>,
@@ -79,6 +87,7 @@ fn linearToSrgb(c: vec3<f32>) -> vec3<f32> { return pow(c, vec3<f32>(1.0 / 2.2))
 fn hashInt2(v: vec2<i32>) -> u32 { return u32(v.x) * 5023u + u32(v.y) * 96456u; }
 
 fn randomValue(state: ptr<function, u32>) -> f32 {
+  // Tiny hash-based PRNG for tile color variation.
   *state = *state * 747796405u + 2891336453u;
   let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
   return f32((word >> 22u) ^ word) / 4294967295.0;
@@ -93,6 +102,7 @@ fn randomSNorm3(state: ptr<function, u32>) -> vec3<f32> {
 }
 
 fn getSkyColor(dir: vec3<f32>) -> vec3<f32> {
+  // Horizon/zenith gradient + sun lobe.
   let sun = pow(max(0.0, dot(dir, uniforms.dirToSun)), uniforms.sunPower);
   let skyGradientT = pow(smoothstep(0.0, 0.4, dir.y), 0.35);
   let groundToSkyT = smoothstep(-0.01, 0.0, dir.y);
@@ -109,6 +119,7 @@ fn rayPlaneIntersect(ro: vec3<f32>, rd: vec3<f32>, planeY: f32) -> f32 {
 }
 
 fn sampleFloorShadow(worldPos: vec3<f32>) -> f32 {
+  // Standard 3x3 PCF shadow filter.
   var lightSpacePos = uniforms.lightProjectionViewMatrix * vec4<f32>(worldPos, 1.0);
   lightSpacePos = lightSpacePos / lightSpacePos.w;
   let lightCoords = vec2<f32>(lightSpacePos.x * 0.5 + 0.5, 0.5 - lightSpacePos.y * 0.5);
@@ -132,6 +143,7 @@ fn sampleFloorShadow(worldPos: vec3<f32>) -> f32 {
 }
 
 fn getSceneBackground(rayDir: vec3<f32>, floorShadow: f32) -> vec3<f32> {
+  // Intersect camera ray with floor plane and shade tile if hit is in bounds.
   let t = rayPlaneIntersect(uniforms.cameraPos, rayDir, uniforms.floorY);
 
   if (t > 0.0) {
@@ -173,16 +185,19 @@ fn getSceneBackground(rayDir: vec3<f32>, floorShadow: f32) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+  // G-buffer sample layout: normal.xy, speed, viewSpaceZ.
   let data = textureSample(gBufferTex, linearSamp, in.uv);
   let occlusion = textureSample(occlusionTex, linearSamp, in.uv).r;
 
   let speed = data.b;
   let viewSpaceZ = data.a;
 
+  // Reconstruct normal.z from unit-length constraint.
   let nx = data.r;
   let ny = data.g;
   let nz = sqrt(max(0.0, 1.0 - nx * nx - ny * ny));
 
+  // Reconstruct view ray/position from UV + depth.
   let tanHalfFov = tan(uniforms.fov / 2.0);
   let viewRay = vec3<f32>(
     (in.uv.x * 2.0 - 1.0) * tanHalfFov * uniforms.resolution.x / uniforms.resolution.y,
@@ -197,6 +212,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   let lightCoords = vec2<f32>(lightSpacePos.x * 0.5 + 0.5, 0.5 - lightSpacePos.y * 0.5);
   let lightDepth = lightSpacePos.z;
 
+  // Particle shadows via PCF in light space.
   var shadow = 0.0;
   let texelSize = 1.0 / uniforms.shadowResolution;
   for (var x = -1; x <= 1; x++) {
@@ -207,6 +223,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   }
   shadow /= 9.0;
 
+  // Background if no fluid was written to this pixel.
   let isBackground = speed < 0.0 || viewSpaceZ > -0.01;
 
   let rayDirNorm = normalize((uniforms.inverseViewMatrix * vec4<f32>(viewRay, 0.0)).xyz);
@@ -217,9 +234,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
   let bgColor = getSceneBackground(rayDirNorm, floorShadow);
 
+  // Fluid base color shifts with speed for a lively stylized look.
   let hue = max(0.6 - speed * 0.0025, 0.52);
   var particleColor = hsvToRGB(vec3<f32>(hue, 0.75, 1.0));
 
+  // AO darkens ambient term; shadow darkens direct term.
   let clampedOcclusion = min(occlusion * 0.5, 1.0);
   let ambient = 1.0 - clampedOcclusion * 0.7;
   let direct = 1.0 - (1.0 - shadow) * 0.8;

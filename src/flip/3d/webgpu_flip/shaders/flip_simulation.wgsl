@@ -1,5 +1,14 @@
-// FLIP Fluid Simulation Compute Shaders
-// Implements a 3D FLIP (Fluid-Implicit-Particle) method on a staggered MAC grid
+// FLIP fluid simulation kernels (compute).
+//
+// Core model:
+// - Particles carry fluid mass/momentum (Lagrangian representation).
+// - A staggered MAC grid enforces incompressibility (Eulerian projection).
+// - Each frame performs P2G -> pressure solve -> G2P -> advection.
+//
+// Important implementation details:
+// - Atomic integer accumulators are used for P2G weighted sums to avoid races.
+// - `gridVelOrig` snapshots pre-projection grid velocity for FLIP delta update.
+// - `fluidity` blends PIC/FLIP behavior (stability vs. vorticity retention).
 
 struct Uniforms {
   nx: u32, ny: u32, nz: u32, particleCount: u32,
@@ -27,6 +36,7 @@ struct AtomicCell { x: atomic<i32>, y: atomic<i32>, z: atomic<i32>, w: atomic<i3
 @group(0) @binding(9) var<storage, read_write> divergence: array<f32>;
 @group(0) @binding(10) var<storage, read> randomDirs: array<vec4<f32>>;
 
+// Integer scaling factor for atomic accumulation precision.
 const SCALE: f32 = 10000.0;
 const TURBULENCE: f32 = 0.05;
 const MOUSE_RADIUS: f32 = 5.0;
@@ -50,6 +60,7 @@ fn scalarIdx(x: u32, y: u32, z: u32) -> u32 {
 }
 
 fn worldToGrid(p: vec3<f32>) -> vec3<f32> {
+  // Converts simulation/world coordinates into grid index space.
   return vec3<f32>(
     p.x / uniforms.width * f32(uniforms.nx),
     p.y / uniforms.height * f32(uniforms.ny),
@@ -68,6 +79,7 @@ fn h(r: f32) -> f32 {
 }
 
 fn kernel(v: vec3<f32>) -> f32 {
+  // Separable tent kernel used as interpolation weight.
   return h(v.x) * h(v.y) * h(v.z);
 }
 
@@ -121,6 +133,7 @@ fn transferToGrid(@builtin(global_invocation_id) id: vec3<u32>) {
   let vel = velocities[pIdx].xyz;
   let g = worldToGrid(pos);
 
+  // Base cell for 2x2x2 neighborhood splat.
   let baseX = i32(floor(g.x));
   let baseY = i32(floor(g.y));
   let baseZ = i32(floor(g.z));
@@ -138,6 +151,10 @@ fn transferToGrid(@builtin(global_invocation_id) id: vec3<u32>) {
 
         let cellIdx = velIdx(cellX, cellY, cellZ);
 
+        // MAC staggering:
+        // - x velocity on yz-face center
+        // - y velocity on xz-face center
+        // - z velocity on xy-face center
         let xPos = vec3<f32>(f32(cellX), f32(cellY) + 0.5, f32(cellZ) + 0.5);
         let yPos = vec3<f32>(f32(cellX) + 0.5, f32(cellY), f32(cellZ) + 0.5);
         let zPos = vec3<f32>(f32(cellX) + 0.5, f32(cellY) + 0.5, f32(cellZ));
@@ -195,6 +212,7 @@ fn normalizeGrid(@builtin(global_invocation_id) id: vec3<u32>) {
   let wz = f32(atomicLoad(&gridWeightAtomic[vi].z)) / SCALE;
   let ws = f32(atomicLoad(&gridWeightAtomic[vi].w)) / SCALE;
 
+  // Divide weighted sums by total weights component-wise.
   var vx = 0.0;
   var vy = 0.0;
   var vz = 0.0;
@@ -232,6 +250,7 @@ fn addGravity(@builtin(global_invocation_id) id: vec3<u32>) {
   let kernelY = mouseKernel(yPosition);
   let kernelZ = mouseKernel(zPosition);
 
+  // Mouse force scales with timestep to remain stable across dt changes.
   let forceMultiplier = 3.0 * smoothstep(0.0, 1.0 / 200.0, uniforms.dt);
 
   gridVel[vi].x += uniforms.mouseVelocity.x * kernelX * forceMultiplier;
@@ -277,8 +296,10 @@ fn computeDivergence(@builtin(global_invocation_id) id: vec3<u32>) {
   let backZ = gridVel[velIdx(id.x, id.y, id.z)].z;
   let frontZ = gridVel[velIdx(id.x, id.y, id.z + 1u)].z;
 
+  // Discrete divergence of staggered velocity field.
   var div = (rightX - leftX) + (topY - bottomY) + (frontZ - backZ);
 
+  // Extra compression term pushes dense regions apart.
   let density = gridVel[velIdx(id.x, id.y, id.z)].w;
   div -= max((density - uniforms.particleDensity) * 1.0, 0.0);
 
@@ -307,6 +328,7 @@ fn jacobi(@builtin(global_invocation_id) id: vec3<u32>) {
   if (id.z > 0u) { pBk = pressure[scalarIdx(id.x, id.y, id.z - 1u)]; }
   if (id.z < uniforms.nz - 1u) { pFr = pressure[scalarIdx(id.x, id.y, id.z + 1u)]; }
 
+  // One Jacobi relaxation step for Poisson pressure equation.
   pressure[si] = (pL + pR + pB + pT + pBk + pFr - div) / 6.0;
 }
 
@@ -497,8 +519,10 @@ fn gridToParticle(@builtin(global_invocation_id) id: vec3<u32>) {
   let vGridNew = sampleVelocity(pos);
   let vGridOld = sampleVelocityOrig(pos);
 
+  // FLIP = add grid delta to previous particle velocity.
   let vFlip = velOld + (vGridNew - vGridOld);
   let vPic = vGridNew;
+  // fluidity controls PIC/FLIP blend.
   let vNew = mix(vPic, vFlip, uniforms.fluidity);
 
   velocities[pIdx] = vec4<f32>(vNew, 0.0);
@@ -515,6 +539,7 @@ fn advect(@builtin(global_invocation_id) id: vec3<u32>) {
 
   var pos = positions[pIdx].xyz;
 
+  // Midpoint (RK2) integration for better stability than Euler.
   let v1 = sampleVelocity(pos);
   let midPos = pos + v1 * uniforms.dt * 0.5;
   let v2 = sampleVelocity(midPos);
@@ -524,10 +549,12 @@ fn advect(@builtin(global_invocation_id) id: vec3<u32>) {
   let offset = u32(uniforms.frameNumber) % uniforms.particleCount;
   let randomIdx = (pIdx + offset) % uniforms.particleCount;
   let randomDir = randomDirs[randomIdx].xyz;
+  // Small velocity-proportional noise keeps motion lively.
   step += TURBULENCE * randomDir * length(v1) * uniforms.dt;
 
   pos += step;
 
+  // Keep particles inside container with small epsilon.
   let eps = 0.01;
   pos = clamp(pos, vec3<f32>(eps), vec3<f32>(uniforms.width - eps, uniforms.height - eps, uniforms.depth - eps));
 

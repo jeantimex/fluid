@@ -1,5 +1,9 @@
-// FXAA Anti-Aliasing Pass Shader
-// Fast Approximate Anti-Aliasing implementation
+// Fullscreen FXAA pass.
+//
+// Inputs:
+// - Composite color buffer.
+// Output:
+// - Smoothed present image with reduced edge aliasing.
 
 struct Uniforms {
   resolution: vec2<f32>,
@@ -34,6 +38,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+  // 1 pixel offset in UV space.
   let delta = 1.0 / uniforms.resolution;
 
   let rgbNW = textureSample(inputTex, linearSamp, in.uv + vec2<f32>(-1.0, -1.0) * delta).rgb;
@@ -42,6 +47,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   let rgbSE = textureSample(inputTex, linearSamp, in.uv + vec2<f32>(1.0, 1.0) * delta).rgb;
   let rgbM = textureSample(inputTex, linearSamp, in.uv).rgb;
 
+  // Luminance neighborhood drives edge detection direction.
   let luma = vec3<f32>(0.299, 0.587, 0.114);
   let lumaNW = dot(rgbNW, luma);
   let lumaNE = dot(rgbNE, luma);
@@ -57,10 +63,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     ((lumaNW + lumaSW) - (lumaNE + lumaSE))
   );
 
+  // Reduce over-blur on low-contrast regions.
   let dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) * (0.25 * FXAA_REDUCE_MUL), FXAA_REDUCE_MIN);
   let rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
   dir = min(vec2<f32>(FXAA_SPAN_MAX), max(vec2<f32>(-FXAA_SPAN_MAX), dir * rcpDirMin)) * delta;
 
+  // Two candidate blends sampled along detected edge direction.
   let rgbA = 0.5 * (
     textureSample(inputTex, linearSamp, in.uv + dir * (1.0 / 3.0 - 0.5)).rgb +
     textureSample(inputTex, linearSamp, in.uv + dir * (2.0 / 3.0 - 0.5)).rgb
@@ -71,6 +79,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   );
   let lumaB = dot(rgbB, luma);
 
+  // Pick conservative sample if rgbB falls outside local contrast range.
   if (lumaB < lumaMin || lumaB > lumaMax) {
     return vec4<f32>(rgbA, 1.0);
   } else {

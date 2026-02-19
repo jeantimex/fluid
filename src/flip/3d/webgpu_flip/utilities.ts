@@ -1,8 +1,18 @@
+/**
+ * Shared math utilities for camera transforms, matrix ops, and vector ops.
+ *
+ * Conventions used by this file/project:
+ * - Matrices are 4x4 column-major Float32Array values (WebGL/WebGPU style).
+ * - Vector helpers operate on mutable output arrays to avoid per-frame GC.
+ * - Most functions return `out` for chaining.
+ */
 export const Utilities = {
+  // Clamp scalar x to [min, max].
   clamp: function (x: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, x));
   },
 
+  // Convert a DOM mouse event to element-local pixel coordinates.
   getMousePosition: function (event: MouseEvent, element: HTMLElement) {
     const boundingRect = element.getBoundingClientRect();
     return {
@@ -11,6 +21,7 @@ export const Utilities = {
     };
   },
 
+  // out = a + b
   addVectors: function (
     out: number[] | Float32Array,
     a: number[] | Float32Array,
@@ -22,6 +33,7 @@ export const Utilities = {
     return out;
   },
 
+  // out = a - b
   subtractVectors: function (
     out: number[] | Float32Array,
     a: number[] | Float32Array,
@@ -33,10 +45,12 @@ export const Utilities = {
     return out;
   },
 
+  // |v|
   magnitudeOfVector: function (v: number[] | Float32Array): number {
     return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
   },
 
+  // Dot product a · b.
   dotVectors: function (
     a: number[] | Float32Array,
     b: number[] | Float32Array
@@ -44,6 +58,7 @@ export const Utilities = {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   },
 
+  // out = v * k[0]. Kept for backward compatibility with older call-sites.
   multiplyVectorByScalar: function (
     out: number[] | Float32Array,
     v: number[] | Float32Array,
@@ -55,7 +70,7 @@ export const Utilities = {
     return out;
   },
 
-  // Adjusted to take a primitive number for the scalar to be more idiomatic
+  // Preferred scalar multiply overload: out = v * k.
   multiplyVectorByNumber: function (
     out: number[] | Float32Array,
     v: number[] | Float32Array,
@@ -67,6 +82,7 @@ export const Utilities = {
     return out;
   },
 
+  // Normalize vector; returns zero vector for zero-length input.
   normalizeVector: function (
     out: number[] | Float32Array,
     v: number[] | Float32Array
@@ -85,6 +101,7 @@ export const Utilities = {
     return out;
   },
 
+  // Standard perspective projection matrix.
   makePerspectiveMatrix: function (
     out: Float32Array,
     fovy: number,
@@ -114,6 +131,7 @@ export const Utilities = {
     return out;
   },
 
+  // Set matrix to identity.
   makeIdentityMatrix: function (matrix: Float32Array) {
     matrix.fill(0);
     matrix[0] = 1.0;
@@ -128,7 +146,8 @@ export const Utilities = {
     matrixA: Float32Array,
     matrixB: Float32Array
   ) {
-    //out = matrixB * matrixA
+    // Computes out = matrixB * matrixA.
+    // This ordering is intentional and used consistently by the camera code.
     const b0 = matrixB[0],
       b4 = matrixB[4],
       b8 = matrixB[8],
@@ -184,6 +203,7 @@ export const Utilities = {
     return out;
   },
 
+  // Rotation around X axis (radians).
   makeXRotationMatrix: function (matrix: Float32Array, angle: number) {
     Utilities.makeIdentityMatrix(matrix);
     matrix[5] = Math.cos(angle);
@@ -193,6 +213,7 @@ export const Utilities = {
     return matrix;
   },
 
+  // Rotation around Y axis (radians).
   makeYRotationMatrix: function (matrix: Float32Array, angle: number) {
     Utilities.makeIdentityMatrix(matrix);
     matrix[0] = Math.cos(angle);
@@ -202,6 +223,7 @@ export const Utilities = {
     return matrix;
   },
 
+  // Transform direction by matrix, ignoring translation (w = 0).
   transformDirectionByMatrix: function (
     out: number[] | Float32Array,
     v: number[] | Float32Array,
@@ -216,6 +238,7 @@ export const Utilities = {
     return out;
   },
 
+  // General 4x4 inverse. Returns null for singular matrices.
   invertMatrix: function (out: Float32Array, m: Float32Array) {
     const m0 = m[0],
       m4 = m[4],
@@ -362,6 +385,7 @@ export const Utilities = {
     return out;
   },
 
+  // Right-handed look-at view matrix.
   makeLookAtMatrix: function (
     matrix: Float32Array,
     eye: number[] | Float32Array,
@@ -419,6 +443,7 @@ export const Utilities = {
     return matrix;
   },
 
+  // OpenGL-style orthographic projection (z in [-1, 1]).
   makeOrthographicMatrix: function (
     matrix: Float32Array,
     left: number,
@@ -448,7 +473,7 @@ export const Utilities = {
     return matrix;
   },
 
-  // WebGPU orthographic projection - outputs z in [0, 1] instead of [-1, 1]
+  // WebGPU orthographic projection (z in [0, 1]).
   makeOrthographicMatrixWebGPU: function (
     matrix: Float32Array,
     left: number,

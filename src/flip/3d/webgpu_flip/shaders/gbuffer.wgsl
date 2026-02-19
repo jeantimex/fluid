@@ -1,11 +1,19 @@
-// G-Buffer Pass Shader
-// Renders particles to a G-buffer storing normal, speed, and depth
+// G-buffer pass.
+//
+// Each particle is rendered as an instanced sphere mesh. The fragment output
+// packs the minimum shading data needed by later fullscreen passes:
+// - normal.xy (z is reconstructed)
+// - speed (used for hue/saturation variation)
+// - view-space depth z
 
 struct Uniforms {
   projectionMatrix: mat4x4<f32>,
   viewMatrix: mat4x4<f32>,
+  // Sphere radius in world units.
   sphereRadius: f32,
+  // Optional scale for simulation-space positions.
   positionScale: f32,
+  // Simulation-to-world translation.
   simOffsetX: f32,
   simOffsetY: f32,
   simOffsetZ: f32,
@@ -29,9 +37,12 @@ fn vs_main(
   @location(1) vertexNormal: vec3<f32>,
   @builtin(instance_index) instanceIndex: u32
 ) -> VertexOutput {
+  // Per-instance particle state.
   let spherePos = positions[instanceIndex].xyz * uniforms.positionScale;
   let velocity = velocities[instanceIndex].xyz;
   let simOffset = vec3<f32>(uniforms.simOffsetX, uniforms.simOffsetY, uniforms.simOffsetZ);
+
+  // Expand unit sphere vertex into world and then view space.
   let worldPos = vertexPos * uniforms.sphereRadius + spherePos + simOffset;
   let viewPos = uniforms.viewMatrix * vec4<f32>(worldPos, 1.0);
 
@@ -39,12 +50,14 @@ fn vs_main(
   out.position = uniforms.projectionMatrix * viewPos;
   out.viewSpaceNormal = (uniforms.viewMatrix * vec4<f32>(vertexNormal, 0.0)).xyz;
   out.viewSpaceZ = viewPos.z;
+  // Speed is scalar magnitude used later for color ramping.
   out.speed = length(velocity);
   return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+  // Pack only x/y to save bandwidth; z reconstructed in composite/AO.
   let n = normalize(in.viewSpaceNormal);
   return vec4<f32>(n.x, n.y, in.speed, in.viewSpaceZ);
 }

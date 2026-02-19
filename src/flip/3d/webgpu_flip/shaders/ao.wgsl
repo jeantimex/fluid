@@ -1,10 +1,15 @@
-// Ambient Occlusion Pass Shader
-// Computes screen-space ambient occlusion from particle spheres
+// Screen-space ambient occlusion accumulation pass.
+//
+// Strategy:
+// - Render a larger sphere shell per particle (instanced).
+// - For each covered pixel, reconstruct the shaded point from G-buffer.
+// - Evaluate analytic sphere occlusion contribution and accumulate additively.
 
 struct Uniforms {
   projectionMatrix: mat4x4<f32>,
   viewMatrix: mat4x4<f32>,
   resolution: vec2<f32>,
+  // Camera FOV is used for view-ray reconstruction from screen UV.
   fov: f32,
   sphereRadius: f32,
   positionScale: f32,
@@ -37,6 +42,7 @@ fn vs_main(
   let worldSpherePos = spherePos + simOffset;
   let viewSpherPos = (uniforms.viewMatrix * vec4<f32>(worldSpherePos, 1.0)).xyz;
 
+  // Render a larger proxy sphere so fragments near the particle can receive AO.
   let extrudedRadius = uniforms.sphereRadius * 3.0;
   let worldPos = vertexPos * extrudedRadius + worldSpherePos;
 
@@ -49,17 +55,21 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) f32 {
+  // Convert pixel coord to normalized UV for sampling G-buffer.
   let coords = in.position.xy / uniforms.resolution;
   let data = textureSample(gBufferTex, linearSamp, coords);
 
+  // Background pixels don't receive particle occlusion.
   let viewSpaceZ = data.a;
   if (viewSpaceZ > -0.01) { return 0.0; }
 
+  // Reconstruct unit normal from packed x/y.
   let nx = data.r;
   let ny = data.g;
   let nz = sqrt(max(0.0, 1.0 - nx * nx - ny * ny));
   let viewSpaceNormal = vec3<f32>(nx, ny, nz);
 
+  // Reconstruct view-space position from depth and camera projection params.
   let tanHalfFov = tan(uniforms.fov / 2.0);
   let viewRay = vec3<f32>(
     (coords.x * 2.0 - 1.0) * tanHalfFov * uniforms.resolution.x / uniforms.resolution.y,
@@ -68,6 +78,7 @@ fn fs_main(in: VertexOutput) -> @location(0) f32 {
   );
   let viewSpacePos = viewRay * -viewSpaceZ;
 
+  // Relative vector from shaded point to occluding sphere center.
   let di = in.viewSpaceSpherePos - viewSpacePos;
   let l = length(di);
   if (l < 0.001) { return 0.0; }
@@ -77,6 +88,7 @@ fn fs_main(in: VertexOutput) -> @location(0) f32 {
   let h2 = h * h;
   let k2 = 1.0 - h2 * nl * nl;
 
+  // Analytic sphere occlusion approximation used by the original reference.
   var result = max(0.0, nl) / h2;
 
   if (k2 > 0.0 && l > in.sphereRadius) {

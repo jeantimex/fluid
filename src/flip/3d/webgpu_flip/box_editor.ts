@@ -2,6 +2,14 @@ import { AABB } from './aabb';
 import { Camera } from './camera';
 import boxEditorShader from './shaders/box_editor.wgsl?raw';
 
+/**
+ * Lightweight renderer for the simulation container wireframe.
+ *
+ * Notes:
+ * - The "editor" naming comes from the original system, but this class is
+ *   currently render-only (it does not expose interactive box editing tools).
+ * - It draws boundary guides in world space, aligned with the simulation box.
+ */
 export class BoxEditor {
   device: GPUDevice;
   gridDimensions: number[];
@@ -26,7 +34,7 @@ export class BoxEditor {
     this.device = device;
     this.gridDimensions = gridDimensions;
 
-    // Default box for verification - fill roughly half the container
+    // Default spawn box used by `main.ts` to initialize fluid particles.
     this.boxes.push(
       new AABB(
         [0, 0, 0],
@@ -40,7 +48,7 @@ export class BoxEditor {
 
     const shaderModule = device.createShaderModule({ code: boxEditorShader });
 
-    // Explicitly define the Bind Group Layout for sharing
+    // Explicit bind-group layout keeps uniform packing predictable.
     const bindGroupLayout = device.createBindGroupLayout({
       entries: [
         {
@@ -82,7 +90,7 @@ export class BoxEditor {
 
     this.linePipeline = device.createRenderPipeline(pipelineDescriptor);
 
-    // Solid pipeline for filled boxes
+    // Optional solid pipeline (kept for future extension/debug rendering).
     const solidDescriptor = { ...pipelineDescriptor };
     solidDescriptor.primitive = {
       topology: 'triangle-list',
@@ -92,7 +100,7 @@ export class BoxEditor {
       solidDescriptor as GPURenderPipelineDescriptor
     );
 
-    // Grid/Boundary wireframe
+    // Unit-cube wireframe edges. Scaled/translated in the vertex shader.
     const gridVertices = new Float32Array([
       0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0,
       1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0,
@@ -103,7 +111,7 @@ export class BoxEditor {
       GPUBufferUsage.VERTEX
     );
 
-    // Cube for boxes
+    // Unit cube mesh for optional filled box rendering.
     const cubeVertices = new Float32Array([
       0,
       0,
@@ -238,6 +246,7 @@ export class BoxEditor {
     data: Float32Array | Uint16Array,
     usage: GPUBufferUsageFlags
   ) {
+    // One-time upload helper for static geometry buffers.
     const buffer = this.device.createBuffer({
       size: data.byteLength,
       usage: usage | GPUBufferUsage.COPY_DST,
@@ -259,6 +268,8 @@ export class BoxEditor {
     simOffset: number[] = [0, 0, 0],
     gridDimensions: number[] = [1, 1, 1]
   ) {
+    // Uniform layout in shader:
+    // [projection(64) | view(64) | translation(16) | scale(16) | color(16)]
     this.device.queue.writeBuffer(
       this.uniformBuffer,
       0,
@@ -270,7 +281,7 @@ export class BoxEditor {
       camera.getViewMatrix() as any
     );
 
-    // 1. Draw Boundary Grid
+    // Draw simulation boundary wireframe.
     passEncoder.setPipeline(this.linePipeline);
     passEncoder.setBindGroup(0, this.bindGroup);
 
@@ -284,6 +295,7 @@ export class BoxEditor {
     scale: number[],
     color: number[]
   ) {
+    // Per-draw transform/color update for the box shader.
     this.device.queue.writeBuffer(
       this.uniformBuffer,
       128,
