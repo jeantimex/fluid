@@ -131,6 +131,14 @@ async function init() {
      */
     gravity: 40,
 
+    /**
+     * Number of Jacobi iterations for pressure solve (1-100).
+     * - Higher: More accurate incompressibility, slower
+     * - Lower: Faster but may have compression artifacts
+     * - Default 50 is conservative; 25-30 often sufficient
+     */
+    jacobiIterations: 50,
+
     /** Toggle wireframe rendering of container bounds. */
     showWireframe: true,
   };
@@ -579,8 +587,9 @@ async function init() {
         computePass,
         particleCount,
         simConfig.fluidity,
-        simConfig.gravity, // Use configurable gravity from GUI
+        simConfig.gravity,
         targetDensity,
+        simConfig.jacobiIterations, // Configurable pressure solve iterations
         interaction.mouseVelocity,
         interaction.simMouseRayOrigin,
         interaction.worldSpaceMouseRay

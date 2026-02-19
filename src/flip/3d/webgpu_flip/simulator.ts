@@ -346,6 +346,7 @@ export class Simulator {
    * @param fluidity - PIC/FLIP blend (0=PIC, 1=FLIP), typically 0.95-0.99
    * @param gravity - Gravity magnitude (positive = downward)
    * @param particleDensity - Target density for compression correction
+   * @param jacobiIterations - Number of pressure solve iterations (1-100)
    * @param mouseVelocity - World-space velocity from mouse interaction
    * @param mouseRayOrigin - Mouse ray origin in world space
    * @param mouseRayDirection - Mouse ray direction (normalized)
@@ -356,6 +357,7 @@ export class Simulator {
     fluidity: number,
     gravity: number,
     particleDensity: number,
+    jacobiIterations: number,
     mouseVelocity: number[],
     mouseRayOrigin: number[],
     mouseRayDirection: number[]
@@ -432,11 +434,12 @@ export class Simulator {
     pass.setPipeline(this.divergencePipeline);
     pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
 
-    // Step 8: Pressure solve - Jacobi iteration (50 iterations)
+    // Step 8: Pressure solve - Jacobi iteration (configurable iterations)
     // Iteratively solve ∇²P = divergence to find pressure field
     // Note: Each iteration reads from and writes to the same buffer,
     // which is a Jacobi (not Gauss-Seidel) update due to parallel execution.
-    for (let i = 0; i < 50; i++) {
+    // More iterations = better accuracy but slower; 25-50 is typical range.
+    for (let i = 0; i < jacobiIterations; i++) {
       pass.setPipeline(this.jacobiPipeline);
       pass.dispatchWorkgroups(
         scalarGridWG[0],

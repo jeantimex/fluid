@@ -11,6 +11,7 @@ export interface SimulationGuiConfig {
   particleCount: number;
   fluidity: number;
   gravity: number;
+  jacobiIterations: number;
   showWireframe: boolean;
 }
 
@@ -470,6 +471,9 @@ export function createGui(params: {
     .onChange(params.onParticleSpawnRequested);
   simFolder.add(params.simConfig, 'fluidity', 0.5, 0.99, 0.01).name('Fluidity');
   simFolder.add(params.simConfig, 'gravity', -50, 50, 1).name('Gravity');
+  simFolder
+    .add(params.simConfig, 'jacobiIterations', 1, 100, 1)
+    .name('Jacobi Iterations');
   simFolder
     .add(params.simConfig, 'particleCount', 1000, params.maxParticles, 1000)
     .name('Target Count')
