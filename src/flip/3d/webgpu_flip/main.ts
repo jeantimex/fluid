@@ -96,8 +96,6 @@ async function init() {
     const RESOLUTION_Y = 16;
     const RESOLUTION_Z = 16;
 
-    const PARTICLES_PER_CELL = 10;
-
     const camera = new Camera(canvas, [0, 0, 0]);  // Orbit around world origin
     const boxEditor = new BoxEditor(device, presentationFormat, [simConfig.boxWidth, simConfig.boxHeight, simConfig.boxDepth]);
 
@@ -1699,8 +1697,8 @@ async function init() {
             aoUniformData[7] = currentSimOffsetZ;
 
             // ============ 1. G-BUFFER PASS ============
-            device.queue.writeBuffer(gBufferUniformBuffer, 0, projectionMatrix);
-            device.queue.writeBuffer(gBufferUniformBuffer, 64, viewMatrix);
+            device.queue.writeBuffer(gBufferUniformBuffer, 0, projectionMatrix as any);
+            device.queue.writeBuffer(gBufferUniformBuffer, 64, viewMatrix as any);
             device.queue.writeBuffer(gBufferUniformBuffer, 128, gBufferUniformData);
 
             const gBufferPass = commandEncoder.beginRenderPass({
@@ -1726,7 +1724,7 @@ async function init() {
             gBufferPass.end();
 
             // ============ 2. SHADOW PASS ============
-            device.queue.writeBuffer(shadowUniformBuffer, 0, lightProjectionViewMatrix);
+            device.queue.writeBuffer(shadowUniformBuffer, 0, lightProjectionViewMatrix as any);
             device.queue.writeBuffer(shadowUniformBuffer, 64, shadowUniformData);
 
             const shadowPass = commandEncoder.beginRenderPass({
@@ -1746,8 +1744,8 @@ async function init() {
             shadowPass.end();
 
             // ============ 3. AMBIENT OCCLUSION PASS ============
-            device.queue.writeBuffer(aoUniformBuffer, 0, projectionMatrix);
-            device.queue.writeBuffer(aoUniformBuffer, 64, viewMatrix);
+            device.queue.writeBuffer(aoUniformBuffer, 0, projectionMatrix as any);
+            device.queue.writeBuffer(aoUniformBuffer, 64, viewMatrix as any);
             aoUniformData[0] = canvas.width; aoUniformData[1] = canvas.height; aoUniformData[2] = FOV;
             // aoUniformData[3-7] are pre-set with sphereRadius and simOffset
             device.queue.writeBuffer(aoUniformBuffer, 128, aoUniformData);
@@ -1773,8 +1771,8 @@ async function init() {
             aoPass.end();
 
             // ============ 4. COMPOSITE PASS ============
-            device.queue.writeBuffer(compositeUniformBuffer, 0, inverseViewMatrix);
-            device.queue.writeBuffer(compositeUniformBuffer, 64, lightProjectionViewMatrix);
+            device.queue.writeBuffer(compositeUniformBuffer, 0, inverseViewMatrix as any);
+            device.queue.writeBuffer(compositeUniformBuffer, 64, lightProjectionViewMatrix as any);
 
             // Build extended composite uniforms including scene data
             let cIdx = 0;

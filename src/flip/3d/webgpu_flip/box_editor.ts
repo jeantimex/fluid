@@ -161,8 +161,8 @@ export class BoxEditor {
     }
 
     draw(passEncoder: GPURenderPassEncoder, projectionMatrix: Float32Array, camera: Camera, simOffset: number[] = [0, 0, 0], gridDimensions: number[] = [1, 1, 1]) {
-        this.device.queue.writeBuffer(this.uniformBuffer, 0, projectionMatrix);
-        this.device.queue.writeBuffer(this.uniformBuffer, 64, camera.getViewMatrix());
+        this.device.queue.writeBuffer(this.uniformBuffer, 0, projectionMatrix as any);
+        this.device.queue.writeBuffer(this.uniformBuffer, 64, camera.getViewMatrix() as any);
 
         // 1. Draw Boundary Grid
         passEncoder.setPipeline(this.linePipeline);

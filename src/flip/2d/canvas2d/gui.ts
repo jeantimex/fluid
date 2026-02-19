@@ -20,7 +20,7 @@ export interface GuiSetup {
 
 export function setupGui(
   scene: any,
-  callbacks: GuiCallbacks = {},
+  _callbacks: GuiCallbacks = {},
   options: GuiOptions = {}
 ): GuiSetup {
   // Ensure Material Icons are loaded
