@@ -71,6 +71,7 @@ async function init() {
         boxDepth: 15,
         particleCount: 35000,
         fluidity: 0.99,
+        showWireframe: true,
     };
     
     // Smooth configuration for gradual transitions
@@ -656,10 +657,15 @@ async function init() {
     simFolder.add(simConfig, 'particleCount', 1000, MAX_PARTICLES, 1000).name('Target Count').onFinishChange(() => {
         controls.reset();
     });
-    simFolder.add(simConfig, 'boxWidth', 10, 100, 1).name('Box Width');
-    simFolder.add(simConfig, 'boxHeight', 5, 50, 1).name('Box Height');
-    simFolder.add(simConfig, 'boxDepth', 5, 50, 1).name('Box Depth');
     simFolder.close();
+
+    // Container folder
+    const containerFolder = gui.addFolder('Container');
+    containerFolder.add(simConfig, 'boxWidth', 10, 100, 1).name('Box Width');
+    containerFolder.add(simConfig, 'boxHeight', 5, 50, 1).name('Box Height');
+    containerFolder.add(simConfig, 'boxDepth', 5, 50, 1).name('Box Depth');
+    containerFolder.add(simConfig, 'showWireframe').name('Show Wireframe');
+    containerFolder.close();
 
     // Environment folder
     const envFolder = gui.addFolder('Environment');
@@ -1840,20 +1846,22 @@ async function init() {
             compositePass.end();
 
             // ============ 4.1 WIREFRAME PASS ============
-            const wireframePass = commandEncoder.beginRenderPass({
-                colorAttachments: [{
-                    view: compositingTextureView,
-                    loadOp: 'load',
-                    storeOp: 'store',
-                }],
-                depthStencilAttachment: {
-                    view: depthTextureView,
-                    depthLoadOp: 'load',
-                    depthStoreOp: 'store',
-                },
-            });
-            boxEditor.draw(wireframePass, projectionMatrix, camera, [currentSimOffsetX, currentSimOffsetY, currentSimOffsetZ], [smoothConfig.boxWidth, smoothConfig.boxHeight, smoothConfig.boxDepth]);
-            wireframePass.end();
+            if (simConfig.showWireframe) {
+                const wireframePass = commandEncoder.beginRenderPass({
+                    colorAttachments: [{
+                        view: compositingTextureView,
+                        loadOp: 'load',
+                        storeOp: 'store',
+                    }],
+                    depthStencilAttachment: {
+                        view: depthTextureView,
+                        depthLoadOp: 'load',
+                        depthStoreOp: 'store',
+                    },
+                });
+                boxEditor.draw(wireframePass, projectionMatrix, camera, [currentSimOffsetX, currentSimOffsetY, currentSimOffsetZ], [smoothConfig.boxWidth, smoothConfig.boxHeight, smoothConfig.boxDepth]);
+                wireframePass.end();
+            }
 
             // ============ 5. FXAA PASS ============
             fxaaUniformData[0] = canvas.width; fxaaUniformData[1] = canvas.height;
