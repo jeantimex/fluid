@@ -138,4 +138,4 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-webgl_ref
+.DS_Store

@@ -28,8 +28,8 @@ export class BoxEditor {
         this.device = device;
         this.gridDimensions = gridDimensions;
 
-        // Default box for verification
-        this.boxes.push(new AABB([0, 0, 0], [12, 10, 15]));
+        // Default box for verification - fill roughly half the container
+        this.boxes.push(new AABB([0, 0, 0], [gridDimensions[0] * 0.5, gridDimensions[1] * 0.8, gridDimensions[2] * 0.8]));
 
         const shaderCode = `
             struct Uniforms {
