@@ -3,15 +3,14 @@ import { Camera } from './camera';
 import { BoxEditor } from './box_editor';
 import { generateSphereGeometry } from './renderer';
 import { Simulator } from './simulator';
+import { GBufferPass } from './render/passes/gbuffer_pass';
+import { ShadowPass } from './render/passes/shadow_pass';
+import { AOPass } from './render/passes/ao_pass';
+import { CompositePass } from './render/passes/composite_pass';
+import { FXAAPass } from './render/passes/fxaa_pass';
+import type { SceneConfig } from './render/types';
 import GUI from 'lil-gui';
 import Stats from 'stats-gl';
-
-// Import shaders
-import gBufferShaderCode from './shaders/gbuffer.wgsl?raw';
-import shadowShaderCode from './shaders/shadow.wgsl?raw';
-import compositeShaderCode from './shaders/composite.wgsl?raw';
-import fxaaShaderCode from './shaders/fxaa.wgsl?raw';
-import aoShaderCode from './shaders/ao.wgsl?raw';
 
 /**
  * Application entry point.
@@ -269,7 +268,7 @@ async function init() {
   });
 
   // Scene configuration (Unity-style)
-  const sceneConfig = {
+  const sceneConfig: SceneConfig = {
     dirToSun: [-0.83, 0.42, -0.36],
     floorY: 0.0, // Floor at bottom of simulation
     skyColorHorizon: [1.0, 1.0, 1.0],
@@ -845,220 +844,31 @@ async function init() {
     lightProjectionMatrix
   );
 
-  // ============ SHADER MODULES ============
-  const gBufferShaderModule = device.createShaderModule({
-    code: gBufferShaderCode,
-  });
+  const gBufferPass = new GBufferPass(
+    device,
+    particlePositionBuffer,
+    particleVelocityBuffer
+  );
+  const shadowPass = new ShadowPass(device, particlePositionBuffer);
+  const aoPass = new AOPass(device, particlePositionBuffer, linearSampler);
+  const compositePass = new CompositePass(
+    device,
+    presentationFormat,
+    linearSampler,
+    shadowSampler
+  );
+  const fxaaPass = new FXAAPass(device, presentationFormat, linearSampler);
 
-  const shadowShaderModule = device.createShaderModule({
-    code: shadowShaderCode,
-  });
-
-  const compositeShaderModule = device.createShaderModule({
-    code: compositeShaderCode,
-  });
-
-  const fxaaShaderModule = device.createShaderModule({
-    code: fxaaShaderCode,
-  });
-
-  const aoShaderModule = device.createShaderModule({
-    code: aoShaderCode,
-  });
-
-  // Create pipelines
-  const gBufferPipeline = device.createRenderPipeline({
-    layout: 'auto',
-    vertex: {
-      module: gBufferShaderModule,
-      entryPoint: 'vs_main',
-      buffers: [
-        {
-          arrayStride: 12,
-          attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
-        },
-        {
-          arrayStride: 12,
-          attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x3' }],
-        },
-      ],
-    },
-    fragment: {
-      module: gBufferShaderModule,
-      entryPoint: 'fs_main',
-      targets: [{ format: 'rgba16float' }],
-    },
-    primitive: { topology: 'triangle-list', cullMode: 'back' },
-    depthStencil: {
-      depthWriteEnabled: true,
-      depthCompare: 'less',
-      format: 'depth24plus',
-    },
-  });
-
-  const shadowPipeline = device.createRenderPipeline({
-    layout: 'auto',
-    vertex: {
-      module: shadowShaderModule,
-      entryPoint: 'vs_main',
-      buffers: [
-        {
-          arrayStride: 12,
-          attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
-        },
-      ],
-    },
-    fragment: {
-      module: shadowShaderModule,
-      entryPoint: 'fs_main',
-      targets: [],
-    },
-    primitive: { topology: 'triangle-list', cullMode: 'back' },
-    depthStencil: {
-      depthWriteEnabled: true,
-      depthCompare: 'less',
-      format: 'depth32float',
-    },
-  });
-
-  const aoPipeline = device.createRenderPipeline({
-    layout: 'auto',
-    vertex: {
-      module: aoShaderModule,
-      entryPoint: 'vs_main',
-      buffers: [
-        {
-          arrayStride: 12,
-          attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
-        },
-      ],
-    },
-    fragment: {
-      module: aoShaderModule,
-      entryPoint: 'fs_main',
-      targets: [
-        {
-          format: 'r16float',
-          blend: {
-            color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
-            alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
-          },
-        },
-      ],
-    },
-    primitive: { topology: 'triangle-list', cullMode: 'back' },
-    depthStencil: {
-      depthWriteEnabled: false,
-      depthCompare: 'less',
-      format: 'depth24plus',
-    },
-  });
-
-  const compositePipeline = device.createRenderPipeline({
-    layout: 'auto',
-    vertex: { module: compositeShaderModule, entryPoint: 'vs_main' },
-    fragment: {
-      module: compositeShaderModule,
-      entryPoint: 'fs_main',
-      targets: [{ format: presentationFormat }],
-    },
-    primitive: { topology: 'triangle-strip' },
-  });
-
-  const fxaaPipeline = device.createRenderPipeline({
-    layout: 'auto',
-    vertex: { module: fxaaShaderModule, entryPoint: 'vs_main' },
-    fragment: {
-      module: fxaaShaderModule,
-      entryPoint: 'fs_main',
-      targets: [{ format: presentationFormat }],
-    },
-    primitive: { topology: 'triangle-strip' },
-  });
-
-  // Create uniform buffers
-  const gBufferUniformBuffer = device.createBuffer({
-    size: 160, // projMatrix(64) + viewMatrix(64) + sphereRadius/positionScale/simOffset/pad(32)
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-
-  const shadowUniformBuffer = device.createBuffer({
-    size: 112, // projViewMatrix(64) + sphereRadius/positionScale/simOffset/pad(48) - vec3 pad needs 16-byte alignment
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-
-  const aoUniformBuffer = device.createBuffer({
-    size: 192, // projMatrix(64) + viewMatrix(64) + resolution/fov/radius/scale/simOffset/pad(64)
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-
-  const compositeUniformBuffer = device.createBuffer({
-    size: 320, // Expanded for scene uniforms
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-
-  const fxaaUniformBuffer = device.createBuffer({
-    size: 16, // vec2 + padding
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-
-  // Create bind groups
-  const gBufferBindGroup = device.createBindGroup({
-    layout: gBufferPipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: { buffer: gBufferUniformBuffer } },
-      { binding: 1, resource: { buffer: particlePositionBuffer } },
-      { binding: 2, resource: { buffer: particleVelocityBuffer } },
-    ],
-  });
-
-  const shadowBindGroup = device.createBindGroup({
-    layout: shadowPipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: { buffer: shadowUniformBuffer } },
-      { binding: 1, resource: { buffer: particlePositionBuffer } },
-    ],
-  });
-
-  let aoBindGroup: GPUBindGroup;
-  let compositeBindGroup: GPUBindGroup;
-  let fxaaBindGroup: GPUBindGroup;
-
-  function createSizeDepedentBindGroups() {
-    // These bindings reference size-dependent textures, so they must be rebuilt
-    // whenever canvas textures are recreated (resize path).
-    aoBindGroup = device.createBindGroup({
-      layout: aoPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: aoUniformBuffer } },
-        { binding: 1, resource: { buffer: particlePositionBuffer } },
-        { binding: 2, resource: gBufferTexture.createView() },
-        { binding: 3, resource: linearSampler },
-      ],
-    });
-
-    compositeBindGroup = device.createBindGroup({
-      layout: compositePipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: compositeUniformBuffer } },
-        { binding: 1, resource: gBufferTexture.createView() },
-        { binding: 2, resource: occlusionTexture.createView() },
-        { binding: 3, resource: shadowDepthTexture.createView() },
-        { binding: 4, resource: linearSampler },
-        { binding: 5, resource: shadowSampler },
-      ],
-    });
-
-    fxaaBindGroup = device.createBindGroup({
-      layout: fxaaPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: fxaaUniformBuffer } },
-        { binding: 1, resource: compositingTexture.createView() },
-        { binding: 2, resource: linearSampler },
-      ],
-    });
+  function updateSizeDependentBindings() {
+    aoPass.updateSizeDependentBindings(gBufferTextureView);
+    compositePass.updateSizeDependentBindings(
+      gBufferTextureView,
+      occlusionTextureView,
+      shadowDepthTextureView
+    );
+    fxaaPass.updateSizeDependentBindings(compositingTextureView);
   }
-  createSizeDepedentBindGroups();
+  updateSizeDependentBindings();
 
   let particleCount = 0;
   function spawnParticles() {
@@ -1221,34 +1031,6 @@ async function init() {
 
   console.log('WebGPU Initialized with Particles');
 
-  // Pre-allocated arrays for uniform writes (avoid allocations every frame)
-  // gBuffer: [sphereRadius, positionScale, simOffsetX, simOffsetY, simOffsetZ, pad]
-  const gBufferUniformData = new Float32Array(8);
-  gBufferUniformData[0] = simConfig.particleRadius;
-  gBufferUniformData[1] = 1.0; // positionScale removed from position calculation
-  gBufferUniformData[2] = getSimOffsetX();
-  gBufferUniformData[3] = getSimOffsetY();
-  gBufferUniformData[4] = getSimOffsetZ();
-
-  // shadow: [sphereRadius, positionScale, simOffsetX, simOffsetY, simOffsetZ, pad, pad, pad]
-  const shadowUniformData = new Float32Array(8);
-  shadowUniformData[0] = simConfig.particleRadius;
-  shadowUniformData[1] = 1.0;
-  shadowUniformData[2] = getSimOffsetX();
-  shadowUniformData[3] = getSimOffsetY();
-  shadowUniformData[4] = getSimOffsetZ();
-
-  // ao: [width, height, FOV, sphereRadius, positionScale, simOffsetX, simOffsetY, simOffsetZ, pad, pad, pad]
-  const aoUniformData = new Float32Array(12);
-  aoUniformData[3] = simConfig.particleRadius;
-  aoUniformData[4] = 1.0;
-  aoUniformData[5] = getSimOffsetX();
-  aoUniformData[6] = getSimOffsetY();
-  aoUniformData[7] = getSimOffsetZ();
-  const compositeUniformData = new Float32Array(40); // Extended for scene uniforms (160 bytes)
-
-  const fxaaUniformData = new Float32Array(2); // [width, height]
-
   function frame() {
     stats.begin();
     const commandEncoder = device.createCommandEncoder();
@@ -1361,203 +1143,68 @@ async function init() {
       const currentSimOffsetX = getSimOffsetX();
       const currentSimOffsetY = getSimOffsetY();
       const currentSimOffsetZ = getSimOffsetZ();
+      const simOffset: [number, number, number] = [
+        currentSimOffsetX,
+        currentSimOffsetY,
+        currentSimOffsetZ,
+      ];
 
-      gBufferUniformData[0] = simConfig.particleRadius;
-      gBufferUniformData[1] = 1.0;
-      gBufferUniformData[2] = currentSimOffsetX;
-      gBufferUniformData[3] = currentSimOffsetY;
-      gBufferUniformData[4] = currentSimOffsetZ;
-
-      shadowUniformData[0] = simConfig.particleRadius;
-      shadowUniformData[1] = 1.0;
-      shadowUniformData[2] = currentSimOffsetX;
-      shadowUniformData[3] = currentSimOffsetY;
-      shadowUniformData[4] = currentSimOffsetZ;
-
-      aoUniformData[3] = simConfig.particleRadius;
-      aoUniformData[4] = 1.0;
-      aoUniformData[5] = currentSimOffsetX;
-      aoUniformData[6] = currentSimOffsetY;
-      aoUniformData[7] = currentSimOffsetZ;
-
-      // ============ 1. G-BUFFER PASS ============
-      // Writes: normal.xy + speed + view-space depth.
-      device.queue.writeBuffer(
-        gBufferUniformBuffer,
-        0,
-        projectionMatrix as any
-      );
-      device.queue.writeBuffer(gBufferUniformBuffer, 64, viewMatrix as any);
-      device.queue.writeBuffer(gBufferUniformBuffer, 128, gBufferUniformData);
-
-      const gBufferPass = commandEncoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: gBufferTextureView,
-            clearValue: { r: 0, g: 0, b: -1, a: 0 },
-            loadOp: 'clear',
-            storeOp: 'store',
-          },
-        ],
-        depthStencilAttachment: {
-          view: depthTextureView,
-          depthClearValue: 1.0,
-          depthLoadOp: 'clear',
-          depthStoreOp: 'store',
-        },
+      gBufferPass.record({
+        encoder: commandEncoder,
+        projectionMatrix,
+        viewMatrix,
+        particleRadius: simConfig.particleRadius,
+        simOffset,
+        particleCount,
+        colorView: gBufferTextureView,
+        depthView: depthTextureView,
+        sphereVertexBuffer,
+        sphereNormalBuffer,
+        sphereIndexBuffer,
+        sphereIndexCount: sphereGeom.indices.length,
       });
-      gBufferPass.setPipeline(gBufferPipeline);
-      gBufferPass.setBindGroup(0, gBufferBindGroup);
-      gBufferPass.setVertexBuffer(0, sphereVertexBuffer);
-      gBufferPass.setVertexBuffer(1, sphereNormalBuffer);
-      gBufferPass.setIndexBuffer(sphereIndexBuffer, 'uint16');
-      gBufferPass.drawIndexed(sphereGeom.indices.length, particleCount);
-      gBufferPass.end();
 
-      // ============ 2. SHADOW PASS ============
-      // Writes only depth from light POV.
-      device.queue.writeBuffer(
-        shadowUniformBuffer,
-        0,
-        lightProjectionViewMatrix as any
-      );
-      device.queue.writeBuffer(shadowUniformBuffer, 64, shadowUniformData);
-
-      const shadowPass = commandEncoder.beginRenderPass({
-        colorAttachments: [],
-        depthStencilAttachment: {
-          view: shadowDepthTextureView,
-          depthClearValue: 1.0,
-          depthLoadOp: 'clear',
-          depthStoreOp: 'store',
-        },
+      shadowPass.record({
+        encoder: commandEncoder,
+        lightProjectionViewMatrix,
+        particleRadius: simConfig.particleRadius,
+        simOffset,
+        particleCount,
+        depthView: shadowDepthTextureView,
+        sphereVertexBuffer: aoSphereVertexBuffer,
+        sphereIndexBuffer: aoSphereIndexBuffer,
+        sphereIndexCount: aoSphereGeom.indices.length,
       });
-      shadowPass.setPipeline(shadowPipeline);
-      shadowPass.setBindGroup(0, shadowBindGroup);
-      shadowPass.setVertexBuffer(0, aoSphereVertexBuffer); // Use low-poly for shadow map
-      shadowPass.setIndexBuffer(aoSphereIndexBuffer, 'uint16');
-      shadowPass.drawIndexed(aoSphereGeom.indices.length, particleCount);
-      shadowPass.end();
 
-      // ============ 3. AMBIENT OCCLUSION PASS ============
-      // Accumulates per-particle occlusion contribution in screen space.
-      device.queue.writeBuffer(aoUniformBuffer, 0, projectionMatrix as any);
-      device.queue.writeBuffer(aoUniformBuffer, 64, viewMatrix as any);
-      aoUniformData[0] = canvas.width;
-      aoUniformData[1] = canvas.height;
-      aoUniformData[2] = FOV;
-      // aoUniformData[3-7] are pre-set with sphereRadius and simOffset
-      device.queue.writeBuffer(aoUniformBuffer, 128, aoUniformData);
-
-      const aoPass = commandEncoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: occlusionTextureView,
-            clearValue: { r: 0, g: 0, b: 0, a: 0 },
-            loadOp: 'clear',
-            storeOp: 'store',
-          },
-        ],
-        depthStencilAttachment: {
-          view: depthTextureView,
-          depthLoadOp: 'load',
-          depthStoreOp: 'store',
-        },
+      aoPass.record({
+        encoder: commandEncoder,
+        projectionMatrix,
+        viewMatrix,
+        width: canvas.width,
+        height: canvas.height,
+        fov: FOV,
+        particleRadius: simConfig.particleRadius,
+        simOffset,
+        particleCount,
+        colorView: occlusionTextureView,
+        depthView: depthTextureView,
+        sphereVertexBuffer: aoSphereVertexBuffer,
+        sphereIndexBuffer: aoSphereIndexBuffer,
+        sphereIndexCount: aoSphereGeom.indices.length,
       });
-      aoPass.setPipeline(aoPipeline);
-      aoPass.setBindGroup(0, aoBindGroup);
-      aoPass.setVertexBuffer(0, aoSphereVertexBuffer);
-      aoPass.setIndexBuffer(aoSphereIndexBuffer, 'uint16');
-      aoPass.drawIndexed(aoSphereGeom.indices.length, particleCount);
-      aoPass.end();
 
-      // ============ 4. COMPOSITE PASS ============
-      // Reconstructs world/view information and shades fluid + floor + sky.
-      device.queue.writeBuffer(
-        compositeUniformBuffer,
-        0,
-        inverseViewMatrix as any
-      );
-      device.queue.writeBuffer(
-        compositeUniformBuffer,
-        64,
-        lightProjectionViewMatrix as any
-      );
-
-      // Build extended composite uniforms including scene data
-      let cIdx = 0;
-      // resolution, fov, shadowResolution (offset 128)
-      compositeUniformData[cIdx++] = canvas.width;
-      compositeUniformData[cIdx++] = canvas.height;
-      compositeUniformData[cIdx++] = FOV;
-      compositeUniformData[cIdx++] = SHADOW_MAP_SIZE;
-      // cameraPos + pad (offset 144)
-      const camPos = camera.getPosition();
-      compositeUniformData[cIdx++] = camPos[0];
-      compositeUniformData[cIdx++] = camPos[1];
-      compositeUniformData[cIdx++] = camPos[2];
-      compositeUniformData[cIdx++] = 0;
-      // dirToSun + floorY (offset 160)
-      compositeUniformData[cIdx++] = sceneConfig.dirToSun[0];
-      compositeUniformData[cIdx++] = sceneConfig.dirToSun[1];
-      compositeUniformData[cIdx++] = sceneConfig.dirToSun[2];
-      compositeUniformData[cIdx++] = sceneConfig.floorY;
-      // skyColorHorizon + sunPower (offset 176)
-      compositeUniformData[cIdx++] = sceneConfig.skyColorHorizon[0];
-      compositeUniformData[cIdx++] = sceneConfig.skyColorHorizon[1];
-      compositeUniformData[cIdx++] = sceneConfig.skyColorHorizon[2];
-      compositeUniformData[cIdx++] = sceneConfig.sunPower;
-      // skyColorZenith + sunBrightness (offset 192)
-      compositeUniformData[cIdx++] = sceneConfig.skyColorZenith[0];
-      compositeUniformData[cIdx++] = sceneConfig.skyColorZenith[1];
-      compositeUniformData[cIdx++] = sceneConfig.skyColorZenith[2];
-      compositeUniformData[cIdx++] = sceneConfig.sunBrightness;
-      // skyColorGround + floorSize (offset 208)
-      compositeUniformData[cIdx++] = sceneConfig.skyColorGround[0];
-      compositeUniformData[cIdx++] = sceneConfig.skyColorGround[1];
-      compositeUniformData[cIdx++] = sceneConfig.skyColorGround[2];
-      compositeUniformData[cIdx++] = sceneConfig.floorSize;
-      // tileCol1 + tileScale (offset 224)
-      compositeUniformData[cIdx++] = sceneConfig.tileCol1[0];
-      compositeUniformData[cIdx++] = sceneConfig.tileCol1[1];
-      compositeUniformData[cIdx++] = sceneConfig.tileCol1[2];
-      compositeUniformData[cIdx++] = sceneConfig.tileScale;
-      // tileCol2 + tileDarkFactor (offset 240)
-      compositeUniformData[cIdx++] = sceneConfig.tileCol2[0];
-      compositeUniformData[cIdx++] = sceneConfig.tileCol2[1];
-      compositeUniformData[cIdx++] = sceneConfig.tileCol2[2];
-      compositeUniformData[cIdx++] = sceneConfig.tileDarkFactor;
-      // tileCol3 + pad (offset 256)
-      compositeUniformData[cIdx++] = sceneConfig.tileCol3[0];
-      compositeUniformData[cIdx++] = sceneConfig.tileCol3[1];
-      compositeUniformData[cIdx++] = sceneConfig.tileCol3[2];
-      compositeUniformData[cIdx++] = 0;
-      // tileCol4 + pad (offset 272)
-      compositeUniformData[cIdx++] = sceneConfig.tileCol4[0];
-      compositeUniformData[cIdx++] = sceneConfig.tileCol4[1];
-      compositeUniformData[cIdx++] = sceneConfig.tileCol4[2];
-      compositeUniformData[cIdx++] = 0;
-
-      device.queue.writeBuffer(
-        compositeUniformBuffer,
-        128,
-        compositeUniformData
-      );
-
-      const compositePass = commandEncoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: compositingTextureView,
-            clearValue: { r: 0.9, g: 0.9, b: 0.9, a: 1.0 },
-            loadOp: 'clear',
-            storeOp: 'store',
-          },
-        ],
+      compositePass.record({
+        encoder: commandEncoder,
+        inverseViewMatrix,
+        lightProjectionViewMatrix,
+        width: canvas.width,
+        height: canvas.height,
+        fov: FOV,
+        shadowMapSize: SHADOW_MAP_SIZE,
+        cameraPosition: camera.getPosition(),
+        sceneConfig,
+        targetView: compositingTextureView,
       });
-      compositePass.setPipeline(compositePipeline);
-      compositePass.setBindGroup(0, compositeBindGroup);
-      compositePass.draw(4);
-      compositePass.end();
 
       // ============ 4.1 WIREFRAME PASS ============
       // Optional debug/authoring overlay for container bounds.
@@ -1586,26 +1233,12 @@ async function init() {
         wireframePass.end();
       }
 
-      // ============ 5. FXAA PASS ============
-      // Final post-process edge smoothing before present.
-      fxaaUniformData[0] = canvas.width;
-      fxaaUniformData[1] = canvas.height;
-      device.queue.writeBuffer(fxaaUniformBuffer, 0, fxaaUniformData);
-
-      const fxaaPass = commandEncoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: context.getCurrentTexture().createView(),
-            clearValue: { r: 0.9, g: 0.9, b: 0.9, a: 1.0 },
-            loadOp: 'clear',
-            storeOp: 'store',
-          },
-        ],
+      fxaaPass.record({
+        encoder: commandEncoder,
+        width: canvas.width,
+        height: canvas.height,
+        targetView: context.getCurrentTexture().createView(),
       });
-      fxaaPass.setPipeline(fxaaPipeline);
-      fxaaPass.setBindGroup(0, fxaaBindGroup);
-      fxaaPass.draw(4);
-      fxaaPass.end();
     } else {
       // No particles - just clear
       const passEncoder = commandEncoder.beginRenderPass({
@@ -1669,7 +1302,7 @@ async function init() {
     });
     compositingTextureView = compositingTexture.createView();
 
-    createSizeDepedentBindGroups();
+    updateSizeDependentBindings();
     updateProjectionMatrix();
   });
 }
