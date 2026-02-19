@@ -28,8 +28,8 @@ export class BoxEditor {
         this.device = device;
         this.gridDimensions = gridDimensions;
 
-        // Default box for verification - fill roughly half the container
-        this.boxes.push(new AABB([0, 0, 0], [gridDimensions[0] * 0.5, gridDimensions[1] * 0.8, gridDimensions[2] * 0.8]));
+        // Default box for verification
+        this.boxes.push(new AABB([0, 0, 0], [15, 20, 20]));
 
         const shaderCode = `
             struct Uniforms {
@@ -160,27 +160,22 @@ export class BoxEditor {
         return buffer;
     }
 
-    draw(passEncoder: GPURenderPassEncoder, projectionMatrix: Float32Array, camera: Camera, simOffset: number[] = [0, 0, 0], gridDimensions: number[] = [1, 1, 1]) {
+    draw(passEncoder: GPURenderPassEncoder, projectionMatrix: Float32Array, camera: Camera) {
         this.device.queue.writeBuffer(this.uniformBuffer, 0, projectionMatrix);
         this.device.queue.writeBuffer(this.uniformBuffer, 64, camera.getViewMatrix());
 
         // 1. Draw Boundary Grid
         passEncoder.setPipeline(this.linePipeline);
         passEncoder.setBindGroup(0, this.bindGroup);
-        
-        this.updateUniforms(simOffset, gridDimensions, [1.0, 1.0, 1.0, 1.0]);
+        this.updateUniforms([0, 0, 0], this.gridDimensions, [0.5, 0.5, 0.5, 1.0]);
         passEncoder.setVertexBuffer(0, this.gridVertexBuffer);
         passEncoder.draw(24);
 
-        /*
         // 2. Draw Solid Boxes (Disabled to show only particles)
+        /*
         passEncoder.setPipeline(this.solidPipeline);
         for (const box of this.boxes) {
-            const translation = [
-                box.min[0] + simOffset[0],
-                box.min[1] + simOffset[1],
-                box.min[2] + simOffset[2]
-            ];
+            const translation = [box.min[0], box.min[1], box.min[2]];
             const scale = [box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]];
             this.updateUniforms(translation, scale, [0.97, 0.97, 0.97, 1.0]);
             
@@ -190,22 +185,16 @@ export class BoxEditor {
         }
         */
 
-        /*
         // 3. Draw Box Wireframes
         passEncoder.setPipeline(this.linePipeline);
         for (const box of this.boxes) {
-            const translation = [
-                box.min[0] + simOffset[0],
-                box.min[1] + simOffset[1],
-                box.min[2] + simOffset[2]
-            ];
+            const translation = [box.min[0], box.min[1], box.min[2]];
             const scale = [box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]];
             this.updateUniforms(translation, scale, [0.5, 0.5, 0.5, 1.0]);
             
             passEncoder.setVertexBuffer(0, this.gridVertexBuffer); // Reuse grid wireframe for unit cube
             passEncoder.draw(24);
         }
-        */
     }
 
     private updateUniforms(translation: number[], scale: number[], color: number[]) {
