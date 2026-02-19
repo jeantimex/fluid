@@ -1,9 +1,39 @@
-// Screen-space ambient occlusion accumulation pass.
+// =============================================================================
+// SCREEN-SPACE AMBIENT OCCLUSION (SSAO) PASS
+// =============================================================================
 //
-// Strategy:
-// - Render a larger sphere shell per particle (instanced).
-// - For each covered pixel, reconstruct the shaded point from G-buffer.
-// - Evaluate analytic sphere occlusion contribution and accumulate additively.
+// This pass computes soft shadows from nearby particles using an analytic
+// sphere occlusion formula. Unlike traditional SSAO (which samples random
+// directions), this leverages our knowledge of particle positions.
+//
+// ## Algorithm Overview
+//
+// 1. For each particle, render an enlarged sphere (3x particle radius)
+// 2. For each pixel covered by this sphere:
+//    a. Sample G-buffer to get shaded point position and normal
+//    b. Compute analytic occlusion from this particle to that point
+//    c. Accumulate via additive blending
+//
+// The result is a soft, physically-plausible ambient occlusion that accounts
+// for all nearby occluders without expensive ray marching.
+//
+// ## Analytic Sphere Occlusion
+//
+// The occlusion from a sphere at distance d with radius r to a surface
+// with normal n is computed analytically. This formula accounts for:
+// - Distance falloff (1/d²)
+// - Sphere solid angle (depends on r/d ratio)
+// - Surface orientation (n·L term)
+//
+// ## Additive Blending
+//
+// Each particle's contribution is added to a single-channel (r16float) buffer.
+// The composite pass reads this accumulated occlusion value.
+//
+// ## Performance
+//
+// Using lower-polygon spheres (1 subdivision = 80 faces) keeps vertex costs
+// down since we don't need surface detail for the soft occlusion effect.
 
 struct Uniforms {
   projectionMatrix: mat4x4<f32>,

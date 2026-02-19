@@ -14,16 +14,52 @@ import { MouseInteractionController } from './input/mouse_interaction';
 import { createGui } from './ui/gui';
 
 /**
- * Application entry point.
+ * WebGPU 3D FLIP Fluid Simulation - Application Entry Point
  *
- * Responsibilities in this file:
- * 1) Initialize WebGPU device/context and GPU resources.
- * 2) Configure simulation state + UI controls.
- * 3) Build render/compute pipelines and bind groups.
- * 4) Execute per-frame compute + multi-pass rendering.
+ * This file orchestrates a complete GPU-accelerated fluid simulation with:
+ * - Real-time FLIP (Fluid-Implicit-Particle) physics
+ * - Deferred rendering pipeline with shadows and ambient occlusion
+ * - Interactive mouse forces and configurable parameters
  *
- * Frame order (when particles exist):
- * compute FLIP -> G-buffer -> shadow -> AO -> composite -> wireframe -> FXAA.
+ * ## Architecture Overview
+ *
+ * ```
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │                        SIMULATION                               │
+ * │  Particles ──> P2G ──> Pressure Solve ──> G2P ──> Advect       │
+ * │  (35,000+)    Grid     (50 Jacobi)      Grid     Particles     │
+ * └─────────────────────────────────────────────────────────────────┘
+ *                              │
+ *                              ▼
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │                      RENDER PIPELINE                            │
+ * │  ┌───────────┐  ┌────────┐  ┌────┐  ┌───────────┐  ┌──────┐   │
+ * │  │ G-Buffer  │─▶│ Shadow │─▶│ AO │─▶│ Composite │─▶│ FXAA │   │
+ * │  │ (normals) │  │ (depth)│  │    │  │ (lighting)│  │      │   │
+ * │  └───────────┘  └────────┘  └────┘  └───────────┘  └──────┘   │
+ * └─────────────────────────────────────────────────────────────────┘
+ * ```
+ *
+ * ## Key Components
+ *
+ * - **Simulator**: GPU compute kernels for FLIP physics
+ * - **Render Passes**: Deferred shading with instanced sphere rendering
+ * - **Camera**: Orbit camera with mouse drag controls
+ * - **GUI**: lil-gui based parameter controls
+ *
+ * ## Frame Order
+ *
+ * 1. Update smooth container dimensions (lerp for stability)
+ * 2. Compute pass: FLIP simulation (12 dispatch steps)
+ * 3. G-buffer pass: Render particle spheres (normals + depth)
+ * 4. Shadow pass: Render from light POV
+ * 5. AO pass: Screen-space ambient occlusion
+ * 6. Composite pass: Final lighting + floor + sky
+ * 7. Wireframe pass: Optional container outline
+ * 8. FXAA pass: Anti-aliasing
+ *
+ * @see simulator.ts - FLIP physics driver
+ * @see shaders/flip_simulation.wgsl - Compute kernels
  */
 async function init() {
   if (!navigator.gpu) {
@@ -56,17 +92,38 @@ async function init() {
     alphaMode: 'premultiplied',
   });
 
-  // --- Simulation config ---
-  // World-space fluid/container tuning values surfaced to GUI.
+  // =========================================================================
+  // SIMULATION CONFIGURATION
+  // =========================================================================
+  // These parameters control fluid behavior and are exposed via GUI controls.
+
+  /** Reference radius for position scaling (maintains visual consistency). */
   const BASE_PARTICLE_RADIUS = 0.22;
+
   const simConfig = {
+    /** Visual radius of each fluid particle (world units). */
     particleRadius: 0.12,
+
+    /** Multiplier for particle spacing during spawn (higher = sparser fluid). */
     spacingFactor: 3.0,
+
+    /** Container dimensions in world units. */
     boxWidth: 24,
     boxHeight: 10,
     boxDepth: 15,
+
+    /** Target number of particles (capped at MAX_PARTICLES). */
     particleCount: 35000,
+
+    /**
+     * PIC/FLIP blend factor (0-1).
+     * - 0.0: Pure PIC (stable but viscous)
+     * - 1.0: Pure FLIP (energetic but may be noisy)
+     * - 0.99: Recommended for lively fluid with stability
+     */
     fluidity: 0.99,
+
+    /** Toggle wireframe rendering of container bounds. */
     showWireframe: true,
   };
 
@@ -91,9 +148,20 @@ async function init() {
   const getInternalGridHeight = () => smoothConfig.boxHeight;
   const getInternalGridDepth = () => smoothConfig.boxDepth;
 
-  const RESOLUTION_X = 32;
-  const RESOLUTION_Y = 16;
-  const RESOLUTION_Z = 16;
+  // =========================================================================
+  // GRID RESOLUTION
+  // =========================================================================
+  // The simulation grid resolution determines:
+  // - Detail level of pressure/velocity fields
+  // - Cell size = containerWidth / RESOLUTION_X
+  // - Memory usage: O(nx * ny * nz) for grid buffers
+  // - Performance: More cells = more work per frame
+  //
+  // Typical values: 16-64 per axis for real-time simulation
+
+  const RESOLUTION_X = 32; // Cells along width
+  const RESOLUTION_Y = 16; // Cells along height
+  const RESOLUTION_Z = 16; // Cells along depth
 
   const camera = new Camera(canvas, [0, 0, 0]); // Orbit around world origin
   const boxEditor = new BoxEditor(device, presentationFormat, [
@@ -434,12 +502,25 @@ async function init() {
 
   console.log('WebGPU Initialized with Particles');
 
+  /**
+   * Main render/simulation loop.
+   *
+   * Executes every frame via requestAnimationFrame:
+   * 1. Smooth container dimensions to prevent pressure shocks
+   * 2. Run FLIP simulation (if not paused)
+   * 3. Render particles via deferred pipeline
+   * 4. Present to screen
+   */
   function frame() {
     guiApi.stats.begin();
     const commandEncoder = device.createCommandEncoder();
 
-    // Interpolate GUI target dimensions -> simulation dimensions.
-    // This avoids abrupt pressure shocks when container size changes.
+    // =========================================================================
+    // SMOOTH CONTAINER TRANSITIONS
+    // =========================================================================
+    // When the user changes container size via GUI, we don't apply it instantly.
+    // Abrupt size changes cause pressure spikes as particles suddenly compress.
+    // Instead, we lerp smoothly toward the target dimensions.
     const lerpSpeed = 0.1;
     smoothConfig.boxWidth +=
       (simConfig.boxWidth - smoothConfig.boxWidth) * lerpSpeed;
@@ -461,15 +542,29 @@ async function init() {
     const viewMatrix = interaction.viewMatrix;
     const inverseViewMatrix = interaction.inverseViewMatrix;
 
-    // Compute Pass (skip if paused)
+    // =========================================================================
+    // COMPUTE PASS: FLIP Fluid Simulation
+    // =========================================================================
+    // Runs the 12-step FLIP simulation loop on the GPU.
+    // All particle physics happens here before rendering.
     if (!guiState.paused) {
       const computePass = commandEncoder.beginComputePass();
-      const gravity = 40.0; // Fixed gravity for 1:1 world scale
 
-      // Derive rest-density estimate from current cell size and spacing.
+      // Gravity in world units per second squared (pointing downward)
+      const gravity = 40.0;
+
+      // -----------------------------------------------------------------------
+      // Target Density Calculation
+      // -----------------------------------------------------------------------
+      // The "target density" controls how compressed particles are allowed to be.
+      // It's derived from:
+      //   - cellSize: How big each grid cell is (boxWidth / resolution)
+      //   - targetSpacing: How far apart particles "want" to be
+      //
+      // When density exceeds target, the pressure solver adds artificial
+      // divergence to push particles apart, preventing unnatural clustering.
       const cellSize = smoothConfig.boxWidth / 32.0;
       const targetSpacing = simConfig.spacingFactor * simConfig.particleRadius;
-      // Clamp to keep pressure solve stable across extreme slider values.
       const targetDensity = Math.max(
         0.5,
         Math.min(500.0, Math.pow(cellSize / targetSpacing, 3.0))

@@ -1,9 +1,41 @@
-// Fullscreen FXAA pass.
+// =============================================================================
+// FXAA (Fast Approximate Anti-Aliasing) PASS
+// =============================================================================
 //
-// Inputs:
-// - Composite color buffer.
-// Output:
-// - Smoothed present image with reduced edge aliasing.
+// This post-process pass reduces aliasing (jagged edges) using the FXAA
+// algorithm developed by Timothy Lottes at NVIDIA.
+//
+// ## How FXAA Works
+//
+// Unlike hardware MSAA which samples geometry multiple times, FXAA works
+// purely on the final image:
+//
+// 1. **Edge Detection**: Sample a 3x3 neighborhood of luminance values
+// 2. **Edge Direction**: Compute gradient direction (horizontal or vertical)
+// 3. **Blend Along Edge**: Sample colors along the detected edge direction
+// 4. **Contrast Check**: Use aggressive blend if contrast is high, conservative if low
+//
+// ## Algorithm Details
+//
+// - **Luminance**: Computed from RGB using perceptual weights (0.299, 0.587, 0.114)
+// - **Direction**: Gradient of luminance determines blur direction
+// - **Two Candidates**:
+//   - rgbA: Narrow sample (1/3 and 2/3 along edge)
+//   - rgbB: Wider sample (includes ±0.5 along edge)
+// - **Selection**: Use rgbB if it stays within local contrast range, else rgbA
+//
+// ## Tuning Constants
+//
+// - **FXAA_SPAN_MAX** (8.0): Maximum blur distance in pixels
+// - **FXAA_REDUCE_MUL** (1/8): Reduces blur on low-contrast edges
+// - **FXAA_REDUCE_MIN** (1/128): Minimum blur reduction factor
+//
+// ## Trade-offs
+//
+// - Very fast (single pass, few samples)
+// - Works on any rendered image (doesn't need scene geometry)
+// - May slightly blur fine details
+// - Best for real-time rendering where MSAA is too expensive
 
 struct Uniforms {
   resolution: vec2<f32>,

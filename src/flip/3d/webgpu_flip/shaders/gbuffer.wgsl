@@ -1,10 +1,36 @@
-// G-buffer pass.
+// =============================================================================
+// G-BUFFER RENDERING PASS
+// =============================================================================
 //
-// Each particle is rendered as an instanced sphere mesh. The fragment output
-// packs the minimum shading data needed by later fullscreen passes:
-// - normal.xy (z is reconstructed)
-// - speed (used for hue/saturation variation)
-// - view-space depth z
+// This pass renders fluid particles as instanced sphere meshes into a G-buffer
+// texture. Each particle becomes a small sphere in 3D space.
+//
+// ## Deferred Rendering
+//
+// Rather than computing final lighting here, we output intermediate data:
+// - **Normal (xy)**: View-space normal direction (z reconstructed from unit length)
+// - **Speed**: Velocity magnitude for color variation
+// - **Depth**: View-space Z coordinate for AO and compositing
+//
+// This data is consumed by later fullscreen passes (AO, composite) which
+// perform the actual lighting calculations.
+//
+// ## Instanced Rendering
+//
+// All particles share the same sphere mesh (generated via icosphere subdivision).
+// We use GPU instancing: one draw call renders all particles, with each instance
+// sampling its position/velocity from storage buffers.
+//
+// ## G-Buffer Layout (rgba16float)
+//
+// | Channel | Content              | Range     |
+// |---------|----------------------|-----------|
+// | R       | Normal.x (view)      | [-1, 1]   |
+// | G       | Normal.y (view)      | [-1, 1]   |
+// | B       | Speed (|velocity|)   | [0, ∞)    |
+// | A       | View-space Z (depth) | (-∞, 0]   |
+//
+// Normal.z is reconstructed: z = sqrt(1 - x² - y²)
 
 struct Uniforms {
   projectionMatrix: mat4x4<f32>,

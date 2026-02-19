@@ -1,7 +1,35 @@
-// Shadow-map depth pass.
+// =============================================================================
+// SHADOW MAP DEPTH PASS
+// =============================================================================
 //
-// Only depth is needed, so the fragment stage is empty.
-// Particles are instanced spheres transformed by light projection-view.
+// This pass renders the scene from the light's point of view to create a
+// depth buffer (shadow map). This map is later sampled during compositing
+// to determine which pixels are in shadow.
+//
+// ## Shadow Mapping Overview
+//
+// 1. Render scene depth from light's perspective (this pass)
+// 2. During compositing, for each pixel:
+//    a. Transform world position to light's clip space
+//    b. Compare pixel's depth to shadow map depth
+//    c. If pixel is farther than shadow map → in shadow
+//
+// ## Implementation Details
+//
+// - **Light projection**: Orthographic for directional sun light
+// - **Resolution**: 1024x1024 (configurable via SHADOW_MAP_SIZE)
+// - **Filtering**: 3x3 PCF in composite pass
+// - **Bias**: Small offset (0.002) prevents self-shadowing artifacts
+//
+// ## Empty Fragment Shader
+//
+// Since we only need depth values (stored automatically by the depth buffer),
+// the fragment shader is empty. No color attachment is needed.
+//
+// ## Performance Optimization
+//
+// Uses lower-polygon sphere geometry (1 subdivision level) since shadow
+// edges will be softened by PCF filtering anyway.
 
 struct Uniforms {
   // Light camera transform.

@@ -1,10 +1,41 @@
-// Composite shading pass.
+// =============================================================================
+// COMPOSITE SHADING PASS
+// =============================================================================
 //
-// Responsibilities:
-// - Reconstruct per-pixel fluid surface data from G-buffer.
-// - Apply AO and shadowing to fluid shading.
-// - Render procedural floor + sky for background pixels.
-// - Output final lit scene prior to FXAA.
+// This fullscreen pass produces the final rendered image by combining:
+// - Fluid particles (from G-buffer data)
+// - Shadow mapping (directional light shadows)
+// - Ambient occlusion (from AO pass)
+// - Procedural floor with checkerboard tiles
+// - Procedural sky gradient with sun
+//
+// ## Input Textures
+//
+// - **gBufferTex**: Particle normals (xy), speed, depth (rgba16float)
+// - **occlusionTex**: Accumulated ambient occlusion (r16float)
+// - **shadowTex**: Shadow depth map from light POV (depth32float)
+//
+// ## Fluid Shading
+//
+// 1. Reconstruct view-space normal from G-buffer (z = sqrt(1 - x² - y²))
+// 2. Reconstruct world position from depth + inverse view matrix
+// 3. Sample shadow map with 3x3 PCF (Percentage Closer Filtering)
+// 4. Apply HSV color based on particle speed (faster = bluer hue)
+// 5. Modulate by ambient occlusion and shadow
+//
+// ## Floor Rendering
+//
+// For background pixels (no fluid), we ray-cast to a floor plane:
+// 1. Compute ray-plane intersection
+// 2. Apply checkerboard pattern with 4 colors
+// 3. Add procedural HSV jitter per tile for visual interest
+// 4. Sample floor shadows from the same shadow map
+//
+// ## Sky Rendering
+//
+// For pixels that miss both fluid and floor:
+// 1. Blend between horizon and zenith colors based on ray direction
+// 2. Add sun highlight (Phong-style specular lobe)
 
 struct Uniforms {
   // Camera inverse view to reconstruct world rays/positions.

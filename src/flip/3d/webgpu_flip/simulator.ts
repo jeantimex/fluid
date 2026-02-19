@@ -1,48 +1,138 @@
 import flipSimulationShader from './shaders/flip_simulation.wgsl?raw';
 
 /**
- * GPU FLIP solver driver.
+ * GPU FLIP Fluid Simulation Driver
  *
- * This class owns all simulation buffers, compute pipelines, and the exact
- * pass order used every frame:
- * clear -> P2G -> mark -> normalize -> forces -> boundaries -> divergence
- * -> pressure iterations -> project -> boundaries -> G2P -> advect.
+ * This class orchestrates the 3D FLIP (Fluid-Implicit-Particle) simulation
+ * running entirely on the GPU via WebGPU compute shaders.
+ *
+ * ## Architecture
+ *
+ * The simulator owns:
+ * - **Grid buffers**: MAC-staggered velocity grid, pressure, divergence, markers
+ * - **Compute pipelines**: 11 pipelines for the 12-step simulation loop
+ * - **Uniform buffer**: Per-frame parameters (grid dims, forces, timestep)
+ *
+ * Particle buffers (positions, velocities) are owned externally and passed
+ * via bind groups, allowing the renderer to share them for visualization.
+ *
+ * ## Per-Frame Simulation Loop (12 steps)
+ *
+ * ```
+ * 1. clearGrid        - Zero all grid arrays
+ * 2. transferToGrid   - P2G: Splat particle momentum to grid
+ * 3. markCells        - Flag cells containing fluid
+ * 4. normalizeGrid    - Convert weighted sums to velocities, save snapshot
+ * 5. addGravity       - Apply gravity and mouse forces
+ * 6. enforceBoundary  - Apply wall boundary conditions
+ * 7. computeDivergence- Calculate velocity divergence
+ * 8. jacobi (x50)     - Solve pressure Poisson equation
+ * 9. applyPressure    - Subtract pressure gradient
+ * 10. enforceBoundary - Re-apply boundaries after projection
+ * 11. gridToParticle  - G2P: Blend PIC/FLIP velocity update
+ * 12. advect          - Move particles through velocity field
+ * ```
+ *
+ * ## Grid Layout
+ *
+ * - **Velocity grid**: (nx+1) x (ny+1) x (nz+1) nodes, MAC-staggered
+ * - **Scalar grid**: nx x ny x nz cells for pressure, divergence, markers
+ *
+ * @see flip_simulation.wgsl for the compute shader implementations
  */
 export class Simulator {
   device: GPUDevice;
-  nx: number;
-  ny: number;
-  nz: number;
-  gridWidth: number;
-  gridHeight: number;
-  gridDepth: number;
 
-  // Staggered MAC grid buffers
-  // We store velocity and weights separately for each component
-  // gridVel stores (vx, vy, vz, scalarWeight) but each is at different staggered positions
-  gridVelocityBuffer: GPUBuffer; // Atomic accumulator for weighted velocities
-  gridWeightBuffer: GPUBuffer; // Atomic accumulator for weights
-  gridVelocityFloatBuffer: GPUBuffer; // Normalized velocities
-  gridVelocityOrigBuffer: GPUBuffer; // Original velocities before pressure solve
-  gridMarkerBuffer: GPUBuffer; // Cell markers (fluid/air)
+  // Grid resolution (number of cells along each axis)
+  nx: number; // X-axis cell count
+  ny: number; // Y-axis cell count
+  nz: number; // Z-axis cell count
+
+  // World-space container dimensions (can change at runtime for dynamic containers)
+  gridWidth: number;  // Container width (X)
+  gridHeight: number; // Container height (Y)
+  gridDepth: number;  // Container depth (Z)
+
+  // =========================================================================
+  // MAC Grid Buffers
+  // =========================================================================
+  // The MAC (Marker-And-Cell) grid stores velocity components at staggered
+  // positions on cell faces, which naturally aligns with the divergence/gradient
+  // operators and prevents checkerboard pressure instabilities.
+  //
+  // Velocity grid size: (nx+1) x (ny+1) x (nz+1) nodes
+  // Each node stores vec4: (Vx, Vy, Vz, scalarWeight)
+  // Note: Each component lives at a DIFFERENT physical position (MAC staggering)
+  // =========================================================================
+
+  /** Atomic integer buffer for P2G weighted velocity accumulation (race-free). */
+  gridVelocityBuffer: GPUBuffer;
+
+  /** Atomic integer buffer for P2G weight accumulation. */
+  gridWeightBuffer: GPUBuffer;
+
+  /** Float buffer holding normalized (averaged) velocities after P2G. */
+  gridVelocityFloatBuffer: GPUBuffer;
+
+  /** Snapshot of grid velocity BEFORE pressure projection (for FLIP delta). */
+  gridVelocityOrigBuffer: GPUBuffer;
+
+  /** Cell markers: 0 = air (empty), 1 = fluid (contains particles). */
+  gridMarkerBuffer: GPUBuffer;
+
+  /** Pressure field (scalar per cell, cell-centered). */
   pressureBuffer: GPUBuffer;
-  pressureTempBuffer: GPUBuffer; // Stores divergence, then used as temp for Jacobi
+
+  /** Divergence / temp buffer for Jacobi iteration (cell-centered). */
+  pressureTempBuffer: GPUBuffer;
+
+  /** Uniform block containing per-frame simulation parameters. */
   uniformBuffer: GPUBuffer;
 
+  // =========================================================================
+  // Compute Pipelines (11 pipelines for 12 steps - enforceBoundary runs twice)
+  // =========================================================================
+
+  /** Step 1: Zero all grid buffers at start of frame. */
   clearGridPipeline: GPUComputePipeline;
+
+  /** Step 2: P2G - Splat particle velocity/mass to grid nodes. */
   transferToGridPipeline: GPUComputePipeline;
+
+  /** Step 4: Convert atomic weighted sums to float averages. */
   normalizeGridPipeline: GPUComputePipeline;
+
+  /** Step 3: Mark cells containing particles as fluid (vs air). */
   markCellsPipeline: GPUComputePipeline;
+
+  /** Step 5: Apply gravity and mouse interaction forces. */
   addGravityPipeline: GPUComputePipeline;
+
+  /** Steps 6 & 10: Set wall-normal velocities to zero. */
   enforceBoundaryPipeline: GPUComputePipeline;
+
+  /** Step 7: Compute velocity divergence per cell. */
   divergencePipeline: GPUComputePipeline;
+
+  /** Step 8: One Jacobi iteration for pressure Poisson solve. */
   jacobiPipeline: GPUComputePipeline;
+
+  /** Step 9: Subtract pressure gradient from velocity. */
   applyPressurePipeline: GPUComputePipeline;
+
+  /** Step 11: G2P - Blend PIC/FLIP velocity update to particles. */
   gridToParticlePipeline: GPUComputePipeline;
+
+  /** Step 12: Move particles through velocity field (RK2). */
   advectPipeline: GPUComputePipeline;
 
+  /** Primary bind group containing all simulation buffers. */
   simBindGroup: GPUBindGroup;
+
+  /** Alternate bind group (reserved for ping-pong if needed). */
   simBindGroupAlt: GPUBindGroup;
+
+  /** Frame counter for temporal effects (turbulence sampling). */
   frameNumber: number = 0;
 
   constructor(
@@ -245,6 +335,21 @@ export class Simulator {
     this.frameNumber++;
   }
 
+  /**
+   * Execute one simulation timestep.
+   *
+   * This dispatches 12 compute passes in sequence, implementing the full
+   * FLIP algorithm: P2G transfer, pressure solve, G2P transfer, advection.
+   *
+   * @param pass - Active compute pass encoder to record commands into
+   * @param particleCount - Number of active particles
+   * @param fluidity - PIC/FLIP blend (0=PIC, 1=FLIP), typically 0.95-0.99
+   * @param gravity - Gravity magnitude (positive = downward)
+   * @param particleDensity - Target density for compression correction
+   * @param mouseVelocity - World-space velocity from mouse interaction
+   * @param mouseRayOrigin - Mouse ray origin in world space
+   * @param mouseRayDirection - Mouse ray direction (normalized)
+   */
   step(
     pass: GPUComputePassEncoder,
     particleCount: number,
@@ -266,50 +371,71 @@ export class Simulator {
       mouseRayDirection
     );
 
-    // Workgroup counts mirror shader workgroup_size declarations.
+    // =========================================================================
+    // Compute Workgroup Counts
+    // =========================================================================
+    // Each kernel uses a specific workgroup size; we compute dispatch counts
+    // to cover the full grid/particle arrays.
+
+    // Velocity grid: (nx+1) x (ny+1) x (nz+1), workgroup size (8, 4, 4)
     const velGridWG = [
       Math.ceil((this.nx + 1) / 8),
       Math.ceil((this.ny + 1) / 4),
       Math.ceil((this.nz + 1) / 4),
     ];
+
+    // Scalar grid: nx x ny x nz cells, workgroup size (8, 4, 4)
     const scalarGridWG = [
       Math.ceil(this.nx / 8),
       Math.ceil(this.ny / 4),
       Math.ceil(this.nz / 4),
     ];
-    const particleWG = Math.ceil(particleCount / 64); // @workgroup_size(64)
+
+    // Particles: 1D dispatch, workgroup size 64
+    const particleWG = Math.ceil(particleCount / 64);
 
     pass.setBindGroup(0, this.simBindGroup);
 
-    // 1) Clear all simulation fields.
+    // =========================================================================
+    // FLIP Simulation Loop (12 steps)
+    // =========================================================================
+
+    // Step 1: Clear all grid buffers to prepare for new frame
     pass.setPipeline(this.clearGridPipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 2) P2G: splat particle momentum to staggered grid nodes.
+    // Step 2: P2G (Particle-to-Grid) - Transfer particle momentum to grid
+    // Each particle splats its weighted velocity to 8 neighboring nodes
     pass.setPipeline(this.transferToGridPipeline);
     pass.dispatchWorkgroups(particleWG);
 
-    // 3) Mark occupied scalar cells.
+    // Step 3: Mark cells - Flag cells containing particles as "fluid"
     pass.setPipeline(this.markCellsPipeline);
     pass.dispatchWorkgroups(particleWG);
 
-    // 4) Convert weighted sums into average velocities.
+    // Step 4: Normalize - Convert atomic weighted sums to average velocities
+    // Also saves snapshot to gridVelOrig for FLIP delta calculation
     pass.setPipeline(this.normalizeGridPipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 5) External forces (gravity + mouse impulse).
+    // Step 5: External forces - Apply gravity and mouse interaction
     pass.setPipeline(this.addGravityPipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 6) Enforce container wall constraints.
+    // Step 6: Boundary conditions (pre-projection)
+    // Zero wall-normal velocities at container boundaries
     pass.setPipeline(this.enforceBoundaryPipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 7) Compute velocity divergence.
+    // Step 7: Compute divergence - Measure velocity field "expansion" per cell
+    // This is the RHS of the pressure Poisson equation: ∇²P = ∇·v
     pass.setPipeline(this.divergencePipeline);
     pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
 
-    // 8) Jacobi pressure iterations for incompressibility projection.
+    // Step 8: Pressure solve - Jacobi iteration (50 iterations)
+    // Iteratively solve ∇²P = divergence to find pressure field
+    // Note: Each iteration reads from and writes to the same buffer,
+    // which is a Jacobi (not Gauss-Seidel) update due to parallel execution.
     for (let i = 0; i < 50; i++) {
       pass.setPipeline(this.jacobiPipeline);
       pass.dispatchWorkgroups(
@@ -319,19 +445,23 @@ export class Simulator {
       );
     }
 
-    // 9) Subtract pressure gradient from velocity field.
+    // Step 9: Pressure projection - Subtract pressure gradient from velocity
+    // This makes the velocity field divergence-free (incompressible)
     pass.setPipeline(this.applyPressurePipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 10) Re-apply boundaries after projection.
+    // Step 10: Boundary conditions (post-projection)
+    // Re-apply boundaries since pressure correction may have introduced flow
     pass.setPipeline(this.enforceBoundaryPipeline);
     pass.dispatchWorkgroups(velGridWG[0], velGridWG[1], velGridWG[2]);
 
-    // 11) G2P: blend PIC and FLIP updates back to particles.
+    // Step 11: G2P (Grid-to-Particle) - Transfer velocity back to particles
+    // Blends PIC (stable) and FLIP (energetic) updates based on fluidity
     pass.setPipeline(this.gridToParticlePipeline);
     pass.dispatchWorkgroups(particleWG);
 
-    // 12) Advect particle positions with midpoint integration.
+    // Step 12: Advect - Move particles through the velocity field
+    // Uses RK2 (midpoint) integration + small turbulent noise
     pass.setPipeline(this.advectPipeline);
     pass.dispatchWorkgroups(particleWG);
   }

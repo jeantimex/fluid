@@ -1,20 +1,45 @@
 import { Utilities } from './utilities';
 
-// Orbit camera tuning constants. The camera intentionally stays fairly far
-// because the fluid container and floor are large world-space objects.
+// =============================================================================
+// ORBIT CAMERA CONFIGURATION
+// =============================================================================
+// The camera orbits around a fixed point (typically world origin) at a
+// constrained distance. Large min/max values accommodate the fluid container.
+
+/** Mouse drag sensitivity (radians per pixel). */
 const SENSITIVITY = 0.005;
+
+/** Minimum camera distance (prevents clipping into fluid). */
 const MIN_DISTANCE = 25.0;
+
+/** Maximum camera distance (keeps fluid visible). */
 const MAX_DISTANCE = 60.0;
 
 /**
- * Simple orbit camera around a fixed point.
+ * Orbit Camera Controller
  *
- * Input model:
- * - Drag: rotate (azimuth + elevation)
- * - Wheel: dolly in/out
+ * Implements a spherical coordinate camera that orbits around a fixed point.
+ * Used for viewing the fluid simulation from any angle.
  *
- * Output:
- * - A view matrix consumed by every render pass (G-buffer, AO, wireframe, etc.)
+ * ## Coordinate System
+ *
+ * - **Azimuth**: Horizontal rotation around Y-axis (0 = looking along -Z)
+ * - **Elevation**: Vertical tilt (0 = looking at horizon, +PI/4 = looking down)
+ * - **Distance**: Radius of orbit sphere
+ *
+ * ## Controls
+ *
+ * - **Mouse drag**: Rotate azimuth and elevation
+ * - **Mouse wheel**: Zoom in/out (change distance)
+ *
+ * ## View Matrix Computation
+ *
+ * The view matrix is composed as:
+ * ```
+ * V = T(-distance) * Rx(elevation) * Ry(azimuth) * T(-orbitPoint)
+ * ```
+ * This transforms world coordinates to camera space where the camera
+ * sits at origin looking down -Z.
  */
 export class Camera {
   element: HTMLElement;

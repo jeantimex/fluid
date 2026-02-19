@@ -1,21 +1,59 @@
 import { Camera } from '../camera';
 import { Utilities } from '../utilities';
 
+/**
+ * Per-frame sample of mouse state and derived interaction data.
+ *
+ * Used by the simulator to apply interactive forces to the fluid.
+ */
 export interface MouseInteractionSample {
+  /** Current camera view matrix. */
   viewMatrix: Float32Array;
+
+  /** Inverse view matrix for transforming to world space. */
   inverseViewMatrix: Float32Array;
+
+  /** Normalized ray direction from camera through mouse position (world space). */
   worldSpaceMouseRay: [number, number, number];
+
+  /** World-space velocity of mouse movement (for pushing fluid). */
   mouseVelocity: [number, number, number];
+
+  /** Camera position in simulation space (offset by container center). */
   simMouseRayOrigin: [number, number, number];
 }
 
 /**
- * Encapsulates pointer input and per-frame interaction math used by the solver.
+ * Mouse Interaction Controller
  *
- * Responsibilities:
- * - Forward pointer events to orbit camera controls.
- * - Track normalized mouse coordinates.
- * - Compute mouse ray + world velocity each frame for fluid interaction forces.
+ * Handles pointer input for both camera orbit controls and fluid interaction.
+ *
+ * ## Two Modes of Interaction
+ *
+ * 1. **Camera Orbiting** (when dragging):
+ *    - Mouse drag rotates the camera around the fluid
+ *    - Wheel zooms in/out
+ *
+ * 2. **Fluid Interaction** (when not dragging):
+ *    - Mouse movement creates a velocity vector
+ *    - This velocity is applied to fluid near the mouse ray
+ *    - Creates a "push" effect on the fluid surface
+ *
+ * ## Coordinate Spaces
+ *
+ * - **Screen space**: Raw pixel coordinates from pointer events
+ * - **Normalized space**: [-1, 1] range for ray computation
+ * - **View space**: Camera-relative coordinates
+ * - **World space**: Scene coordinates
+ * - **Simulation space**: Offset from world by container center
+ *
+ * ## Mouse Ray Computation
+ *
+ * The mouse ray is computed from screen position + camera FOV:
+ * ```
+ * viewSpaceRay = (mouseX * tan(fov/2) * aspect, mouseY * tan(fov/2), -1)
+ * worldSpaceRay = inverseViewMatrix * viewSpaceRay
+ * ```
  */
 export class MouseInteractionController {
   private readonly canvas: HTMLCanvasElement;
