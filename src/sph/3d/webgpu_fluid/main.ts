@@ -14,6 +14,40 @@ import GUI from 'lil-gui';
 import Stats from 'stats-gl';
 import { rgbToHex, hexToRgb } from '../common/color_utils.ts';
 
+// URL param to adapter name mapping
+const rendererParamMap: Record<string, string> = {
+  particles: 'Particles',
+  'marching-cubes': 'Marching Cubes',
+  raymarch: 'Raymarch',
+  'screen-space': 'Screen Space',
+};
+
+// Reverse mapping: adapter name to URL param
+const adapterToParamMap: Record<string, string> = {
+  Particles: 'particles',
+  'Marching Cubes': 'marching-cubes',
+  Raymarch: 'raymarch',
+  'Screen Space': 'screen-space',
+};
+
+function getRendererFromUrl(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const renderer = params.get('renderer')?.toLowerCase();
+  if (renderer && rendererParamMap[renderer]) {
+    return rendererParamMap[renderer];
+  }
+  return null;
+}
+
+function updateRendererUrl(adapterName: string): void {
+  const paramValue = adapterToParamMap[adapterName];
+  if (!paramValue) return;
+
+  const url = new URL(window.location.href);
+  url.searchParams.set('renderer', paramValue);
+  window.history.replaceState({}, '', url.toString());
+}
+
 function createCanvas(app: HTMLDivElement): HTMLCanvasElement {
   // Clean container
   app.innerHTML = '';
@@ -442,8 +476,11 @@ mainStats.dom.style.display = 'none';
 document.body.appendChild(mainStats.dom);
 
 // Renderer Selection State
+const urlRenderer = getRendererFromUrl();
+const initialRenderer = urlRenderer ?? adapterRegistry[0].name;
+
 const guiState = {
-  renderer: adapterRegistry[0].name,
+  renderer: initialRenderer,
   paused: false,
   togglePause: () => {
     guiState.paused = !guiState.paused;
@@ -471,7 +508,10 @@ mainGui
     adapterRegistry.map((a) => a.name)
   )
   .name('Renderer')
-  .onChange((name: string) => switchAdapter(name));
+  .onChange((name: string) => {
+    updateRendererUrl(name);
+    switchAdapter(name);
+  });
 
 function syncInputConfig(config: SimConfig): void {
   inputConfig.boundsSize.x = config.boundsSize.x;
@@ -935,12 +975,15 @@ async function main() {
     activeAdapter?.resize();
   });
 
-  const initialAdapter = adapterRegistry[0];
+  // Use URL param renderer if valid, otherwise default to first adapter
+  const initialAdapterName = initialRenderer;
+  const initialAdapter = adapterRegistry.find((a) => a.name === initialAdapterName) ?? adapterRegistry[0];
   if (!initialAdapter) {
     throw new Error('No adapters registered');
   }
 
   await switchAdapter(initialAdapter.name);
+  updateRendererUrl(initialAdapter.name);
 
   let lastTime: number | null = null;
   const frame = async (now: number) => {
