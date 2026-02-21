@@ -1,6 +1,7 @@
 import type { FluidBuffers } from './fluid_buffers.ts';
 
 import foamSpawnShader from './shaders/foam_spawn.wgsl?raw';
+import foamSpawnSubgroupShader from './shaders/foam_spawn_subgroup.wgsl?raw';
 import foamUpdateShader from './shaders/foam_update.wgsl?raw';
 import foamClearCounterShader from './shaders/foam_clear_counter.wgsl?raw';
 
@@ -25,11 +26,20 @@ export class FoamPipeline {
   private foamSpawnBindGroup!: GPUBindGroup;
   private foamUpdateBindGroup!: GPUBindGroup;
 
-  constructor(device: GPUDevice) {
+  constructor(device: GPUDevice, supportsSubgroups: boolean = false) {
     this.device = device;
 
+    // Select subgroup-optimized foam spawn shader if available
+    const spawnShader = supportsSubgroups
+      ? foamSpawnSubgroupShader
+      : foamSpawnShader;
+
+    if (supportsSubgroups) {
+      console.log('FoamPipeline: Using subgroup-optimized foam spawn shader');
+    }
+
     this.foamClearCounter = this.createPipeline(foamClearCounterShader, 'main');
-    this.foamSpawn = this.createPipeline(foamSpawnShader, 'main');
+    this.foamSpawn = this.createPipeline(spawnShader, 'main');
     this.foamUpdate = this.createPipeline(foamUpdateShader, 'main');
   }
 

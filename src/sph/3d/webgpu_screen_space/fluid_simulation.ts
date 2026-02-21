@@ -83,7 +83,7 @@ export class FluidSimulation {
 
     this.physics = new FluidPhysics(device);
     this.grid = new SpatialGrid(device, supportsSubgroups);
-    this.foam = new FoamPipeline(device);
+    this.foam = new FoamPipeline(device, supportsSubgroups);
     this.renderer = new ScreenSpaceRenderer(device, canvas, format, config);
     this.pickingSystem = new PickingSystem(device);
 
