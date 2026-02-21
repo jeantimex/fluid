@@ -1,4 +1,4 @@
-import{G as le}from"./lil-gui.esm-DA0aiWCL.js";import{S as ce}from"./main-DwTz-q1_.js";function W(n){const e=s=>Math.max(0,Math.min(255,Math.round(s*255))),t=e(n.r).toString(16).padStart(2,"0"),r=e(n.g).toString(16).padStart(2,"0"),i=e(n.b).toString(16).padStart(2,"0");return`#${t}${r}${i}`}function Q(n){const e=n.trim().replace("#","");if(e.length!==6)return{r:0,g:0,b:0};const t=Number.parseInt(e,16);return{r:t>>16&255,g:t>>8&255,b:t&255}}function ee(n){let e=0;for(const t of n.spawnRegions){const r=t.size.x*t.size.y*t.size.z,i=Math.ceil(r*n.spawnDensity);e+=i}return e}function ze(n,e,t={},r,i){let s,o;if(!document.querySelector('link[href*="Material+Icons"]')){const d=document.createElement("link");d.href="https://fonts.googleapis.com/icon?family=Material+Icons",d.rel="stylesheet",document.head.appendChild(d)}if(r)s=r;else{const d=document.createElement("style");d.textContent=`
+import{G as ae}from"./lil-gui.esm-DA0aiWCL.js";import{S as le}from"./main-DwTz-q1_.js";function W(n){const e=s=>Math.max(0,Math.min(255,Math.round(s*255))),t=e(n.r).toString(16).padStart(2,"0"),r=e(n.g).toString(16).padStart(2,"0"),i=e(n.b).toString(16).padStart(2,"0");return`#${t}${r}${i}`}function Q(n){const e=n.trim().replace("#","");if(e.length!==6)return{r:0,g:0,b:0};const t=Number.parseInt(e,16);return{r:t>>16&255,g:t>>8&255,b:t&255}}function ee(n){let e=0;for(const t of n.spawnRegions){const r=t.size.x*t.size.y*t.size.z,i=Math.ceil(r*n.spawnDensity);e+=i}return e}function Ge(n,e,t={},r,i){let s,o;if(!document.querySelector('link[href*="Material+Icons"]')){const d=document.createElement("link");d.href="https://fonts.googleapis.com/icon?family=Material+Icons",d.rel="stylesheet",document.head.appendChild(d)}if(r)s=r;else{const d=document.createElement("style");d.textContent=`
       #gui-container {
         position: fixed;
         top: 10px;
@@ -107,13 +107,13 @@ import{G as le}from"./lil-gui.esm-DA0aiWCL.js";import{S as ce}from"./main-DwTz-q
           right: 10px;
         }
       }
-    `,document.head.appendChild(d);const f=document.createElement("div");f.id="gui-container",window.innerWidth<=480&&f.classList.add("collapsed"),document.body.appendChild(f);const h=document.createElement("div");h.className="gui-header-main",f.appendChild(h);const U=document.createElement("button");U.className="gui-toggle-btn",U.innerHTML='<span class="material-icons">menu</span>',h.appendChild(U);const D=document.createElement("div");D.className="gui-title-area",h.appendChild(D);const L=document.createElement("div");L.className="gui-content-wrapper",f.appendChild(L);const ae=F=>{F&&F.stopPropagation(),f.classList.toggle("collapsed")};if(U.onclick=ae,f.onclick=()=>{f.classList.contains("collapsed")&&f.classList.remove("collapsed")},t.title){const F=document.createElement("span");if(F.style.cssText=`
+    `,document.head.appendChild(d);const f=document.createElement("div");f.id="gui-container",window.innerWidth<=480&&f.classList.add("collapsed"),document.body.appendChild(f);const h=document.createElement("div");h.className="gui-header-main",f.appendChild(h);const U=document.createElement("button");U.className="gui-toggle-btn",U.innerHTML='<span class="material-icons">menu</span>',h.appendChild(U);const _=document.createElement("div");_.className="gui-title-area",h.appendChild(_);const I=document.createElement("div");I.className="gui-content-wrapper",f.appendChild(I);const se=D=>{D&&D.stopPropagation(),f.classList.toggle("collapsed")};if(U.onclick=se,f.onclick=()=>{f.classList.contains("collapsed")&&f.classList.remove("collapsed")},t.title){const D=document.createElement("span");if(D.style.cssText=`
         font-size: 16px;
         font-weight: 600;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-      `,F.textContent=t.title,D.appendChild(F),t.githubUrl){const b=document.createElement("a");b.href=t.githubUrl,b.target="_blank",b.rel="noopener noreferrer",b.title="View on GitHub",b.style.cssText=`
+      `,D.textContent=t.title,_.appendChild(D),t.githubUrl){const b=document.createElement("a");b.href=t.githubUrl,b.target="_blank",b.rel="noopener noreferrer",b.title="View on GitHub",b.style.cssText=`
           display: flex;
           align-items: center;
           color: #fff;
@@ -124,14 +124,14 @@ import{G as le}from"./lil-gui.esm-DA0aiWCL.js";import{S as ce}from"./main-DwTz-q
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
           </svg>
-        `,D.appendChild(b)}const J=document.createElement("div");J.style.cssText=`
+        `,_.appendChild(b)}const J=document.createElement("div");J.style.cssText=`
         background: #1a1a1a;
         color: #fff;
         box-sizing: border-box;
-      `;const Y=document.createElement("div");Y.className="custom-gui-folder",Y.style.cssText=`
+      `;const N=document.createElement("div");N.className="custom-gui-folder",N.style.cssText=`
         border-top: 1px solid rgba(255, 255, 255, 0.1);
         background: rgba(255, 255, 255, 0.02);
-      `;const M=document.createElement("div");M.className="custom-gui-folder-header",M.style.cssText=`
+      `;const F=document.createElement("div");F.className="custom-gui-folder-header",F.style.cssText=`
         display: flex;
         align-items: center;
         padding: 1px;
@@ -140,7 +140,7 @@ import{G as le}from"./lil-gui.esm-DA0aiWCL.js";import{S as ce}from"./main-DwTz-q
         font-size: 11px;
         font-weight: 700;
         color: rgba(255, 255, 255, 0.9);
-      `,M.innerHTML=`
+      `,F.innerHTML=`
         <span class="material-icons folder-arrow" style="
           font-family: 'Material Icons';
           font-size: 16px;
@@ -153,7 +153,7 @@ import{G as le}from"./lil-gui.esm-DA0aiWCL.js";import{S as ce}from"./main-DwTz-q
         overflow: hidden;
         max-height: none;
         transition: max-height 0.3s ease-out;
-      `;let H=!0;if(M.onclick=()=>{G.style.maxHeight==="none"&&(G.style.maxHeight=G.scrollHeight+"px",G.offsetHeight),H=!H;const b=M.querySelector(".folder-arrow");H?(b.style.transform="rotate(90deg)",G.style.maxHeight=G.scrollHeight+"px"):(b.style.transform="rotate(0deg)",G.style.maxHeight="0")},t.subtitle){const b=document.createElement("div");b.style.cssText=`
+      `;let X=!0;if(F.onclick=()=>{G.style.maxHeight==="none"&&(G.style.maxHeight=G.scrollHeight+"px",G.offsetHeight),X=!X;const b=F.querySelector(".folder-arrow");X?(b.style.transform="rotate(90deg)",G.style.maxHeight=G.scrollHeight+"px"):(b.style.transform="rotate(0deg)",G.style.maxHeight="0")},t.subtitle){const b=document.createElement("div");b.style.cssText=`
           padding: 5px 11px 5px 11px;
           font-size: 11px;
           font-weight: 400;
@@ -192,34 +192,34 @@ import{G as le}from"./lil-gui.esm-DA0aiWCL.js";import{S as ce}from"./main-DwTz-q
       `,G.appendChild(K),t.features&&t.features.length>0){const b=document.createElement("div");b.style.cssText=`
           padding: 5px 11px 10px 11px;
           border-top: 1px solid rgba(255, 255, 255, 0.1);
-        `;const I=document.createElement("div");I.style.cssText=`
+        `;const L=document.createElement("div");L.style.cssText=`
           font-size: 10px;
           font-weight: 600;
           opacity: 0.8;
           text-transform: uppercase;
           margin-bottom: 4px;
-        `,I.textContent="Features:",b.appendChild(I);const A=document.createElement("ul");A.style.cssText=`
+        `,L.textContent="Features:",b.appendChild(L);const A=document.createElement("ul");A.style.cssText=`
           margin: 0;
           padding: 0 0 0 14px;
           font-size: 10px;
           opacity: 0.7;
           line-height: 1.4;
-        `,t.features.forEach(V=>{const N=document.createElement("li");N.textContent=V,A.appendChild(N)}),b.appendChild(A),G.appendChild(b)}if(t.interactions&&t.interactions.length>0){const b=document.createElement("div");b.style.cssText=`
+        `,t.features.forEach(V=>{const Y=document.createElement("li");Y.textContent=V,A.appendChild(Y)}),b.appendChild(A),G.appendChild(b)}if(t.interactions&&t.interactions.length>0){const b=document.createElement("div");b.style.cssText=`
           padding: 5px 11px 10px 11px;
           border-top: 1px solid rgba(255, 255, 255, 0.1);
-        `;const I=document.createElement("div");I.style.cssText=`
+        `;const L=document.createElement("div");L.style.cssText=`
           font-size: 10px;
           font-weight: 600;
           opacity: 0.8;
           text-transform: uppercase;
           margin-bottom: 4px;
-        `,I.textContent="Interactions:",b.appendChild(I);const A=document.createElement("ul");A.style.cssText=`
+        `,L.textContent="Interactions:",b.appendChild(L);const A=document.createElement("ul");A.style.cssText=`
           margin: 0;
           padding: 0 0 0 14px;
           font-size: 10px;
           opacity: 0.7;
           line-height: 1.4;
-        `,t.interactions.forEach(V=>{const N=document.createElement("li");N.textContent=V,A.appendChild(N)}),b.appendChild(A),G.appendChild(b)}Y.appendChild(M),Y.appendChild(G),L.appendChild(J),L.appendChild(Y)}s=new le({container:L,title:"Simulation Settings"})}i?o=i:(o=new ce({trackGPU:t.trackGPU??!1,horizontal:!0}),document.body.appendChild(o.dom)),o.dom.style.display="none";const a={showStats:!1},c=s.addFolder("Fluid");c.close();const u={particleCount:ee(n)},B=()=>{u.particleCount=ee(n),C.updateDisplay()};c.add(n,"spawnDensity",100,2e3,10).name("Spawn Density").onFinishChange(()=>{B(),e.onReset()});const C=c.add(u,"particleCount").name("Particle Count").disable();c.add(n,"gravity",-30,30,1).name("Gravity"),c.add(n,"collisionDamping",0,1,.01).name("Collision Damping"),c.add(n,"smoothingRadius",.05,1,.01).name("Smoothing Radius").onChange(()=>e.onSmoothingRadiusChange()),c.add(n,"targetDensity",0,3e3,10).name("Target Density"),c.add(n,"pressureMultiplier",0,2e3,10).name("Pressure Multiplier"),c.add(n,"nearPressureMultiplier",0,40,.1).name("Near Pressure Multiplier"),c.add(n,"viscosityStrength",0,.5,.001).name("Viscosity Strength"),c.add(n,"jitterStr",0,.1,.001).name("Jitter Strength").onFinishChange(()=>e.onReset());const m=s.addFolder("Obstacle");m.close();const T={"Rectangular Cuboid":"box",Sphere:"sphere"};n.obstacleShape||(n.obstacleShape="box");const E=m.add(n,"obstacleShape",T).name("Shape");typeof n.showObstacle=="boolean"&&m.add(n,"showObstacle").name("Show Obstacle");const R=m.add(n.obstacleSize,"x",0,10,.1).name("Size X"),l=m.add(n.obstacleSize,"y",0,10,.1).name("Size Y"),p=m.add(n.obstacleSize,"z",0,10,.1).name("Size Z");typeof n.obstacleRadius!="number"&&(n.obstacleRadius=0);const g=m.add(n,"obstacleRadius",0,10,.1).name("Radius");m.add(n.obstacleCentre,"x",-10,10,.1).name("Position X");const y=m.add(n.obstacleCentre,"y",-10,10,.1).name("Bottom Y");m.add(n.obstacleCentre,"z",-10,10,.1).name("Position Z");const S=m.add(n.obstacleRotation,"x",-180,180,1).name("Rotation X"),P=m.add(n.obstacleRotation,"y",-180,180,1).name("Rotation Y"),O=m.add(n.obstacleRotation,"z",-180,180,1).name("Rotation Z");n.obstacleColor&&m.addColor(n,"obstacleColor").name("Color"),typeof n.obstacleAlpha=="number"&&m.add(n,"obstacleAlpha",0,1,.01).name("Alpha");const w=()=>{n.obstacleShape==="box"?(R.show(),l.show(),p.show(),g.hide(),S.show(),P.show(),O.show(),y.name("Bottom Y")):(R.hide(),l.hide(),p.hide(),g.show(),S.hide(),P.hide(),O.hide(),y.name("Center Y"))};w(),E.onChange(w);const v=s.addFolder("Container");if(v.close(),v.add(n.boundsSize,"x",1,50,.1).name("Size X"),v.add(n.boundsSize,"y",1,50,.1).name("Size Y"),v.add(n.boundsSize,"z",1,50,.1).name("Size Z"),"showBoundsWireframe"in n){const d=n;if(v.add(d,"showBoundsWireframe").name("Show Wireframe"),d.boundsWireframeColor){const f={color:W(d.boundsWireframeColor)};v.addColor(f,"color").name("Wireframe Color").onChange(h=>{const U=Q(h);d.boundsWireframeColor.r=U.r/255,d.boundsWireframeColor.g=U.g/255,d.boundsWireframeColor.b=U.b/255})}}const x=s.addFolder("Environment");if(x.close(),"floorAmbient"in n){const d=n;x.add(d,"floorAmbient",0,1,.01).name("Ambient Light"),x.add(d,"sceneExposure",.1,5,.1).name("Exposure"),typeof d.sunBrightness=="number"&&x.add(d,"sunBrightness",0,5,.1).name("Sun Brightness"),!("densityTextureRes"in n)&&"shadowSoftness"in n&&(x.add(d,"shadowSoftness",0,4,.05).name("Shadow Softness"),"shadowRadiusScale"in n&&x.add(d,"shadowRadiusScale",.2,3,.05).name("Shadow Radius")),typeof d.globalBrightness=="number"&&x.add(d,"globalBrightness",.1,4,.1).name("Brightness"),typeof d.globalSaturation=="number"&&x.add(d,"globalSaturation",0,2,.1).name("Saturation");const f={tileCol1:W(d.tileCol1),tileCol2:W(d.tileCol2),tileCol3:W(d.tileCol3),tileCol4:W(d.tileCol4)},h=U=>D=>{const L=Q(D);d[U].r=Math.pow(L.r/255,2.2),d[U].g=Math.pow(L.g/255,2.2),d[U].b=Math.pow(L.b/255,2.2)};x.addColor(f,"tileCol1").name("Tile Color 1").onChange(h("tileCol1")),x.addColor(f,"tileCol2").name("Tile Color 2").onChange(h("tileCol2")),x.addColor(f,"tileCol3").name("Tile Color 3").onChange(h("tileCol3")),x.addColor(f,"tileCol4").name("Tile Color 4").onChange(h("tileCol4"))}if("shadowSoftness"in n){const d=s.addFolder("Shadow");d.close();const f=n;typeof f.shadowSoftness=="number"&&d.add(f,"shadowSoftness",0,4,.05).name("Softness")}const k=s.addFolder("Interaction");k.close(),k.add(n,"interactionRadius",0,2,.01).name("Radius"),k.add(n,"interactionStrength",0,200,1).name("Strength");const z=s.addFolder("Performance");return z.close(),z.add(n,"timeScale",0,2,.01).name("Time Scale"),z.add(n,"maxTimestepFPS",0,120,1).name("Max Timestep FPS"),z.add(n,"iterationsPerFrame",1,8,1).name("Iterations Per Frame"),z.add(a,"showStats").name("Show FPS").onChange(d=>{o.dom.style.display=d?"block":"none"}),s.close(),{gui:s,stats:o,uiState:a}}function Ge(n,e,t,r){const i=1/Math.tan(n/2),s=1/(t-r),o=new Float32Array(16);return o[0]=i/e,o[5]=i,o[10]=(r+t)*s,o[11]=-1,o[14]=2*r*t*s,o}function Re(n,e,t,r,i,s){const o=1/(e-n),a=1/(r-t),c=1/(s-i),u=new Float32Array(16);return u[0]=2*o,u[5]=2*a,u[10]=c,u[12]=-(e+n)*o,u[13]=-(r+t)*a,u[14]=-i*c,u[15]=1,u}function Oe(n){const e=new Float32Array(16),t=n[0],r=n[1],i=n[2],s=n[3],o=n[4],a=n[5],c=n[6],u=n[7],B=n[8],C=n[9],m=n[10],T=n[11],E=n[12],R=n[13],l=n[14],p=n[15],g=t*a-r*o,y=t*c-i*o,S=t*u-s*o,P=r*c-i*a,O=r*u-s*a,w=i*u-s*c,v=B*R-C*E,x=B*l-m*E,k=B*p-T*E,z=C*l-m*R,d=C*p-T*R,f=m*p-T*l;let h=g*f-y*d+S*z+P*k-O*x+w*v;return h&&(h=1/h,e[0]=(a*f-c*d+u*z)*h,e[1]=(i*d-r*f-s*z)*h,e[2]=(R*w-l*O+p*P)*h,e[3]=(m*O-C*w-T*P)*h,e[4]=(c*k-o*f-u*x)*h,e[5]=(t*f-i*k+s*x)*h,e[6]=(l*S-E*w-p*y)*h,e[7]=(B*w-m*S+T*y)*h,e[8]=(o*d-a*k+u*v)*h,e[9]=(r*k-t*d-s*v)*h,e[10]=(E*O-R*S+p*g)*h,e[11]=(C*S-B*O-T*g)*h,e[12]=(a*x-o*z-c*v)*h,e[13]=(t*z-r*x+i*v)*h,e[14]=(R*y-E*P-l*g)*h,e[15]=(B*P-C*y+m*g)*h),e}function de(n,e,t){const r=ne(ue(n,e)),i=ne(te(t,r)),s=te(r,i),o=new Float32Array(16);return o[0]=i.x,o[1]=s.x,o[2]=r.x,o[3]=0,o[4]=i.y,o[5]=s.y,o[6]=r.y,o[7]=0,o[8]=i.z,o[9]=s.z,o[10]=r.z,o[11]=0,o[12]=-j(i,n),o[13]=-j(s,n),o[14]=-j(r,n),o[15]=1,o}function Te(n,e){const t=new Float32Array(16);for(let r=0;r<4;r++)for(let i=0;i<4;i++){let s=0;for(let o=0;o<4;o++)s+=n[o*4+r]*e[i*4+o];t[i*4+r]=s}return t}function ue(n,e){return{x:n.x-e.x,y:n.y-e.y,z:n.z-e.z}}function ne(n){const e=Math.sqrt(n.x*n.x+n.y*n.y+n.z*n.z);return{x:n.x/e,y:n.y/e,z:n.z/e}}function te(n,e){return{x:n.y*e.z-n.z*e.y,y:n.z*e.x-n.x*e.z,z:n.x*e.y-n.y*e.x}}function j(n,e){return n.x*e.x+n.y*e.y+n.z*e.z}function X(n,e){return{x:n.x*e,y:n.y*e,z:n.z*e}}function _(n,e){return{x:n.x+e.x,y:n.y+e.y,z:n.z+e.z}}function pe(n,e,t,r){let i=(t.x-n.x)/e.x,s=(r.x-n.x)/e.x;i>s&&([i,s]=[s,i]);let o=(t.y-n.y)/e.y,a=(r.y-n.y)/e.y;if(o>a&&([o,a]=[a,o]),i>a||o>s)return!1;o>i&&(i=o),a<s&&(s=a);let c=(t.z-n.z)/e.z,u=(r.z-n.z)/e.z;return c>u&&([c,u]=[u,c]),!(i>u||c>s)}function fe(n,e,t,r){let i=(t.x-n.x)/e.x,s=(r.x-n.x)/e.x;i>s&&([i,s]=[s,i]);let o=(t.y-n.y)/e.y,a=(r.y-n.y)/e.y;if(o>a&&([o,a]=[a,o]),i>a||o>s)return{hit:!1,tmin:0,tmax:0};o>i&&(i=o),a<s&&(s=a);let c=(t.z-n.z)/e.z,u=(r.z-n.z)/e.z;return c>u&&([c,u]=[u,c]),i>u||c>s?{hit:!1,tmin:0,tmax:0}:(c>i&&(i=c),u<s&&(s=u),{hit:!0,tmin:i,tmax:s})}class Ee{radius=5;theta=0;phi=Math.PI/2;target={x:0,y:0,z:0};minRadius=2;maxRadius=100;constructor(){}rotate(e,t){this.theta+=e,this.phi+=t;const r=.001;this.phi=Math.max(r,Math.min(Math.PI-r,this.phi))}zoom(e){this.radius+=e,this.radius=Math.max(this.minRadius,Math.min(this.maxRadius,this.radius))}get viewMatrix(){const e=this.radius*Math.sin(this.phi)*Math.sin(this.theta),t=this.radius*Math.cos(this.phi),r=this.radius*Math.sin(this.phi)*Math.cos(this.theta),i=_(this.target,{x:e,y:t,z:r});return de(i,this.target,{x:0,y:1,z:0})}get basis(){const e=this.viewMatrix,t={x:e[0],y:e[4],z:e[8]},r={x:e[1],y:e[5],z:e[9]},i={x:e[2],y:e[6],z:e[10]},s={x:-i.x,y:-i.y,z:-i.z};return{right:t,up:r,forward:s}}get position(){const e=this.radius*Math.sin(this.phi)*Math.sin(this.theta),t=this.radius*Math.cos(this.phi),r=this.radius*Math.sin(this.phi)*Math.cos(this.theta);return _(this.target,{x:e,y:t,z:r})}}function Ue(n,e,t,r){let i=!1,s=!1,o=0,a=0,c=0,u=0;const B=(l,p)=>{const g=n.getBoundingClientRect(),y=l-g.left,S=p-g.top,P=y/g.width*2-1,O=-(S/g.height*2-1),w=Math.PI/3,v=Math.tan(w/2),x=n.width/n.height,{right:k,up:z,forward:d}=t.basis,f=_(d,_(X(k,P*x*v),X(z,O*v))),h=Math.sqrt(f.x*f.x+f.y*f.y+f.z*f.z);return{origin:t.position,dir:{x:f.x/h,y:f.y/h,z:f.z/h}}},C=l=>{const p=t.basis.forward,g=l.dir.x*p.x+l.dir.y*p.y+l.dir.z*p.z;if(Math.abs(g)<1e-6)return null;const y=l.origin,P=-(y.x*p.x+y.y*p.y+y.z*p.z)/g;return P<0?null:_(y,X(l.dir,P))},m=l=>{const p=r.boundsSize,g=p.x*.5,y=p.z*.5,S=-5,P={x:-g,y:S,z:-y},O={x:g,y:S+p.y,z:y},w=fe(l.origin,l.dir,P,O);if(!w.hit)return null;const v={x:0,y:S+p.y*.5,z:0},x={x:l.origin.x-v.x,y:l.origin.y-v.y,z:l.origin.z-v.z},k=-(x.x*l.dir.x+x.y*l.dir.y+x.z*l.dir.z),z=Math.max(w.tmin,Math.min(w.tmax,k));return z<0?null:_(l.origin,X(l.dir,z))},T=l=>{const p=e();if(!p)return;const g=B(l.clientX,l.clientY);p.rayOrigin=g.origin,p.rayDir=g.dir;const y=m(g)??C(g);y&&(p.worldX=y.x,p.worldY=y.y,p.worldZ=y.z)};n.addEventListener("pointerdown",l=>{const p=e();if(!p)return;l.cancelable&&l.preventDefault();const g=r.boundsSize,y=g.x*.5,S=g.z*.5,P=-5,O={x:-y,y:P,z:-S},w={x:y,y:P+g.y,z:S},v=B(l.clientX,l.clientY),x=pe(v.origin,v.dir,O,w);p.rayOrigin=v.origin,p.rayDir=v.dir;const k=l.button===2||l.button===0&&l.shiftKey;x&&(k||p.isHoveringFluid)?(s=!0,T(l),k?(p.push=!0,p.pull=!1):(p.pull=!0,p.push=!1)):(i=!0,o=l.clientX,a=l.clientY)}),n.addEventListener("pointermove",l=>{const p=e();if(!p)return;l.cancelable&&l.preventDefault();const g=B(l.clientX,l.clientY);if(p.rayOrigin=g.origin,p.rayDir=g.dir,s)T(l);else if(i){const y=l.clientX-o,S=l.clientY-a;o=l.clientX,a=l.clientY;const P=.005;c=-y*P,u=-S*P,t.rotate(c,u)}}),n.addEventListener("pointerup",()=>{const l=e();l&&(s&&(s=!1,l.pull=!1,l.push=!1),i=!1)}),n.addEventListener("pointerleave",()=>{const l=e();l&&(l.pull=!1,l.push=!1,i=!1,s=!1)}),n.addEventListener("wheel",l=>{t.zoom(l.deltaY*.01),l.preventDefault()},{passive:!1}),n.addEventListener("contextmenu",l=>l.preventDefault());const E=.92,R=1e-4;return function(){!i&&(Math.abs(c)>R||Math.abs(u)>R)&&(t.rotate(c,u),c*=E,u*=E)}}class $ extends Error{constructor(e){super(e),this.name="WebGPUInitError"}}async function Le(n){if(!navigator.gpu)throw new $("WebGPU is not supported in this browser.");const e=await navigator.gpu.requestAdapter();if(!e)throw new $("Unable to acquire a WebGPU adapter.");const t=await e.requestDevice(),r=n.getContext("webgpu");if(!r)throw new $("Unable to create a WebGPU context.");const i=navigator.gpu.getPreferredCanvasFormat();return{device:t,context:r,format:i}}function Ie(n,e,t){n.configure({device:e,format:t,alphaMode:"opaque"})}function Ae(){return{timeScale:2,maxTimestepFPS:60,iterationsPerFrame:2,gravity:-10,collisionDamping:.95,smoothingRadius:.2,targetDensity:630,pressureMultiplier:288,nearPressureMultiplier:2.16,viscosityStrength:.01,boundsSize:{x:24,y:10,z:15},showObstacle:!0,obstacleShape:"box",obstacleRadius:0,obstacleSize:{x:0,y:0,z:0},obstacleCentre:{x:0,y:-5,z:0},obstacleRotation:{x:0,y:0,z:0},obstacleColor:{r:1,g:0,b:0},obstacleAlpha:.8,interactionRadius:2,interactionStrength:50,particleRadius:2.5,spawnDensity:600,initialVelocity:{x:0,y:0,z:0},jitterStr:.035,spawnRegions:[{position:{x:-8.3,y:-1.3,z:3.65},size:{x:7,y:7,z:7}},{position:{x:-8.3,y:-1.3,z:-3.65},size:{x:7,y:7,z:7}}]}}function De(){return{dirToSun:{x:-.83,y:.42,z:-.36},floorAmbient:.58,sceneExposure:1.1,sunBrightness:1,skyColorHorizon:{r:1,g:1,b:1},skyColorZenith:{r:.08,g:.37,b:.73},skyColorGround:{r:.55,g:.5,b:.55},sunPower:500,floorSize:{x:100,y:1,z:100},floorCenter:{x:0,y:-5.5,z:0},tileScale:1,tileDarkFactor:-.35,tileCol1:{r:.20392157,g:.5176471,b:.7764706},tileCol2:{r:.6081319,g:.36850303,b:.8584906},tileCol3:{r:.3019758,g:.735849,b:.45801795},tileCol4:{r:.8018868,g:.6434483,b:.36690104},tileColVariation:{x:.33,y:0,z:.47},globalBrightness:1,globalSaturation:1}}function Fe(n,e,t,r){let i=e;n[i++]=t.dirToSun.x,n[i++]=t.dirToSun.y,n[i++]=t.dirToSun.z,n[i++]=t.floorAmbient,n[i++]=t.skyColorHorizon.r,n[i++]=t.skyColorHorizon.g,n[i++]=t.skyColorHorizon.b,n[i++]=t.sunPower,n[i++]=t.skyColorZenith.r,n[i++]=t.skyColorZenith.g,n[i++]=t.skyColorZenith.b,n[i++]=t.sceneExposure,n[i++]=t.skyColorGround.r,n[i++]=t.skyColorGround.g,n[i++]=t.skyColorGround.b,n[i++]=0,n[i++]=t.floorSize.x,n[i++]=t.floorSize.y,n[i++]=t.floorSize.z,n[i++]=t.tileScale,n[i++]=t.floorCenter.x,n[i++]=t.floorCenter.y,n[i++]=t.floorCenter.z,n[i++]=t.tileDarkFactor,n[i++]=t.tileCol1.r,n[i++]=t.tileCol1.g,n[i++]=t.tileCol1.b,n[i++]=t.sunBrightness,n[i++]=t.tileCol2.r,n[i++]=t.tileCol2.g,n[i++]=t.tileCol2.b,n[i++]=t.globalBrightness,n[i++]=t.tileCol3.r,n[i++]=t.tileCol3.g,n[i++]=t.tileCol3.b,n[i++]=t.globalSaturation,n[i++]=t.tileCol4.r,n[i++]=t.tileCol4.g,n[i++]=t.tileCol4.b,n[i++]=0,n[i++]=t.tileColVariation.x,n[i++]=t.tileColVariation.y,n[i++]=t.tileColVariation.z,n[i++]=0;const s=r.showObstacle!==!1,a=(r.obstacleShape??"box")==="sphere";n[i++]=r.obstacleCentre.x,n[i++]=a?r.obstacleCentre.y:r.obstacleCentre.y+r.obstacleSize.y*.5,n[i++]=r.obstacleCentre.z,n[i++]=0;const c=r.obstacleRadius??0,u=s?a?c:r.obstacleSize.x*.5:0,B=s?a?c:r.obstacleSize.y*.5:0,C=s?a?c:r.obstacleSize.z*.5:0;n[i++]=u,n[i++]=B,n[i++]=C,n[i++]=0,n[i++]=r.obstacleRotation.x,n[i++]=r.obstacleRotation.y,n[i++]=r.obstacleRotation.z,n[i++]=s?r.obstacleAlpha??.8:0;const m=r.obstacleColor??{r:1,g:0,b:0};n[i++]=m.r,n[i++]=m.g,n[i++]=m.b,n[i++]=a?1:0}function he(n){let e=n>>>0;return()=>(e=1664525*e+1013904223>>>0,e/4294967296)}function ge(n,e){const t=n.x*n.y*n.z,r=Math.ceil(t*e),i=Math.pow(r/t,1/3);return{x:Math.max(1,Math.ceil(n.x*i)),y:Math.max(1,Math.ceil(n.y*i)),z:Math.max(1,Math.ceil(n.z*i))}}function me(n,e){const t=n.size,r=n.position,i=ge(t,e),s=new Array(i.x*i.y*i.z);let o=0;for(let a=0;a<i.z;a+=1)for(let c=0;c<i.y;c+=1)for(let u=0;u<i.x;u+=1){const B=i.x===1?.5:u/(i.x-1),C=i.y===1?.5:c/(i.y-1),m=i.z===1?.5:a/(i.z-1),T=(B-.5)*t.x+r.x,E=(C-.5)*t.y+r.y,R=(m-.5)*t.z+r.z;s[o]={x:T,y:E,z:R},o+=1}return s}function Me(n){const e=he(42),t=[];for(const o of n.spawnRegions){const a=me(o,n.spawnDensity);for(const c of a){const u=(e()-.5)*n.jitterStr,B=(e()-.5)*n.jitterStr,C=(e()-.5)*n.jitterStr;t.push({x:c.x+u,y:c.y+B,z:c.z+C})}}const r=t.length,i=new Float32Array(r*4),s=new Float32Array(r*4);for(let o=0;o<r;o+=1){const a=o*4;i[a]=t[o].x,i[a+1]=t[o].y,i[a+2]=t[o].z,i[a+3]=1,s[a]=n.initialVelocity.x,s[a+1]=n.initialVelocity.y,s[a+2]=n.initialVelocity.z,s[a+3]=0}return{positions:i,velocities:s,count:r}}class se{static DEFAULT_MAX_FOAM_PARTICLES=128e4;positions;predicted;velocities;densities;keys;indices;sortOffsets;particleCellOffsets=null;spatialOffsets=null;sortedKeys=null;groupSumsL1;groupSumsL2;scanScratch;positionsSorted;predictedSorted;velocitiesSorted;visibleIndices;indirectDraw;foamPositions=null;foamVelocities=null;foamCounter=null;maxFoamParticles;velocityReadback;densityReadback;particleCount;device;constructor(e,t,r={}){this.device=e,this.particleCount=t.count;const{gridTotalCells:i,includeFoam:s,maxFoamParticles:o=se.DEFAULT_MAX_FOAM_PARTICLES}=r;if(this.positions=this.createBufferFromArray(t.positions,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.predicted=this.createBufferFromArray(new Float32Array(t.positions),GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.velocities=this.createBufferFromArray(t.velocities,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC),this.densities=this.createEmptyBuffer(t.count*2*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC),this.keys=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.indices=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),i!==void 0){this.particleCellOffsets=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.sortOffsets=this.createEmptyBuffer((i+1)*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST);const a=Math.ceil((i+1)/512),c=Math.ceil(a/512);this.groupSumsL1=this.createEmptyBuffer(a*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.groupSumsL2=this.createEmptyBuffer(c*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST)}else{this.sortOffsets=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.spatialOffsets=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.sortedKeys=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST);const a=Math.ceil(t.count/512),c=Math.ceil(a/512);this.groupSumsL1=this.createEmptyBuffer(a*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.groupSumsL2=this.createEmptyBuffer(c*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST)}this.scanScratch=this.createEmptyBuffer(4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.positionsSorted=this.createEmptyBuffer(t.count*16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.predictedSorted=this.createEmptyBuffer(t.count*16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.velocitiesSorted=this.createEmptyBuffer(t.count*16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.visibleIndices=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.indirectDraw=this.createEmptyBuffer(16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.INDIRECT),s?(this.foamPositions=this.createEmptyBuffer(o*16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.foamVelocities=this.createEmptyBuffer(o*16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.foamCounter=this.createEmptyBuffer(4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.maxFoamParticles=o):this.maxFoamParticles=0,this.velocityReadback=e.createBuffer({size:t.count*16,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST}),this.densityReadback=e.createBuffer({size:t.count*8,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST})}createBufferFromArray(e,t){const r=this.device.createBuffer({size:e.byteLength,usage:t,mappedAtCreation:!0});return(e instanceof Float32Array?new Float32Array(r.getMappedRange()):new Uint32Array(r.getMappedRange())).set(e),r.unmap(),r}createEmptyBuffer(e,t){return this.device.createBuffer({size:e,usage:t})}destroy(){this.positions.destroy(),this.predicted.destroy(),this.velocities.destroy(),this.densities.destroy(),this.keys.destroy(),this.indices.destroy(),this.sortOffsets.destroy(),this.groupSumsL1.destroy(),this.groupSumsL2.destroy(),this.scanScratch.destroy(),this.positionsSorted.destroy(),this.predictedSorted.destroy(),this.velocitiesSorted.destroy(),this.visibleIndices.destroy(),this.indirectDraw.destroy(),this.velocityReadback.destroy(),this.densityReadback.destroy(),this.particleCellOffsets?.destroy(),this.spatialOffsets?.destroy(),this.sortedKeys?.destroy(),this.foamPositions?.destroy(),this.foamVelocities?.destroy(),this.foamCounter?.destroy()}}const ye=`/**
+        `,t.interactions.forEach(V=>{const Y=document.createElement("li");Y.textContent=V,A.appendChild(Y)}),b.appendChild(A),G.appendChild(b)}N.appendChild(F),N.appendChild(G),I.appendChild(J),I.appendChild(N)}s=new ae({container:I,title:"Simulation Settings"})}i?o=i:(o=new le({trackGPU:t.trackGPU??!1,horizontal:!0}),document.body.appendChild(o.dom)),o.dom.style.display="none";const a={showStats:!1},c=s.addFolder("Fluid");c.close();const u={particleCount:ee(n)},B=()=>{u.particleCount=ee(n),w.updateDisplay()};c.add(n,"spawnDensity",100,2e3,10).name("Spawn Density").onFinishChange(()=>{B(),e.onReset()});const w=c.add(u,"particleCount").name("Particle Count").disable();c.add(n,"gravity",-30,30,1).name("Gravity"),c.add(n,"collisionDamping",0,1,.01).name("Collision Damping"),c.add(n,"smoothingRadius",.05,1,.01).name("Smoothing Radius").onChange(()=>e.onSmoothingRadiusChange()),c.add(n,"targetDensity",0,3e3,10).name("Target Density"),c.add(n,"pressureMultiplier",0,2e3,10).name("Pressure Multiplier"),c.add(n,"nearPressureMultiplier",0,40,.1).name("Near Pressure Multiplier"),c.add(n,"viscosityStrength",0,.5,.001).name("Viscosity Strength"),c.add(n,"jitterStr",0,.1,.001).name("Jitter Strength").onFinishChange(()=>e.onReset());const m=s.addFolder("Obstacle");m.close();const O={"Rectangular Cuboid":"box",Sphere:"sphere"};n.obstacleShape||(n.obstacleShape="box");const E=m.add(n,"obstacleShape",O).name("Shape");typeof n.showObstacle=="boolean"&&m.add(n,"showObstacle").name("Show Obstacle");const R=m.add(n.obstacleSize,"x",0,10,.1).name("Size X"),l=m.add(n.obstacleSize,"y",0,10,.1).name("Size Y"),p=m.add(n.obstacleSize,"z",0,10,.1).name("Size Z");typeof n.obstacleRadius!="number"&&(n.obstacleRadius=0);const g=m.add(n,"obstacleRadius",0,10,.1).name("Radius");m.add(n.obstacleCentre,"x",-10,10,.1).name("Position X");const y=m.add(n.obstacleCentre,"y",-10,10,.1).name("Bottom Y");m.add(n.obstacleCentre,"z",-10,10,.1).name("Position Z");const S=m.add(n.obstacleRotation,"x",-180,180,1).name("Rotation X"),P=m.add(n.obstacleRotation,"y",-180,180,1).name("Rotation Y"),T=m.add(n.obstacleRotation,"z",-180,180,1).name("Rotation Z");n.obstacleColor&&m.addColor(n,"obstacleColor").name("Color"),typeof n.obstacleAlpha=="number"&&m.add(n,"obstacleAlpha",0,1,.01).name("Alpha");const C=()=>{n.obstacleShape==="box"?(R.show(),l.show(),p.show(),g.hide(),S.show(),P.show(),T.show(),y.name("Bottom Y")):(R.hide(),l.hide(),p.hide(),g.show(),S.hide(),P.hide(),T.hide(),y.name("Center Y"))};C(),E.onChange(C);const v=s.addFolder("Container");if(v.close(),v.add(n.boundsSize,"x",1,50,.1).name("Size X"),v.add(n.boundsSize,"y",1,50,.1).name("Size Y"),v.add(n.boundsSize,"z",1,50,.1).name("Size Z"),"showBoundsWireframe"in n){const d=n;if(v.add(d,"showBoundsWireframe").name("Show Wireframe"),d.boundsWireframeColor){const f={color:W(d.boundsWireframeColor)};v.addColor(f,"color").name("Wireframe Color").onChange(h=>{const U=Q(h);d.boundsWireframeColor.r=U.r/255,d.boundsWireframeColor.g=U.g/255,d.boundsWireframeColor.b=U.b/255})}}const x=s.addFolder("Environment");if(x.close(),"floorAmbient"in n){const d=n;x.add(d,"floorAmbient",0,1,.01).name("Ambient Light"),x.add(d,"sceneExposure",.1,5,.1).name("Exposure"),typeof d.sunBrightness=="number"&&x.add(d,"sunBrightness",0,5,.1).name("Sun Brightness"),!("densityTextureRes"in n)&&"shadowSoftness"in n&&(x.add(d,"shadowSoftness",0,4,.05).name("Shadow Softness"),"shadowRadiusScale"in n&&x.add(d,"shadowRadiusScale",.2,3,.05).name("Shadow Radius")),typeof d.globalBrightness=="number"&&x.add(d,"globalBrightness",.1,4,.1).name("Brightness"),typeof d.globalSaturation=="number"&&x.add(d,"globalSaturation",0,2,.1).name("Saturation");const f={tileCol1:W(d.tileCol1),tileCol2:W(d.tileCol2),tileCol3:W(d.tileCol3),tileCol4:W(d.tileCol4)},h=U=>_=>{const I=Q(_);d[U].r=Math.pow(I.r/255,2.2),d[U].g=Math.pow(I.g/255,2.2),d[U].b=Math.pow(I.b/255,2.2)};x.addColor(f,"tileCol1").name("Tile Color 1").onChange(h("tileCol1")),x.addColor(f,"tileCol2").name("Tile Color 2").onChange(h("tileCol2")),x.addColor(f,"tileCol3").name("Tile Color 3").onChange(h("tileCol3")),x.addColor(f,"tileCol4").name("Tile Color 4").onChange(h("tileCol4"))}if("shadowSoftness"in n){const d=s.addFolder("Shadow");d.close();const f=n;typeof f.shadowSoftness=="number"&&d.add(f,"shadowSoftness",0,4,.05).name("Softness")}const k=s.addFolder("Interaction");k.close(),k.add(n,"interactionRadius",0,2,.01).name("Radius"),k.add(n,"interactionStrength",0,200,1).name("Strength");const z=s.addFolder("Performance");return z.close(),z.add(n,"timeScale",0,2,.01).name("Time Scale"),z.add(n,"maxTimestepFPS",0,120,1).name("Max Timestep FPS"),z.add(n,"iterationsPerFrame",1,8,1).name("Iterations Per Frame"),z.add(a,"showStats").name("Show FPS").onChange(d=>{o.dom.style.display=d?"block":"none"}),s.close(),{gui:s,stats:o,uiState:a}}function Re(n,e,t,r){const i=1/Math.tan(n/2),s=1/(t-r),o=new Float32Array(16);return o[0]=i/e,o[5]=i,o[10]=(r+t)*s,o[11]=-1,o[14]=2*r*t*s,o}function Te(n,e,t,r,i,s){const o=1/(e-n),a=1/(r-t),c=1/(s-i),u=new Float32Array(16);return u[0]=2*o,u[5]=2*a,u[10]=c,u[12]=-(e+n)*o,u[13]=-(r+t)*a,u[14]=-i*c,u[15]=1,u}function Oe(n){const e=new Float32Array(16),t=n[0],r=n[1],i=n[2],s=n[3],o=n[4],a=n[5],c=n[6],u=n[7],B=n[8],w=n[9],m=n[10],O=n[11],E=n[12],R=n[13],l=n[14],p=n[15],g=t*a-r*o,y=t*c-i*o,S=t*u-s*o,P=r*c-i*a,T=r*u-s*a,C=i*u-s*c,v=B*R-w*E,x=B*l-m*E,k=B*p-O*E,z=w*l-m*R,d=w*p-O*R,f=m*p-O*l;let h=g*f-y*d+S*z+P*k-T*x+C*v;return h&&(h=1/h,e[0]=(a*f-c*d+u*z)*h,e[1]=(i*d-r*f-s*z)*h,e[2]=(R*C-l*T+p*P)*h,e[3]=(m*T-w*C-O*P)*h,e[4]=(c*k-o*f-u*x)*h,e[5]=(t*f-i*k+s*x)*h,e[6]=(l*S-E*C-p*y)*h,e[7]=(B*C-m*S+O*y)*h,e[8]=(o*d-a*k+u*v)*h,e[9]=(r*k-t*d-s*v)*h,e[10]=(E*T-R*S+p*g)*h,e[11]=(w*S-B*T-O*g)*h,e[12]=(a*x-o*z-c*v)*h,e[13]=(t*z-r*x+i*v)*h,e[14]=(R*y-E*P-l*g)*h,e[15]=(B*P-w*y+m*g)*h),e}function ce(n,e,t){const r=ne(de(n,e)),i=ne(te(t,r)),s=te(r,i),o=new Float32Array(16);return o[0]=i.x,o[1]=s.x,o[2]=r.x,o[3]=0,o[4]=i.y,o[5]=s.y,o[6]=r.y,o[7]=0,o[8]=i.z,o[9]=s.z,o[10]=r.z,o[11]=0,o[12]=-j(i,n),o[13]=-j(s,n),o[14]=-j(r,n),o[15]=1,o}function Ee(n,e){const t=new Float32Array(16);for(let r=0;r<4;r++)for(let i=0;i<4;i++){let s=0;for(let o=0;o<4;o++)s+=n[o*4+r]*e[i*4+o];t[i*4+r]=s}return t}function de(n,e){return{x:n.x-e.x,y:n.y-e.y,z:n.z-e.z}}function ne(n){const e=Math.sqrt(n.x*n.x+n.y*n.y+n.z*n.z);return{x:n.x/e,y:n.y/e,z:n.z/e}}function te(n,e){return{x:n.y*e.z-n.z*e.y,y:n.z*e.x-n.x*e.z,z:n.x*e.y-n.y*e.x}}function j(n,e){return n.x*e.x+n.y*e.y+n.z*e.z}function H(n,e){return{x:n.x*e,y:n.y*e,z:n.z*e}}function M(n,e){return{x:n.x+e.x,y:n.y+e.y,z:n.z+e.z}}function ue(n,e,t,r){let i=(t.x-n.x)/e.x,s=(r.x-n.x)/e.x;i>s&&([i,s]=[s,i]);let o=(t.y-n.y)/e.y,a=(r.y-n.y)/e.y;if(o>a&&([o,a]=[a,o]),i>a||o>s)return!1;o>i&&(i=o),a<s&&(s=a);let c=(t.z-n.z)/e.z,u=(r.z-n.z)/e.z;return c>u&&([c,u]=[u,c]),!(i>u||c>s)}function pe(n,e,t,r){let i=(t.x-n.x)/e.x,s=(r.x-n.x)/e.x;i>s&&([i,s]=[s,i]);let o=(t.y-n.y)/e.y,a=(r.y-n.y)/e.y;if(o>a&&([o,a]=[a,o]),i>a||o>s)return{hit:!1,tmin:0,tmax:0};o>i&&(i=o),a<s&&(s=a);let c=(t.z-n.z)/e.z,u=(r.z-n.z)/e.z;return c>u&&([c,u]=[u,c]),i>u||c>s?{hit:!1,tmin:0,tmax:0}:(c>i&&(i=c),u<s&&(s=u),{hit:!0,tmin:i,tmax:s})}class Ue{radius=5;theta=0;phi=Math.PI/2;target={x:0,y:0,z:0};minRadius=2;maxRadius=100;constructor(){}rotate(e,t){this.theta+=e,this.phi+=t;const r=.001;this.phi=Math.max(r,Math.min(Math.PI-r,this.phi))}zoom(e){this.radius+=e,this.radius=Math.max(this.minRadius,Math.min(this.maxRadius,this.radius))}get viewMatrix(){const e=this.radius*Math.sin(this.phi)*Math.sin(this.theta),t=this.radius*Math.cos(this.phi),r=this.radius*Math.sin(this.phi)*Math.cos(this.theta),i=M(this.target,{x:e,y:t,z:r});return ce(i,this.target,{x:0,y:1,z:0})}get basis(){const e=this.viewMatrix,t={x:e[0],y:e[4],z:e[8]},r={x:e[1],y:e[5],z:e[9]},i={x:e[2],y:e[6],z:e[10]},s={x:-i.x,y:-i.y,z:-i.z};return{right:t,up:r,forward:s}}get position(){const e=this.radius*Math.sin(this.phi)*Math.sin(this.theta),t=this.radius*Math.cos(this.phi),r=this.radius*Math.sin(this.phi)*Math.cos(this.theta);return M(this.target,{x:e,y:t,z:r})}}function Ie(n,e,t,r){let i=!1,s=!1,o=0,a=0,c=0,u=0;const B=(l,p)=>{const g=n.getBoundingClientRect(),y=l-g.left,S=p-g.top,P=y/g.width*2-1,T=-(S/g.height*2-1),C=Math.PI/3,v=Math.tan(C/2),x=n.width/n.height,{right:k,up:z,forward:d}=t.basis,f=M(d,M(H(k,P*x*v),H(z,T*v))),h=Math.sqrt(f.x*f.x+f.y*f.y+f.z*f.z);return{origin:t.position,dir:{x:f.x/h,y:f.y/h,z:f.z/h}}},w=l=>{const p=t.basis.forward,g=l.dir.x*p.x+l.dir.y*p.y+l.dir.z*p.z;if(Math.abs(g)<1e-6)return null;const y=l.origin,P=-(y.x*p.x+y.y*p.y+y.z*p.z)/g;return P<0?null:M(y,H(l.dir,P))},m=l=>{const p=r.boundsSize,g=p.x*.5,y=p.z*.5,S=-5,P={x:-g,y:S,z:-y},T={x:g,y:S+p.y,z:y},C=pe(l.origin,l.dir,P,T);if(!C.hit)return null;const v={x:0,y:S+p.y*.5,z:0},x={x:l.origin.x-v.x,y:l.origin.y-v.y,z:l.origin.z-v.z},k=-(x.x*l.dir.x+x.y*l.dir.y+x.z*l.dir.z),z=Math.max(C.tmin,Math.min(C.tmax,k));return z<0?null:M(l.origin,H(l.dir,z))},O=l=>{const p=e();if(!p)return;const g=B(l.clientX,l.clientY);p.rayOrigin=g.origin,p.rayDir=g.dir;const y=m(g)??w(g);y&&(p.worldX=y.x,p.worldY=y.y,p.worldZ=y.z)};n.addEventListener("pointerdown",l=>{const p=e();if(!p)return;l.cancelable&&l.preventDefault();const g=r.boundsSize,y=g.x*.5,S=g.z*.5,P=-5,T={x:-y,y:P,z:-S},C={x:y,y:P+g.y,z:S},v=B(l.clientX,l.clientY),x=ue(v.origin,v.dir,T,C);p.rayOrigin=v.origin,p.rayDir=v.dir;const k=l.button===2||l.button===0&&l.shiftKey;x&&(k||p.isHoveringFluid)?(s=!0,O(l),k?(p.push=!0,p.pull=!1):(p.pull=!0,p.push=!1)):(i=!0,o=l.clientX,a=l.clientY)}),n.addEventListener("pointermove",l=>{const p=e();if(!p)return;l.cancelable&&l.preventDefault();const g=B(l.clientX,l.clientY);if(p.rayOrigin=g.origin,p.rayDir=g.dir,s)O(l);else if(i){const y=l.clientX-o,S=l.clientY-a;o=l.clientX,a=l.clientY;const P=.005;c=-y*P,u=-S*P,t.rotate(c,u)}}),n.addEventListener("pointerup",()=>{const l=e();l&&(s&&(s=!1,l.pull=!1,l.push=!1),i=!1)}),n.addEventListener("pointerleave",()=>{const l=e();l&&(l.pull=!1,l.push=!1,i=!1,s=!1)}),n.addEventListener("wheel",l=>{t.zoom(l.deltaY*.01),l.preventDefault()},{passive:!1}),n.addEventListener("contextmenu",l=>l.preventDefault());const E=.92,R=1e-4;return function(){!i&&(Math.abs(c)>R||Math.abs(u)>R)&&(t.rotate(c,u),c*=E,u*=E)}}class $ extends Error{constructor(e){super(e),this.name="WebGPUInitError"}}async function Le(n){if(!navigator.gpu)throw new $("WebGPU is not supported in this browser.");const e=await navigator.gpu.requestAdapter();if(!e)throw new $("Unable to acquire a WebGPU adapter.");const t=e.features.has("subgroups");t&&console.log("WebGPU subgroups supported - enabling optimized prefix sum");const r=[];t&&r.push("subgroups");const i=await e.requestDevice({requiredFeatures:r}),s=n.getContext("webgpu");if(!s)throw new $("Unable to create a WebGPU context.");const o=navigator.gpu.getPreferredCanvasFormat();return{device:i,context:s,format:o,supportsSubgroups:t}}function Ae(n,e,t){n.configure({device:e,format:t,alphaMode:"opaque"})}function _e(){return{timeScale:2,maxTimestepFPS:60,iterationsPerFrame:2,gravity:-10,collisionDamping:.95,smoothingRadius:.2,targetDensity:630,pressureMultiplier:288,nearPressureMultiplier:2.16,viscosityStrength:.01,boundsSize:{x:24,y:10,z:15},showObstacle:!0,obstacleShape:"box",obstacleRadius:0,obstacleSize:{x:0,y:0,z:0},obstacleCentre:{x:0,y:-5,z:0},obstacleRotation:{x:0,y:0,z:0},obstacleColor:{r:1,g:0,b:0},obstacleAlpha:.8,interactionRadius:2,interactionStrength:50,particleRadius:2.5,spawnDensity:600,initialVelocity:{x:0,y:0,z:0},jitterStr:.035,spawnRegions:[{position:{x:-8.3,y:-1.3,z:3.65},size:{x:7,y:7,z:7}},{position:{x:-8.3,y:-1.3,z:-3.65},size:{x:7,y:7,z:7}}]}}function De(){return{dirToSun:{x:-.83,y:.42,z:-.36},floorAmbient:.58,sceneExposure:1.1,sunBrightness:1,skyColorHorizon:{r:1,g:1,b:1},skyColorZenith:{r:.08,g:.37,b:.73},skyColorGround:{r:.55,g:.5,b:.55},sunPower:500,floorSize:{x:100,y:1,z:100},floorCenter:{x:0,y:-5.5,z:0},tileScale:1,tileDarkFactor:-.35,tileCol1:{r:.20392157,g:.5176471,b:.7764706},tileCol2:{r:.6081319,g:.36850303,b:.8584906},tileCol3:{r:.3019758,g:.735849,b:.45801795},tileCol4:{r:.8018868,g:.6434483,b:.36690104},tileColVariation:{x:.33,y:0,z:.47},globalBrightness:1,globalSaturation:1}}function Fe(n,e,t,r){let i=e;n[i++]=t.dirToSun.x,n[i++]=t.dirToSun.y,n[i++]=t.dirToSun.z,n[i++]=t.floorAmbient,n[i++]=t.skyColorHorizon.r,n[i++]=t.skyColorHorizon.g,n[i++]=t.skyColorHorizon.b,n[i++]=t.sunPower,n[i++]=t.skyColorZenith.r,n[i++]=t.skyColorZenith.g,n[i++]=t.skyColorZenith.b,n[i++]=t.sceneExposure,n[i++]=t.skyColorGround.r,n[i++]=t.skyColorGround.g,n[i++]=t.skyColorGround.b,n[i++]=0,n[i++]=t.floorSize.x,n[i++]=t.floorSize.y,n[i++]=t.floorSize.z,n[i++]=t.tileScale,n[i++]=t.floorCenter.x,n[i++]=t.floorCenter.y,n[i++]=t.floorCenter.z,n[i++]=t.tileDarkFactor,n[i++]=t.tileCol1.r,n[i++]=t.tileCol1.g,n[i++]=t.tileCol1.b,n[i++]=t.sunBrightness,n[i++]=t.tileCol2.r,n[i++]=t.tileCol2.g,n[i++]=t.tileCol2.b,n[i++]=t.globalBrightness,n[i++]=t.tileCol3.r,n[i++]=t.tileCol3.g,n[i++]=t.tileCol3.b,n[i++]=t.globalSaturation,n[i++]=t.tileCol4.r,n[i++]=t.tileCol4.g,n[i++]=t.tileCol4.b,n[i++]=0,n[i++]=t.tileColVariation.x,n[i++]=t.tileColVariation.y,n[i++]=t.tileColVariation.z,n[i++]=0;const s=r.showObstacle!==!1,a=(r.obstacleShape??"box")==="sphere";n[i++]=r.obstacleCentre.x,n[i++]=a?r.obstacleCentre.y:r.obstacleCentre.y+r.obstacleSize.y*.5,n[i++]=r.obstacleCentre.z,n[i++]=0;const c=r.obstacleRadius??0,u=s?a?c:r.obstacleSize.x*.5:0,B=s?a?c:r.obstacleSize.y*.5:0,w=s?a?c:r.obstacleSize.z*.5:0;n[i++]=u,n[i++]=B,n[i++]=w,n[i++]=0,n[i++]=r.obstacleRotation.x,n[i++]=r.obstacleRotation.y,n[i++]=r.obstacleRotation.z,n[i++]=s?r.obstacleAlpha??.8:0;const m=r.obstacleColor??{r:1,g:0,b:0};n[i++]=m.r,n[i++]=m.g,n[i++]=m.b,n[i++]=a?1:0}function fe(n){let e=n>>>0;return()=>(e=1664525*e+1013904223>>>0,e/4294967296)}function he(n,e){const t=n.x*n.y*n.z,r=Math.ceil(t*e),i=Math.pow(r/t,1/3);return{x:Math.max(1,Math.ceil(n.x*i)),y:Math.max(1,Math.ceil(n.y*i)),z:Math.max(1,Math.ceil(n.z*i))}}function ge(n,e){const t=n.size,r=n.position,i=he(t,e),s=new Array(i.x*i.y*i.z);let o=0;for(let a=0;a<i.z;a+=1)for(let c=0;c<i.y;c+=1)for(let u=0;u<i.x;u+=1){const B=i.x===1?.5:u/(i.x-1),w=i.y===1?.5:c/(i.y-1),m=i.z===1?.5:a/(i.z-1),O=(B-.5)*t.x+r.x,E=(w-.5)*t.y+r.y,R=(m-.5)*t.z+r.z;s[o]={x:O,y:E,z:R},o+=1}return s}function Me(n){const e=fe(42),t=[];for(const o of n.spawnRegions){const a=ge(o,n.spawnDensity);for(const c of a){const u=(e()-.5)*n.jitterStr,B=(e()-.5)*n.jitterStr,w=(e()-.5)*n.jitterStr;t.push({x:c.x+u,y:c.y+B,z:c.z+w})}}const r=t.length,i=new Float32Array(r*4),s=new Float32Array(r*4);for(let o=0;o<r;o+=1){const a=o*4;i[a]=t[o].x,i[a+1]=t[o].y,i[a+2]=t[o].z,i[a+3]=1,s[a]=n.initialVelocity.x,s[a+1]=n.initialVelocity.y,s[a+2]=n.initialVelocity.z,s[a+3]=0}return{positions:i,velocities:s,count:r}}class oe{static DEFAULT_MAX_FOAM_PARTICLES=128e4;positions;predicted;velocities;densities;keys;indices;sortOffsets;particleCellOffsets=null;spatialOffsets=null;sortedKeys=null;groupSumsL1;groupSumsL2;scanScratch;positionsSorted;predictedSorted;velocitiesSorted;visibleIndices;indirectDraw;foamPositions=null;foamVelocities=null;foamCounter=null;maxFoamParticles;velocityReadback;densityReadback;particleCount;device;constructor(e,t,r={}){this.device=e,this.particleCount=t.count;const{gridTotalCells:i,includeFoam:s,maxFoamParticles:o=oe.DEFAULT_MAX_FOAM_PARTICLES}=r;if(this.positions=this.createBufferFromArray(t.positions,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.predicted=this.createBufferFromArray(new Float32Array(t.positions),GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.velocities=this.createBufferFromArray(t.velocities,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC),this.densities=this.createEmptyBuffer(t.count*2*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC),this.keys=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.indices=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),i!==void 0){this.particleCellOffsets=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.sortOffsets=this.createEmptyBuffer((i+1)*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST);const a=Math.ceil((i+1)/512),c=Math.ceil(a/512);this.groupSumsL1=this.createEmptyBuffer(a*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.groupSumsL2=this.createEmptyBuffer(c*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST)}else{this.sortOffsets=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.spatialOffsets=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.sortedKeys=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST);const a=Math.ceil(t.count/512),c=Math.ceil(a/512);this.groupSumsL1=this.createEmptyBuffer(a*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.groupSumsL2=this.createEmptyBuffer(c*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST)}this.scanScratch=this.createEmptyBuffer(4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.positionsSorted=this.createEmptyBuffer(t.count*16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.predictedSorted=this.createEmptyBuffer(t.count*16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.velocitiesSorted=this.createEmptyBuffer(t.count*16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.visibleIndices=this.createEmptyBuffer(t.count*4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.indirectDraw=this.createEmptyBuffer(16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.INDIRECT),s?(this.foamPositions=this.createEmptyBuffer(o*16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.foamVelocities=this.createEmptyBuffer(o*16,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.foamCounter=this.createEmptyBuffer(4,GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST),this.maxFoamParticles=o):this.maxFoamParticles=0,this.velocityReadback=e.createBuffer({size:t.count*16,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST}),this.densityReadback=e.createBuffer({size:t.count*8,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST})}createBufferFromArray(e,t){const r=this.device.createBuffer({size:e.byteLength,usage:t,mappedAtCreation:!0});return(e instanceof Float32Array?new Float32Array(r.getMappedRange()):new Uint32Array(r.getMappedRange())).set(e),r.unmap(),r}createEmptyBuffer(e,t){return this.device.createBuffer({size:e,usage:t})}destroy(){this.positions.destroy(),this.predicted.destroy(),this.velocities.destroy(),this.densities.destroy(),this.keys.destroy(),this.indices.destroy(),this.sortOffsets.destroy(),this.groupSumsL1.destroy(),this.groupSumsL2.destroy(),this.scanScratch.destroy(),this.positionsSorted.destroy(),this.predictedSorted.destroy(),this.velocitiesSorted.destroy(),this.visibleIndices.destroy(),this.indirectDraw.destroy(),this.velocityReadback.destroy(),this.densityReadback.destroy(),this.particleCellOffsets?.destroy(),this.spatialOffsets?.destroy(),this.sortedKeys?.destroy(),this.foamPositions?.destroy(),this.foamVelocities?.destroy(),this.foamCounter?.destroy()}}const me=`/**
  * ============================================================================
  * LINEAR GRID HASH KERNEL
  * ============================================================================
@@ -495,7 +495,7 @@ fn countOffsets(@builtin(global_invocation_id) id: vec3<u32>) {
   // in the same cell get incrementing ranks (1, 2, 3, ...).
   particleCellOffsets[index] = atomicAdd(&sortOffsetsCount[key], 1u);
 }
-`,re=`/**
+`,ye=`/**
  * ============================================================================
  * PARALLEL PREFIX SUM (SCAN) SHADER - BLELLOCH ALGORITHM
  * ============================================================================
@@ -796,6 +796,216 @@ fn blockCombine(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(wo
 }
 `,be=`/**
  * ============================================================================
+ * SUBGROUP-OPTIMIZED PARALLEL PREFIX SUM (SCAN) SHADER
+ * ============================================================================
+ *
+ * Pipeline Stage: Part of Stage 3 (Counting Sort)
+ * Entry Points: blockScan, blockCombine
+ * Workgroup Size: 256 threads (processes 512 elements per workgroup)
+ *
+ * Purpose:
+ * --------
+ * Same as prefix_sum.wgsl but uses subgroup operations for massive speedup.
+ * Subgroup operations execute in a single instruction across all lanes in
+ * a subgroup (typically 32 lanes on NVIDIA, 64 on AMD).
+ *
+ * Key Optimization:
+ * -----------------
+ * The Blelloch algorithm requires O(log n) iterations for the up-sweep and
+ * down-sweep phases. With subgroups, we can do the entire prefix sum within
+ * a subgroup in ONE instruction using subgroupExclusiveAdd().
+ *
+ * Algorithm:
+ * ----------
+ * 1. Each thread loads 2 values (512 total per workgroup)
+ * 2. For each value, use subgroupExclusiveAdd() for instant within-subgroup scan
+ * 3. Last lane of each subgroup writes subgroup total to shared memory
+ * 4. Sequential scan of subgroup totals (only ~8-16 values)
+ * 5. Each thread adds its subgroup's base offset
+ * 6. Write results back to global memory
+ *
+ * Performance:
+ * ------------
+ * - Reduces log(512) = 9 iterations to effectively 3-4 steps
+ * - Eliminates most workgroupBarrier() calls
+ * - Single instruction for 32/64 element prefix sums
+ *
+ * ============================================================================
+ */
+
+// Enable subgroup operations
+enable subgroups;
+
+/**
+ * Scan Parameters Uniform Buffer
+ */
+struct Params {
+  count: u32,
+  pad0: vec3<u32>,
+};
+
+// ============================================================================
+// BUFFER BINDINGS
+// ============================================================================
+
+@group(0) @binding(0) var<storage, read_write> data: array<u32>;
+@group(0) @binding(1) var<storage, read_write> groupSums: array<u32>;
+@group(0) @binding(2) var<uniform> params: Params;
+
+/**
+ * Workgroup Shared Memory
+ *
+ * Layout:
+ * - temp[0..511]: Working space for 512 elements
+ * - subgroupTotals[0..15]: Totals from each subgroup (256 threads / subgroup_size)
+ */
+var<workgroup> temp: array<u32, 512>;
+var<workgroup> subgroupTotals: array<u32, 16>;  // Max 16 subgroups for 256 threads
+
+/**
+ * Block Scan Kernel (Subgroup-Optimized)
+ *
+ * Uses subgroupExclusiveAdd for instant within-subgroup prefix sums,
+ * then combines subgroup results using shared memory.
+ */
+@compute @workgroup_size(256)
+fn blockScan(
+    @builtin(global_invocation_id) global_id: vec3<u32>,
+    @builtin(local_invocation_id) local_id: vec3<u32>,
+    @builtin(workgroup_id) group_id: vec3<u32>,
+    @builtin(subgroup_size) sg_size: u32,
+    @builtin(subgroup_invocation_id) sg_lane: u32
+) {
+    let tid = local_id.x;
+    let gid = global_id.x;
+    let groupIndex = group_id.x;
+    let n = params.count;
+
+    // Calculate subgroup ID within workgroup
+    let sg_id = tid / sg_size;
+    let num_subgroups = 256u / sg_size;
+
+    // ========================================================================
+    // PHASE 1: LOAD DATA
+    // ========================================================================
+    // Each thread loads 2 elements
+    let idx1 = 2u * gid;
+    let idx2 = 2u * gid + 1u;
+
+    var val1 = 0u;
+    var val2 = 0u;
+    if (idx1 < n) { val1 = data[idx1]; }
+    if (idx2 < n) { val2 = data[idx2]; }
+
+    // ========================================================================
+    // PHASE 2: SUBGROUP PREFIX SUM (Single instruction!)
+    // ========================================================================
+    // Compute prefix sum within each subgroup for both values
+    // We process as pairs: first do val1, then val1+val2 for the second element
+
+    // For the first element of each thread's pair
+    let prefix1 = subgroupExclusiveAdd(val1);
+
+    // Get the total of val1 within this subgroup (needed for val2's offset)
+    let total1_in_subgroup = subgroupAdd(val1);
+
+    // For the second element, we need: prefix of all val1's + prefix of val2's in earlier threads
+    // But since we're processing pairs, we handle this differently
+
+    // Store to shared memory: each thread writes its pair
+    temp[2u * tid] = val1;
+    temp[2u * tid + 1u] = val2;
+
+    workgroupBarrier();
+
+    // ========================================================================
+    // PHASE 3: SEQUENTIAL SCAN WITHIN SHARED MEMORY (Hybrid approach)
+    // ========================================================================
+    // Now we have 512 elements. We'll use subgroup operations on chunks.
+    //
+    // Approach: Each thread processes 2 elements using subgroup operations
+    // Thread k handles elements at position (k*2) and (k*2+1)
+    // Combined value for subgroup scan = val1 + val2
+
+    let combined = val1 + val2;
+
+    // Subgroup exclusive scan on combined values
+    // This gives us the sum of all pairs BEFORE this thread within the subgroup
+    let sg_prefix = subgroupExclusiveAdd(combined);
+
+    // Get subgroup total (sum of all combined values in this subgroup)
+    let sg_total = subgroupAdd(combined);
+
+    // Last lane in each subgroup stores the subgroup total
+    if (sg_lane == sg_size - 1u) {
+        subgroupTotals[sg_id] = sg_total;
+    }
+
+    workgroupBarrier();
+
+    // ========================================================================
+    // PHASE 4: SCAN SUBGROUP TOTALS
+    // ========================================================================
+    // Only thread 0 scans the subgroup totals (sequential but tiny: 4-8 values)
+    if (tid == 0u) {
+        var running = 0u;
+        for (var i = 0u; i < num_subgroups; i++) {
+            let t = subgroupTotals[i];
+            subgroupTotals[i] = running;
+            running += t;
+        }
+        // Save block total for hierarchical scan
+        if (groupIndex < arrayLength(&groupSums)) {
+            groupSums[groupIndex] = running;
+        }
+    }
+
+    workgroupBarrier();
+
+    // ========================================================================
+    // PHASE 5: COMPUTE FINAL VALUES
+    // ========================================================================
+    // Final prefix for each pair = subgroup base offset + within-subgroup prefix
+    let base_offset = subgroupTotals[sg_id];
+    let pair_prefix = base_offset + sg_prefix;
+
+    // Write results:
+    // First element's prefix = pair_prefix
+    // Second element's prefix = pair_prefix + val1
+    if (idx1 < n) { data[idx1] = pair_prefix; }
+    if (idx2 < n) { data[idx2] = pair_prefix + val1; }
+}
+
+// Binding for the combine phase
+@group(0) @binding(3) var<storage, read> scannedGroupSums: array<u32>;
+
+/**
+ * Block Combine Kernel
+ *
+ * Adds the scanned block offset to each element in the block.
+ * Same as original - subgroup operations don't help here since
+ * we're just adding a uniform value to all elements.
+ */
+@compute @workgroup_size(256)
+fn blockCombine(
+    @builtin(global_invocation_id) global_id: vec3<u32>,
+    @builtin(workgroup_id) group_id: vec3<u32>
+) {
+    let groupIndex = group_id.x;
+
+    // Block 0 already has correct values
+    if (groupIndex == 0u) { return; }
+
+    let groupAdd = scannedGroupSums[groupIndex];
+    let idx1 = 2u * global_id.x;
+    let idx2 = 2u * global_id.x + 1u;
+    let n = params.count;
+
+    if (idx1 < n) { data[idx1] = data[idx1] + groupAdd; }
+    if (idx2 < n) { data[idx2] = data[idx2] + groupAdd; }
+}
+`,xe=`/**
+ * ============================================================================
  * CONTENTION-FREE SCATTER KERNEL
  * ============================================================================
  *
@@ -902,7 +1112,7 @@ fn scatter(@builtin(global_invocation_id) id: vec3<u32>) {
   // Write the original particle index to the sorted position
   indices[dest] = index;
 }
-`,oe=`/**
+`,re=`/**
  * ============================================================================
  * PARTICLE REORDERING KERNELS
  * ============================================================================
@@ -1092,7 +1302,7 @@ fn copyBack(@builtin(global_invocation_id) id: vec3<u32>) {
   velocities[i] = velocitiesSorted[i];
   predicted[i] = predictedSorted[i];
 }
-`;class _e{device;hashPipeline;clearOffsetsPipeline;countOffsetsPipeline;prefixScanPipeline;prefixCombinePipeline;scatterPipeline;reorderPipeline;copyBackPipeline;hashBG;clearBG;countBG;scanL0BG;scanL1BG;scanL2BG;combineL1BG;combineL0BG;scatterBG;reorderBG;copyBackBG;constructor(e){this.device=e,this.hashPipeline=this.createPipeline(ye,"main"),this.clearOffsetsPipeline=this.createPipeline(ie,"clearOffsets"),this.countOffsetsPipeline=this.createPipeline(ie,"countOffsets"),this.prefixScanPipeline=this.createPipeline(re,"blockScan"),this.prefixCombinePipeline=this.createPipeline(re,"blockCombine"),this.scatterPipeline=this.createPipeline(be,"scatter"),this.reorderPipeline=this.createPipeline(oe,"reorder"),this.copyBackPipeline=this.createPipeline(oe,"copyBack")}createPipeline(e,t){return this.device.createComputePipeline({layout:"auto",compute:{module:this.device.createShaderModule({code:e}),entryPoint:t}})}createBindGroups(e,t){if(!e.particleCellOffsets)throw new Error("SpatialGrid requires FluidBuffers allocated with gridTotalCells (Linear Grid mode).");this.hashBG=this.device.createBindGroup({layout:this.hashPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.predicted}},{binding:1,resource:{buffer:e.keys}},{binding:2,resource:{buffer:e.indices}},{binding:3,resource:{buffer:t.hash}}]}),this.clearBG=this.device.createBindGroup({layout:this.clearOffsetsPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.sortOffsets}},{binding:1,resource:{buffer:t.sort}}]}),this.countBG=this.device.createBindGroup({layout:this.countOffsetsPipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:e.keys}},{binding:1,resource:{buffer:e.sortOffsets}},{binding:2,resource:{buffer:t.sort}},{binding:3,resource:{buffer:e.particleCellOffsets}}]}),this.scanL0BG=this.device.createBindGroup({layout:this.prefixScanPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.sortOffsets}},{binding:1,resource:{buffer:e.groupSumsL1}},{binding:2,resource:{buffer:t.scanL0}}]}),this.scanL1BG=this.device.createBindGroup({layout:this.prefixScanPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.groupSumsL1}},{binding:1,resource:{buffer:e.groupSumsL2}},{binding:2,resource:{buffer:t.scanL1}}]}),this.scanL2BG=this.device.createBindGroup({layout:this.prefixScanPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.groupSumsL2}},{binding:1,resource:{buffer:e.scanScratch}},{binding:2,resource:{buffer:t.scanL2}}]}),this.combineL1BG=this.device.createBindGroup({layout:this.prefixCombinePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.groupSumsL1}},{binding:2,resource:{buffer:t.scanL1}},{binding:3,resource:{buffer:e.groupSumsL2}}]}),this.combineL0BG=this.device.createBindGroup({layout:this.prefixCombinePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.sortOffsets}},{binding:2,resource:{buffer:t.scanL0}},{binding:3,resource:{buffer:e.groupSumsL1}}]}),this.scatterBG=this.device.createBindGroup({layout:this.scatterPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.keys}},{binding:1,resource:{buffer:e.sortOffsets}},{binding:2,resource:{buffer:e.indices}},{binding:3,resource:{buffer:t.sort}},{binding:4,resource:{buffer:e.particleCellOffsets}}]}),this.reorderBG=this.device.createBindGroup({layout:this.reorderPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.indices}},{binding:1,resource:{buffer:e.positions}},{binding:2,resource:{buffer:e.velocities}},{binding:3,resource:{buffer:e.predicted}},{binding:4,resource:{buffer:e.positionsSorted}},{binding:5,resource:{buffer:e.velocitiesSorted}},{binding:6,resource:{buffer:e.predictedSorted}},{binding:7,resource:{buffer:t.sort}}]}),this.copyBackBG=this.device.createBindGroup({layout:this.copyBackPipeline.getBindGroupLayout(0),entries:[{binding:1,resource:{buffer:e.positions}},{binding:2,resource:{buffer:e.velocities}},{binding:3,resource:{buffer:e.predicted}},{binding:4,resource:{buffer:e.positionsSorted}},{binding:5,resource:{buffer:e.velocitiesSorted}},{binding:6,resource:{buffer:e.predictedSorted}},{binding:7,resource:{buffer:t.sort}}]})}dispatch(e,t,r){const i=Math.ceil(t/256),s=Math.ceil((r+1)/512),o=Math.ceil(s/512),a=Math.ceil(o/512);e.setPipeline(this.hashPipeline),e.setBindGroup(0,this.hashBG),e.dispatchWorkgroups(i),e.setPipeline(this.clearOffsetsPipeline),e.setBindGroup(0,this.clearBG),e.dispatchWorkgroups(Math.ceil((r+1)/256)),e.setPipeline(this.countOffsetsPipeline),e.setBindGroup(1,this.countBG),e.dispatchWorkgroups(i),e.setPipeline(this.prefixScanPipeline),e.setBindGroup(0,this.scanL0BG),e.dispatchWorkgroups(s),s>1&&(e.setBindGroup(0,this.scanL1BG),e.dispatchWorkgroups(o)),o>1&&(e.setBindGroup(0,this.scanL2BG),e.dispatchWorkgroups(a)),e.setPipeline(this.prefixCombinePipeline),o>1&&(e.setBindGroup(0,this.combineL1BG),e.dispatchWorkgroups(o)),s>1&&(e.setBindGroup(0,this.combineL0BG),e.dispatchWorkgroups(s)),e.setPipeline(this.scatterPipeline),e.setBindGroup(0,this.scatterBG),e.dispatchWorkgroups(i),e.setPipeline(this.reorderPipeline),e.setBindGroup(0,this.reorderBG),e.dispatchWorkgroups(i),e.setPipeline(this.copyBackPipeline),e.setBindGroup(0,this.copyBackBG),e.dispatchWorkgroups(i)}}const xe=`/**
+`;class Ne{device;hashPipeline;clearOffsetsPipeline;countOffsetsPipeline;prefixScanPipeline;prefixCombinePipeline;scatterPipeline;reorderPipeline;copyBackPipeline;hashBG;clearBG;countBG;scanL0BG;scanL1BG;scanL2BG;combineL1BG;combineL0BG;scatterBG;reorderBG;copyBackBG;constructor(e,t=!1){this.device=e;const r=t?be:ye;t&&console.log("SpatialGrid: Using subgroup-optimized prefix sum"),this.hashPipeline=this.createPipeline(me,"main"),this.clearOffsetsPipeline=this.createPipeline(ie,"clearOffsets"),this.countOffsetsPipeline=this.createPipeline(ie,"countOffsets"),this.prefixScanPipeline=this.createPipeline(r,"blockScan"),this.prefixCombinePipeline=this.createPipeline(r,"blockCombine"),this.scatterPipeline=this.createPipeline(xe,"scatter"),this.reorderPipeline=this.createPipeline(re,"reorder"),this.copyBackPipeline=this.createPipeline(re,"copyBack")}createPipeline(e,t){return this.device.createComputePipeline({layout:"auto",compute:{module:this.device.createShaderModule({code:e}),entryPoint:t}})}createBindGroups(e,t){if(!e.particleCellOffsets)throw new Error("SpatialGrid requires FluidBuffers allocated with gridTotalCells (Linear Grid mode).");this.hashBG=this.device.createBindGroup({layout:this.hashPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.predicted}},{binding:1,resource:{buffer:e.keys}},{binding:2,resource:{buffer:e.indices}},{binding:3,resource:{buffer:t.hash}}]}),this.clearBG=this.device.createBindGroup({layout:this.clearOffsetsPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.sortOffsets}},{binding:1,resource:{buffer:t.sort}}]}),this.countBG=this.device.createBindGroup({layout:this.countOffsetsPipeline.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:e.keys}},{binding:1,resource:{buffer:e.sortOffsets}},{binding:2,resource:{buffer:t.sort}},{binding:3,resource:{buffer:e.particleCellOffsets}}]}),this.scanL0BG=this.device.createBindGroup({layout:this.prefixScanPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.sortOffsets}},{binding:1,resource:{buffer:e.groupSumsL1}},{binding:2,resource:{buffer:t.scanL0}}]}),this.scanL1BG=this.device.createBindGroup({layout:this.prefixScanPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.groupSumsL1}},{binding:1,resource:{buffer:e.groupSumsL2}},{binding:2,resource:{buffer:t.scanL1}}]}),this.scanL2BG=this.device.createBindGroup({layout:this.prefixScanPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.groupSumsL2}},{binding:1,resource:{buffer:e.scanScratch}},{binding:2,resource:{buffer:t.scanL2}}]}),this.combineL1BG=this.device.createBindGroup({layout:this.prefixCombinePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.groupSumsL1}},{binding:2,resource:{buffer:t.scanL1}},{binding:3,resource:{buffer:e.groupSumsL2}}]}),this.combineL0BG=this.device.createBindGroup({layout:this.prefixCombinePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.sortOffsets}},{binding:2,resource:{buffer:t.scanL0}},{binding:3,resource:{buffer:e.groupSumsL1}}]}),this.scatterBG=this.device.createBindGroup({layout:this.scatterPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.keys}},{binding:1,resource:{buffer:e.sortOffsets}},{binding:2,resource:{buffer:e.indices}},{binding:3,resource:{buffer:t.sort}},{binding:4,resource:{buffer:e.particleCellOffsets}}]}),this.reorderBG=this.device.createBindGroup({layout:this.reorderPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.indices}},{binding:1,resource:{buffer:e.positions}},{binding:2,resource:{buffer:e.velocities}},{binding:3,resource:{buffer:e.predicted}},{binding:4,resource:{buffer:e.positionsSorted}},{binding:5,resource:{buffer:e.velocitiesSorted}},{binding:6,resource:{buffer:e.predictedSorted}},{binding:7,resource:{buffer:t.sort}}]}),this.copyBackBG=this.device.createBindGroup({layout:this.copyBackPipeline.getBindGroupLayout(0),entries:[{binding:1,resource:{buffer:e.positions}},{binding:2,resource:{buffer:e.velocities}},{binding:3,resource:{buffer:e.predicted}},{binding:4,resource:{buffer:e.positionsSorted}},{binding:5,resource:{buffer:e.velocitiesSorted}},{binding:6,resource:{buffer:e.predictedSorted}},{binding:7,resource:{buffer:t.sort}}]})}dispatch(e,t,r){const i=Math.ceil(t/256),s=Math.ceil((r+1)/512),o=Math.ceil(s/512),a=Math.ceil(o/512);e.setPipeline(this.hashPipeline),e.setBindGroup(0,this.hashBG),e.dispatchWorkgroups(i),e.setPipeline(this.clearOffsetsPipeline),e.setBindGroup(0,this.clearBG),e.dispatchWorkgroups(Math.ceil((r+1)/256)),e.setPipeline(this.countOffsetsPipeline),e.setBindGroup(1,this.countBG),e.dispatchWorkgroups(i),e.setPipeline(this.prefixScanPipeline),e.setBindGroup(0,this.scanL0BG),e.dispatchWorkgroups(s),s>1&&(e.setBindGroup(0,this.scanL1BG),e.dispatchWorkgroups(o)),o>1&&(e.setBindGroup(0,this.scanL2BG),e.dispatchWorkgroups(a)),e.setPipeline(this.prefixCombinePipeline),o>1&&(e.setBindGroup(0,this.combineL1BG),e.dispatchWorkgroups(o)),s>1&&(e.setBindGroup(0,this.combineL0BG),e.dispatchWorkgroups(s)),e.setPipeline(this.scatterPipeline),e.setBindGroup(0,this.scatterBG),e.dispatchWorkgroups(i),e.setPipeline(this.reorderPipeline),e.setBindGroup(0,this.reorderBG),e.dispatchWorkgroups(i),e.setPipeline(this.copyBackPipeline),e.setBindGroup(0,this.copyBackBG),e.dispatchWorkgroups(i)}}const ve=`/**
  * ============================================================================
  * EXTERNAL FORCES & PREDICTION SHADER
  * ============================================================================
@@ -1305,7 +1515,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let predictionFactor = 1.0 / 120.0;
   predicted[index] = vec4<f32>(pos + vel * predictionFactor, 1.0);
 }
-`,ve=`/**
+`,Pe=`/**
  * ============================================================================
  * DENSITY KERNEL (LINEAR GRID + STRIP OPTIMIZATION)
  * ============================================================================
@@ -1491,7 +1701,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   densities[i] = vec2<f32>(density, nearDensity);
 }
-`,Pe=`/**
+`,Se=`/**
  * ============================================================================
  * PRESSURE KERNEL (LINEAR GRID + STRIP OPTIMIZATION)
  * ============================================================================
@@ -1690,7 +1900,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let accel = force / density;
   velocities[i] = vec4<f32>(velocities[i].xyz + accel * params.dt, 0.0);
 }
-`,Se=`/**
+`,Be=`/**
  * ============================================================================
  * VISCOSITY KERNEL (LINEAR GRID + STRIP OPTIMIZATION)
  * ============================================================================
@@ -1855,7 +2065,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   velocities[i] = vec4<f32>(velocities[i].xyz + force * params.viscosityStrength * params.dt, 0.0);
 }
-`,Be=`/**
+`,we=`/**
  * ============================================================================
  * INTEGRATION & COLLISION SHADER
  * ============================================================================
@@ -2179,7 +2389,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   positions[index] = vec4<f32>(pos, 1.0);
   velocities[index] = vec4<f32>(vel, 0.0);
 }
-`;class Ye{device;externalForcesPipeline;densityPipeline;pressurePipeline;viscosityPipeline;integratePipeline;externalBG;densityBG;pressureBG;viscosityBG;integrateBG;constructor(e){this.device=e,this.externalForcesPipeline=this.createPipeline(xe,"main"),this.densityPipeline=this.createPipeline(ve,"main"),this.pressurePipeline=this.createPipeline(Pe,"main"),this.viscosityPipeline=this.createPipeline(Se,"main"),this.integratePipeline=this.createPipeline(Be,"main")}createPipeline(e,t){return this.device.createComputePipeline({layout:"auto",compute:{module:this.device.createShaderModule({code:e}),entryPoint:t}})}createBindGroups(e,t){this.externalBG=this.device.createBindGroup({layout:this.externalForcesPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.positions}},{binding:1,resource:{buffer:e.velocities}},{binding:2,resource:{buffer:e.predicted}},{binding:3,resource:{buffer:t.external}}]}),this.densityBG=this.device.createBindGroup({layout:this.densityPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.predicted}},{binding:1,resource:{buffer:e.sortOffsets}},{binding:2,resource:{buffer:e.densities}},{binding:3,resource:{buffer:t.density}}]}),this.pressureBG=this.device.createBindGroup({layout:this.pressurePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.predicted}},{binding:1,resource:{buffer:e.velocities}},{binding:2,resource:{buffer:e.densities}},{binding:3,resource:{buffer:e.sortOffsets}},{binding:4,resource:{buffer:t.pressure}}]}),this.viscosityBG=this.device.createBindGroup({layout:this.viscosityPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.predicted}},{binding:1,resource:{buffer:e.velocities}},{binding:2,resource:{buffer:e.sortOffsets}},{binding:4,resource:{buffer:t.viscosity}}]}),this.integrateBG=this.device.createBindGroup({layout:this.integratePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.positions}},{binding:1,resource:{buffer:e.velocities}},{binding:2,resource:{buffer:t.integrate}}]})}step(e,t,r,i,s=!0,o=!0){const a=Math.ceil(r/256);e.setPipeline(this.externalForcesPipeline),e.setBindGroup(0,this.externalBG),e.dispatchWorkgroups(a),o&&t.dispatch(e,r,i),e.setPipeline(this.densityPipeline),e.setBindGroup(0,this.densityBG),e.dispatchWorkgroups(a),e.setPipeline(this.pressurePipeline),e.setBindGroup(0,this.pressureBG),e.dispatchWorkgroups(a),s&&(e.setPipeline(this.viscosityPipeline),e.setBindGroup(0,this.viscosityBG),e.dispatchWorkgroups(a)),e.setPipeline(this.integratePipeline),e.setBindGroup(0,this.integrateBG),e.dispatchWorkgroups(a)}}const Ne=`/**
+`;class Ye{device;externalForcesPipeline;densityPipeline;pressurePipeline;viscosityPipeline;integratePipeline;externalBG;densityBG;pressureBG;viscosityBG;integrateBG;constructor(e){this.device=e,this.externalForcesPipeline=this.createPipeline(ve,"main"),this.densityPipeline=this.createPipeline(Pe,"main"),this.pressurePipeline=this.createPipeline(Se,"main"),this.viscosityPipeline=this.createPipeline(Be,"main"),this.integratePipeline=this.createPipeline(we,"main")}createPipeline(e,t){return this.device.createComputePipeline({layout:"auto",compute:{module:this.device.createShaderModule({code:e}),entryPoint:t}})}createBindGroups(e,t){this.externalBG=this.device.createBindGroup({layout:this.externalForcesPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.positions}},{binding:1,resource:{buffer:e.velocities}},{binding:2,resource:{buffer:e.predicted}},{binding:3,resource:{buffer:t.external}}]}),this.densityBG=this.device.createBindGroup({layout:this.densityPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.predicted}},{binding:1,resource:{buffer:e.sortOffsets}},{binding:2,resource:{buffer:e.densities}},{binding:3,resource:{buffer:t.density}}]}),this.pressureBG=this.device.createBindGroup({layout:this.pressurePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.predicted}},{binding:1,resource:{buffer:e.velocities}},{binding:2,resource:{buffer:e.densities}},{binding:3,resource:{buffer:e.sortOffsets}},{binding:4,resource:{buffer:t.pressure}}]}),this.viscosityBG=this.device.createBindGroup({layout:this.viscosityPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.predicted}},{binding:1,resource:{buffer:e.velocities}},{binding:2,resource:{buffer:e.sortOffsets}},{binding:4,resource:{buffer:t.viscosity}}]}),this.integrateBG=this.device.createBindGroup({layout:this.integratePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:e.positions}},{binding:1,resource:{buffer:e.velocities}},{binding:2,resource:{buffer:t.integrate}}]})}step(e,t,r,i,s=!0,o=!0){const a=Math.ceil(r/256);e.setPipeline(this.externalForcesPipeline),e.setBindGroup(0,this.externalBG),e.dispatchWorkgroups(a),o&&t.dispatch(e,r,i),e.setPipeline(this.densityPipeline),e.setBindGroup(0,this.densityBG),e.dispatchWorkgroups(a),e.setPipeline(this.pressurePipeline),e.setBindGroup(0,this.pressureBG),e.dispatchWorkgroups(a),s&&(e.setPipeline(this.viscosityPipeline),e.setBindGroup(0,this.viscosityBG),e.dispatchWorkgroups(a)),e.setPipeline(this.integratePipeline),e.setBindGroup(0,this.integrateBG),e.dispatchWorkgroups(a)}}const We=`/**
  * Simple wireframe shader for rendering bounding box edges.
  */
 
@@ -2213,7 +2423,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
   return input.color;
 }
-`,We=`struct ShadowUniforms {
+`,He=`struct ShadowUniforms {
   lightViewProjection: mat4x4<f32>,
   shadowSoftness: f32,
   particleShadowRadius: f32,
@@ -2298,4 +2508,4 @@ fn clear() {
   result.hitDist = 1e10;
   result.particleIndex = -1;
   result.hit = 0u;
-}`;class He{device;pipeline;clearPipeline;bindGroupLayout;uniformsBuffer;resultBuffer;readbackBuffer;bindGroup;constructor(e){this.device=e;const t=e.createShaderModule({code:Ce});this.bindGroupLayout=e.createBindGroupLayout({entries:[{binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},{binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},{binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}}]});const r=e.createPipelineLayout({bindGroupLayouts:[this.bindGroupLayout]});this.pipeline=e.createComputePipeline({layout:r,compute:{module:t,entryPoint:"main"}}),this.clearPipeline=e.createComputePipeline({layout:r,compute:{module:t,entryPoint:"clear"}}),this.uniformsBuffer=e.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),this.resultBuffer=e.createBuffer({size:32,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC|GPUBufferUsage.COPY_DST}),this.readbackBuffer=e.createBuffer({size:32,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST})}createBindGroup(e){this.bindGroup=this.device.createBindGroup({layout:this.bindGroupLayout,entries:[{binding:0,resource:{buffer:e}},{binding:1,resource:{buffer:this.uniformsBuffer}},{binding:2,resource:{buffer:this.resultBuffer}}]})}dispatch(e,t,r,i,s){const o=new Float32Array(12);o[0]=t.x,o[1]=t.y,o[2]=t.z,o[4]=r.x,o[5]=r.y,o[6]=r.z,o[8]=i,new Uint32Array(o.buffer)[9]=s,this.device.queue.writeBuffer(this.uniformsBuffer,0,o);const a=e.beginComputePass();a.setPipeline(this.clearPipeline),a.setBindGroup(0,this.bindGroup),a.dispatchWorkgroups(1),a.end();const c=e.beginComputePass();c.setPipeline(this.pipeline),c.setBindGroup(0,this.bindGroup),c.dispatchWorkgroups(Math.ceil(s/256)),c.end(),e.copyBufferToBuffer(this.resultBuffer,0,this.readbackBuffer,0,32)}async getResult(){await this.readbackBuffer.mapAsync(GPUMapMode.READ);const e=new Float32Array(this.readbackBuffer.getMappedRange()),t=new Uint32Array(e.buffer)[5]===1;let r=null;return t&&(r={hitPos:{x:e[0],y:e[1],z:e[2]},hitDist:e[3],particleIndex:new Int32Array(e.buffer)[4],hit:!0}),this.readbackBuffer.unmap(),r}}export{Ye as F,Ee as O,He as P,_e as S,$ as W,Ae as a,Ie as b,De as c,Ue as d,Te as e,Fe as f,de as g,Q as h,Le as i,Re as j,We as k,Me as l,Ge as m,se as n,ne as o,Xe as p,Oe as q,W as r,ze as s,Ne as w};
+}`;class Ze{device;pipeline;clearPipeline;bindGroupLayout;uniformsBuffer;resultBuffer;readbackBuffer;bindGroup;constructor(e){this.device=e;const t=e.createShaderModule({code:Ce});this.bindGroupLayout=e.createBindGroupLayout({entries:[{binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},{binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},{binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}}]});const r=e.createPipelineLayout({bindGroupLayouts:[this.bindGroupLayout]});this.pipeline=e.createComputePipeline({layout:r,compute:{module:t,entryPoint:"main"}}),this.clearPipeline=e.createComputePipeline({layout:r,compute:{module:t,entryPoint:"clear"}}),this.uniformsBuffer=e.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST}),this.resultBuffer=e.createBuffer({size:32,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC|GPUBufferUsage.COPY_DST}),this.readbackBuffer=e.createBuffer({size:32,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST})}createBindGroup(e){this.bindGroup=this.device.createBindGroup({layout:this.bindGroupLayout,entries:[{binding:0,resource:{buffer:e}},{binding:1,resource:{buffer:this.uniformsBuffer}},{binding:2,resource:{buffer:this.resultBuffer}}]})}dispatch(e,t,r,i,s){const o=new Float32Array(12);o[0]=t.x,o[1]=t.y,o[2]=t.z,o[4]=r.x,o[5]=r.y,o[6]=r.z,o[8]=i,new Uint32Array(o.buffer)[9]=s,this.device.queue.writeBuffer(this.uniformsBuffer,0,o);const a=e.beginComputePass();a.setPipeline(this.clearPipeline),a.setBindGroup(0,this.bindGroup),a.dispatchWorkgroups(1),a.end();const c=e.beginComputePass();c.setPipeline(this.pipeline),c.setBindGroup(0,this.bindGroup),c.dispatchWorkgroups(Math.ceil(s/256)),c.end(),e.copyBufferToBuffer(this.resultBuffer,0,this.readbackBuffer,0,32)}async getResult(){await this.readbackBuffer.mapAsync(GPUMapMode.READ);const e=new Float32Array(this.readbackBuffer.getMappedRange()),t=new Uint32Array(e.buffer)[5]===1;let r=null;return t&&(r={hitPos:{x:e[0],y:e[1],z:e[2]},hitDist:e[3],particleIndex:new Int32Array(e.buffer)[4],hit:!0}),this.readbackBuffer.unmap(),r}}export{Ye as F,Ue as O,Ze as P,Ne as S,$ as W,_e as a,Ae as b,De as c,Ie as d,Ee as e,Fe as f,ce as g,Q as h,Le as i,Te as j,He as k,Me as l,Re as m,oe as n,ne as o,Xe as p,Oe as q,W as r,Ge as s,We as w};
