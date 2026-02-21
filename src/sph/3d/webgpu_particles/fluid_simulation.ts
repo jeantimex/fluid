@@ -74,14 +74,15 @@ export class FluidSimulation {
     context: GPUCanvasContext,
     canvas: HTMLCanvasElement,
     config: ParticlesConfig,
-    format: GPUTextureFormat
+    format: GPUTextureFormat,
+    supportsSubgroups: boolean = false
   ) {
     this.device = device;
     this.context = context;
     this.config = config;
 
     this.physics = new FluidPhysics(device);
-    this.grid = new SpatialGrid(device);
+    this.grid = new SpatialGrid(device, supportsSubgroups);
     this.renderer = new Renderer(device, canvas, format, config);
     this.splatPipeline = new DensitySplatPipeline(device);
     this.pickingSystem = new PickingSystem(device);

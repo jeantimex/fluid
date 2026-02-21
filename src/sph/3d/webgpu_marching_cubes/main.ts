@@ -240,13 +240,14 @@ async function main() {
   let device: GPUDevice;
   let context: GPUCanvasContext;
   let format: GPUTextureFormat;
+  let supportsSubgroups: boolean;
 
   // -------------------------------------------------------------------------
   // WebGPU Initialization
   // -------------------------------------------------------------------------
 
   try {
-    ({ device, context, format } = await initWebGPU(canvas));
+    ({ device, context, format, supportsSubgroups } = await initWebGPU(canvas));
   } catch (error) {
     if (error instanceof WebGPUInitError) {
       // Display user-friendly error message for WebGPU issues
@@ -263,7 +264,7 @@ async function main() {
   // Simulation Setup
   // -------------------------------------------------------------------------
 
-  simulation = new FluidSimulation(device, context, canvas, config, format);
+  simulation = new FluidSimulation(device, context, canvas, config, format, supportsSubgroups);
 
   // Set up input handlers (camera control + particle interaction)
   const updateInertia = setupInputHandlers(

@@ -12,6 +12,7 @@
  */
 
 import marchingCubesShader from './shaders/marching_cubes.wgsl?raw';
+import marchingCubesSubgroupShader from './shaders/marching_cubes_subgroup.wgsl?raw';
 import renderArgsShader from './shaders/render_args.wgsl?raw';
 import drawShader from './shaders/marching_cubes_draw.wgsl?raw';
 import obstacleFaceShader from './shaders/obstacle_face.wgsl?raw';
@@ -116,12 +117,23 @@ export class MarchingCubesRenderer {
   constructor(
     device: GPUDevice,
     canvas: HTMLCanvasElement,
-    format: GPUTextureFormat
+    format: GPUTextureFormat,
+    supportsSubgroups: boolean = false
   ) {
     this.device = device;
     this.canvas = canvas;
+
+    // Use subgroup-optimized marching cubes shader if available
+    const mcShaderCode = supportsSubgroups
+      ? marchingCubesSubgroupShader
+      : marchingCubesShader;
+
+    if (supportsSubgroups) {
+      console.log('MarchingCubesRenderer: Using subgroup-optimized shader');
+    }
+
     const marchingModule = device.createShaderModule({
-      code: marchingCubesShader,
+      code: mcShaderCode,
     });
     this.marchingPipeline = device.createComputePipeline({
       layout: 'auto',

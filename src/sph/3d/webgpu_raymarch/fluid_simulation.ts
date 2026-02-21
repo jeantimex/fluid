@@ -70,14 +70,15 @@ export class FluidSimulation {
     context: GPUCanvasContext,
     canvas: HTMLCanvasElement,
     config: RaymarchConfig,
-    format: GPUTextureFormat
+    format: GPUTextureFormat,
+    supportsSubgroups: boolean = false
   ) {
     this.device = device;
     this.context = context;
     this.config = config;
 
     this.physics = new FluidPhysics(device);
-    this.grid = new SpatialGrid(device);
+    this.grid = new SpatialGrid(device, supportsSubgroups);
     this.splatPipeline = new SplatPipeline(device);
     this.renderer = new RaymarchRenderer(device, canvas, format);
     this.pickingSystem = new PickingSystem(device);
