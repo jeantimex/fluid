@@ -123,6 +123,13 @@ export class SplatPipeline {
   }
 
   /**
+   * Returns the current density texture dimensions (in voxels).
+   */
+  get textureSize(): { x: number; y: number; z: number } {
+    return this.densityTextureSize;
+  }
+
+  /**
    * Recreates the density texture and bind groups after a simulation reset.
    *
    * @param config - Current simulation configuration
@@ -148,9 +155,10 @@ export class SplatPipeline {
   dispatch(
     encoder: GPUCommandEncoder,
     particleCount: number,
-    config: RaymarchConfig
+    config: RaymarchConfig,
+    smoothBoundsSize?: { x: number; y: number; z: number }
   ): void {
-    this.updateParams(particleCount, config);
+    this.updateParams(particleCount, config, smoothBoundsSize);
 
     const totalVoxels =
       this.densityTextureSize.x *
@@ -211,14 +219,12 @@ export class SplatPipeline {
    */
   private createDensityTexture(config: RaymarchConfig): void {
     const bounds = config.boundsSize;
+    const maxAxis = Math.max(bounds.x, bounds.y, bounds.z);
 
-    // Use a fixed "voxels per unit" resolution.
-    // 150 / 20 = 7.5 voxels per unit (assuming 20 is the default reference size)
-    const voxelsPerUnit = config.densityTextureRes / 20;
-
-    const width = Math.max(1, Math.ceil(bounds.x * voxelsPerUnit) + 1);
-    const height = Math.max(1, Math.ceil(bounds.y * voxelsPerUnit) + 1);
-    const depth = Math.max(1, Math.ceil(bounds.z * voxelsPerUnit) + 1);
+    const targetRes = Math.max(1, Math.round(config.densityTextureRes));
+    const width = Math.max(1, Math.round((bounds.x / maxAxis) * targetRes)) + 1;
+    const height = Math.max(1, Math.round((bounds.y / maxAxis) * targetRes)) + 1;
+    const depth = Math.max(1, Math.round((bounds.z / maxAxis) * targetRes)) + 1;
 
     this.densityTextureSize = { x: width, y: height, z: depth };
 
@@ -307,7 +313,12 @@ export class SplatPipeline {
    * @param particleCount - Number of active particles this frame
    * @param config - Current simulation configuration (bounds, smoothing radius)
    */
-  private updateParams(particleCount: number, config: RaymarchConfig): void {
+  private updateParams(
+    particleCount: number,
+    config: RaymarchConfig,
+    smoothBoundsSize?: { x: number; y: number; z: number }
+  ): void {
+    const boundsSize = smoothBoundsSize ?? config.boundsSize;
     const radius = config.smoothingRadius;
 
     // Normalization constant for the Spiky² kernel: 15 / (2π r⁵)
@@ -326,12 +337,14 @@ export class SplatPipeline {
     clearData[0] = totalVoxels;
     this.device.queue.writeBuffer(this.clearParamsBuffer, 0, clearData);
 
-    const size = config.boundsSize;
-    const hx = size.x * 0.5;
-    const hz = size.z * 0.5;
+    const hx = boundsSize.x * 0.5;
+    const hz = boundsSize.z * 0.5;
     const minY = -5.0; // Fixed bottom
 
-    const voxelsPerUnit = config.densityTextureRes / 20;
+    // Calculate per-axis voxelsPerUnit such that the texture exactly covers the smooth bounds.
+    const vpuX = (this.densityTextureSize.x - 1) / boundsSize.x;
+    const vpuY = (this.densityTextureSize.y - 1) / boundsSize.y;
+    const vpuZ = (this.densityTextureSize.z - 1) / boundsSize.z;
 
     // Splat particles params
     this.particlesParamsF32[0] = radius;
@@ -343,19 +356,19 @@ export class SplatPipeline {
     this.particlesParamsF32[4] = -hx;
     this.particlesParamsF32[5] = minY;
     this.particlesParamsF32[6] = -hz;
-    this.particlesParamsF32[7] = voxelsPerUnit;
+    this.particlesParamsF32[7] = vpuX;
 
     // maxBounds
     this.particlesParamsF32[8] = hx;
-    this.particlesParamsF32[9] = minY + size.y;
+    this.particlesParamsF32[9] = minY + boundsSize.y;
     this.particlesParamsF32[10] = hz;
-    this.particlesParamsF32[11] = 0;
+    this.particlesParamsF32[11] = vpuY;
 
     // volumeSize
     this.particlesParamsU32[12] = this.densityTextureSize.x;
     this.particlesParamsU32[13] = this.densityTextureSize.y;
     this.particlesParamsU32[14] = this.densityTextureSize.z;
-    this.particlesParamsU32[15] = 0;
+    this.particlesParamsF32[15] = vpuZ;
 
     this.device.queue.writeBuffer(
       this.particlesParamsBuffer,

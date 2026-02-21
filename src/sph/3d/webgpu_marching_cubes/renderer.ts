@@ -821,10 +821,13 @@ export class MarchingCubesRenderer {
    * Builds wireframe geometry for the simulation bounds.
    * Creates 12 edges (lines) representing the bounding box.
    */
-  private buildBoundsWireframe(config: MarchingCubesConfig): number {
-    const hx = config.boundsSize.x * 0.5;
-    const hy = config.boundsSize.y * 0.5;
-    const hz = config.boundsSize.z * 0.5;
+  private buildBoundsWireframe(
+    config: MarchingCubesConfig,
+    boundsSize: { x: number; y: number; z: number }
+  ): number {
+    const hx = boundsSize.x * 0.5;
+    const hy = boundsSize.y * 0.5;
+    const hz = boundsSize.z * 0.5;
 
     // Bounds center is at origin, bottom at -hy (adjusted for floor)
     const cy = hy - 5.0; // Offset to match the density bounds minY = -5.0
@@ -886,9 +889,13 @@ export class MarchingCubesRenderer {
     encoder: GPUCommandEncoder,
     targetView: GPUTextureView,
     camera: OrbitCamera,
-    config: MarchingCubesConfig
+    config: MarchingCubesConfig,
+    smoothBoundsSize?: { x: number; y: number; z: number }
   ): void {
     if (!this.computeBindGroup) return;
+
+    // Use smooth bounds if provided, otherwise fall back to config
+    const boundsSize = smoothBoundsSize ?? config.boundsSize;
 
     this.ensureDepthTexture();
 
@@ -898,11 +905,16 @@ export class MarchingCubesRenderer {
     this.paramsU32[2] = this.densityTextureSize.z;
     this.paramsU32[3] = this.maxTriangles;
     this.paramsF32[4] = config.isoLevel;
-    this.paramsF32[5] = config.densityTextureRes / 20; // voxelsPerUnit
+    
+    const vpuX = (this.densityTextureSize.x - 1) / boundsSize.x;
+    const vpuY = (this.densityTextureSize.y - 1) / boundsSize.y;
+    const vpuZ = (this.densityTextureSize.z - 1) / boundsSize.z;
+    this.paramsF32[5] = vpuX;
+    this.paramsF32[6] = vpuY;
+    this.paramsF32[7] = vpuZ;
 
-    const size = config.boundsSize;
-    const hx = size.x * 0.5;
-    const hz = size.z * 0.5;
+    const hx = boundsSize.x * 0.5;
+    const hz = boundsSize.z * 0.5;
     const minY = -5.0; // Fixed bottom
 
     // minBounds
@@ -912,7 +924,7 @@ export class MarchingCubesRenderer {
 
     // maxBounds
     this.paramsF32[12] = hx;
-    this.paramsF32[13] = minY + size.y;
+    this.paramsF32[13] = minY + boundsSize.y;
     this.paramsF32[14] = hz;
 
     this.device.queue.writeBuffer(this.paramsBuffer, 0, this.paramsData);
@@ -947,7 +959,7 @@ export class MarchingCubesRenderer {
     // -----------------------------------------------------------------------
 
     // Calculate Shadow View-Projection
-    const bounds = config.boundsSize;
+    const bounds = boundsSize;
     const floor = config.floorSize; // from EnvironmentConfig (config extends SimConfig, EnvironmentConfig)
     const sunDir = config.dirToSun;
 
@@ -1005,7 +1017,7 @@ export class MarchingCubesRenderer {
     // Build & Upload Bounds Wireframe Geometry
     let wireframeVertexCount = 0;
     if (config.showBoundsWireframe) {
-      wireframeVertexCount = this.buildBoundsWireframe(config);
+      wireframeVertexCount = this.buildBoundsWireframe(config, boundsSize);
       this.device.queue.writeBuffer(
         this.wireframeVertexBuffer,
         0,

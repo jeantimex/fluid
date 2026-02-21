@@ -38,6 +38,7 @@ export class RaymarchAdapter implements FluidAppAdapter<RaymarchConfig> {
   private canvas!: HTMLCanvasElement;
   private format!: GPUTextureFormat;
   private supportsSubgroups!: boolean;
+  private isMobile!: boolean;
   private simulation: FluidSimulation | null = null;
 
   init(options: AdapterInitOptions): void {
@@ -46,6 +47,7 @@ export class RaymarchAdapter implements FluidAppAdapter<RaymarchConfig> {
     this.canvas = options.canvas;
     this.format = options.format;
     this.supportsSubgroups = options.supportsSubgroups;
+    this.isMobile = options.isMobile;
 
     this.simulation = new FluidSimulation(
       this.device,
@@ -53,7 +55,8 @@ export class RaymarchAdapter implements FluidAppAdapter<RaymarchConfig> {
       this.canvas,
       this.config,
       this.format,
-      this.supportsSubgroups
+      this.supportsSubgroups,
+      this.isMobile
     );
   }
 

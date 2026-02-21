@@ -17,9 +17,9 @@ enable subgroups;
 struct Params {
   densityAndMax: vec4<u32>, // xyz = densityMapSize, w = maxTriangles
   isoLevel: f32,
-  voxelsPerUnit: f32,
-  pad1: f32,
-  pad2: f32,
+  vpuX: f32,
+  vpuY: f32,
+  vpuZ: f32,
   minBounds: vec3<f32>,
   pad3: f32,
   maxBounds: vec3<f32>,
@@ -43,7 +43,7 @@ struct Vertex {
 @group(0) @binding(9) var<storage, read> edgeB: array<u32>;
 
 fn coordToWorld(coord: vec3<i32>) -> vec3<f32> {
-  let worldToVoxel = params.voxelsPerUnit;
+  let worldToVoxel = vec3<f32>(params.vpuX, params.vpuY, params.vpuZ);
   return params.minBounds + vec3<f32>(coord) / worldToVoxel;
 }
 
@@ -63,7 +63,8 @@ fn calculateNormal(coord: vec3<i32>) -> vec3<f32> {
   let dx = sampleDensity(coord + vec3<i32>(1, 0, 0)) - sampleDensity(coord - vec3<i32>(1, 0, 0));
   let dy = sampleDensity(coord + vec3<i32>(0, 1, 0)) - sampleDensity(coord - vec3<i32>(0, 1, 0));
   let dz = sampleDensity(coord + vec3<i32>(0, 0, 1)) - sampleDensity(coord - vec3<i32>(0, 0, 1));
-  return normalize(-vec3<f32>(dx, dy, dz));
+  let worldToVoxel = vec3<f32>(params.vpuX, params.vpuY, params.vpuZ);
+  return normalize(-vec3<f32>(dx * worldToVoxel.x, dy * worldToVoxel.y, dz * worldToVoxel.z));
 }
 
 fn createVertex(coordA: vec3<i32>, coordB: vec3<i32>) -> Vertex {

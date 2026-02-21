@@ -1227,6 +1227,7 @@ const { stats, gui } = setupGui(
       'M: Step Simulation',
     ],
     githubUrl: 'https://github.com/jeantimex/fluid',
+    buildTimestamp: __BUILD_TIMESTAMP__,
   }
 );
 

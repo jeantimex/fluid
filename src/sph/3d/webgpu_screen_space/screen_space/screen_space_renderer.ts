@@ -182,11 +182,15 @@ export class ScreenSpaceRenderer {
   render(
     encoder: GPUCommandEncoder,
     swapchainView: GPUTextureView,
-    viewMatrix: Float32Array
+    viewMatrix: Float32Array,
+    smoothBoundsSize?: { x: number; y: number; z: number }
   ) {
     if (!this.buffers) {
       return;
     }
+
+    // Use smooth bounds if provided, otherwise fall back to config
+    const boundsSize = smoothBoundsSize ?? this.config.boundsSize;
 
     const aspect = this.canvas.width / this.canvas.height;
     const near = 0.1;
@@ -234,7 +238,7 @@ export class ScreenSpaceRenderer {
       obstacleRadius,
       showBoundsWireframe: this.config.showBoundsWireframe,
       boundsWireframeColor: this.config.boundsWireframeColor,
-      boundsSize: this.config.boundsSize,
+      boundsSize: boundsSize,
       shadowViewProjection: null,
       shadowSoftness: this.config.shadowSoftness,
     };

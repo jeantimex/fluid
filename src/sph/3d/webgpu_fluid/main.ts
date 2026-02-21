@@ -403,6 +403,19 @@ header.appendChild(author);
 header.appendChild(webgpuAuthor);
 header.appendChild(youtube);
 
+// Build timestamp
+const buildTimestamp = document.createElement('div');
+buildTimestamp.style.cssText = `
+  padding: 0 11px 10px 11px;
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.6;
+  letter-spacing: 0.01em;
+`;
+const buildDate = new Date(__BUILD_TIMESTAMP__);
+buildTimestamp.textContent = `Build: ${buildDate.toLocaleDateString()} ${buildDate.toLocaleTimeString()}`;
+header.appendChild(buildTimestamp);
+
 const featContainer = document.createElement('div');
 featContainer.id = 'gui-features';
 featContainer.style.cssText = `
@@ -497,6 +510,7 @@ let device: GPUDevice;
 let context: GPUCanvasContext;
 let format: GPUTextureFormat;
 let supportsSubgroups: boolean;
+let isMobile: boolean;
 let updateInertia: (() => void) | null = null;
 let isSwitching = false;
 
@@ -940,7 +954,7 @@ async function switchAdapter(name: string): Promise<void> {
 
   setCanvasSize();
   configureContext(context, device, format);
-  activeAdapter.init({ device, context, canvas, format, supportsSubgroups });
+  activeAdapter.init({ device, context, canvas, format, supportsSubgroups, isMobile });
   activeAdapter.resize();
 
   updateGui(activeAdapter);
@@ -954,7 +968,7 @@ async function switchAdapter(name: string): Promise<void> {
 
 async function main() {
   try {
-    ({ device, context, format, supportsSubgroups } = await initWebGPU(canvas));
+    ({ device, context, format, supportsSubgroups, isMobile } = await initWebGPU(canvas));
   } catch (error) {
     if (error instanceof WebGPUInitError) {
       app!.innerHTML = `<p>${error.message}</p>`;

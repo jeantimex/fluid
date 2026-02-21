@@ -50,6 +50,11 @@ export class FluidSimulation {
   private isPicking = false;
   private interactionPos = { x: 0, y: 0, z: 0 };
 
+  // --- Smooth Container Transition ---
+  // When the user changes container size via GUI, we lerp smoothly
+  // toward the target dimensions to prevent visual/physical shocks.
+  private smoothBoundsSize = { x: 0, y: 0, z: 0 };
+
   // --- Uniform Buffers ---
   private physicsUniforms!: PhysicsUniforms;
   private gridUniforms!: SpatialGridUniforms;
@@ -75,13 +80,14 @@ export class FluidSimulation {
     canvas: HTMLCanvasElement,
     config: ParticlesConfig,
     format: GPUTextureFormat,
-    supportsSubgroups: boolean = false
+    supportsSubgroups: boolean = false,
+    isMobile: boolean = false
   ) {
     this.device = device;
     this.context = context;
     this.config = config;
 
-    this.physics = new FluidPhysics(device);
+    this.physics = new FluidPhysics(device, isMobile);
     this.grid = new SpatialGrid(device, supportsSubgroups);
     this.renderer = new Renderer(device, canvas, format, config);
     this.splatPipeline = new DensitySplatPipeline(device);
@@ -157,6 +163,11 @@ export class FluidSimulation {
     }
 
     const { boundsSize, smoothingRadius } = this.config;
+
+    // Initialize smooth bounds to current config values
+    this.smoothBoundsSize.x = boundsSize.x;
+    this.smoothBoundsSize.y = boundsSize.y;
+    this.smoothBoundsSize.z = boundsSize.z;
     this.gridRes = {
       x: Math.ceil(boundsSize.x / smoothingRadius),
       y: Math.ceil(boundsSize.y / smoothingRadius),
@@ -218,6 +229,15 @@ export class FluidSimulation {
 
   async step(dt: number): Promise<void> {
     const { config, buffers, device } = this;
+
+    // Smoothly lerp container bounds toward target values
+    const lerpSpeed = 0.1;
+    this.smoothBoundsSize.x +=
+      (config.boundsSize.x - this.smoothBoundsSize.x) * lerpSpeed;
+    this.smoothBoundsSize.y +=
+      (config.boundsSize.y - this.smoothBoundsSize.y) * lerpSpeed;
+    this.smoothBoundsSize.z +=
+      (config.boundsSize.z - this.smoothBoundsSize.z) * lerpSpeed;
 
     const maxDeltaTime = config.maxTimestepFPS
       ? 1 / config.maxTimestepFPS
@@ -333,9 +353,9 @@ export class FluidSimulation {
     // 2) Spatial hash params (grid layout + bounds)
     this.hashParamsData[0] = config.smoothingRadius;
     this.hashParamsData[1] = buffers.particleCount;
-    this.hashParamsData[2] = -config.boundsSize.x * 0.5;
+    this.hashParamsData[2] = -this.smoothBoundsSize.x * 0.5;
     this.hashParamsData[3] = -5.0;
-    this.hashParamsData[4] = -config.boundsSize.z * 0.5;
+    this.hashParamsData[4] = -this.smoothBoundsSize.z * 0.5;
     this.hashParamsData[5] = this.gridRes.x;
     this.hashParamsData[6] = this.gridRes.y;
     this.hashParamsData[7] = this.gridRes.z;
@@ -376,9 +396,9 @@ export class FluidSimulation {
     this.densityParamsData[1] = spikyPow2Scale;
     this.densityParamsData[2] = spikyPow3Scale;
     this.densityParamsData[3] = buffers.particleCount;
-    this.densityParamsData[4] = -config.boundsSize.x * 0.5;
+    this.densityParamsData[4] = -this.smoothBoundsSize.x * 0.5;
     this.densityParamsData[5] = -5.0;
-    this.densityParamsData[6] = -config.boundsSize.z * 0.5;
+    this.densityParamsData[6] = -this.smoothBoundsSize.z * 0.5;
     this.densityParamsData[7] = 0;
     this.densityParamsData[8] = this.gridRes.x;
     this.densityParamsData[9] = this.gridRes.y;
@@ -401,9 +421,9 @@ export class FluidSimulation {
     this.pressureParamsData[5] = spikyPow2DerivScale;
     this.pressureParamsData[6] = spikyPow3DerivScale;
     this.pressureParamsData[7] = buffers.particleCount;
-    this.pressureParamsData[8] = -config.boundsSize.x * 0.5;
+    this.pressureParamsData[8] = -this.smoothBoundsSize.x * 0.5;
     this.pressureParamsData[9] = -5.0;
-    this.pressureParamsData[10] = -config.boundsSize.z * 0.5;
+    this.pressureParamsData[10] = -this.smoothBoundsSize.z * 0.5;
     this.pressureParamsData[11] = 0;
     this.pressureParamsData[12] = this.gridRes.x;
     this.pressureParamsData[13] = this.gridRes.y;
@@ -422,9 +442,9 @@ export class FluidSimulation {
     this.viscosityParamsData[2] = radius;
     this.viscosityParamsData[3] = poly6Scale;
     this.viscosityParamsData[4] = buffers.particleCount;
-    this.viscosityParamsData[5] = -config.boundsSize.x * 0.5;
+    this.viscosityParamsData[5] = -this.smoothBoundsSize.x * 0.5;
     this.viscosityParamsData[6] = -5.0;
-    this.viscosityParamsData[7] = -config.boundsSize.z * 0.5;
+    this.viscosityParamsData[7] = -this.smoothBoundsSize.z * 0.5;
     this.viscosityParamsData[8] = this.gridRes.x;
     this.viscosityParamsData[9] = this.gridRes.y;
     this.viscosityParamsData[10] = this.gridRes.z;
@@ -450,7 +470,7 @@ export class FluidSimulation {
           config.obstacleSize.z > 0);
     this.integrateData[2] = hasObstacle ? 1 : 0;
     this.integrateData[3] = obstacleIsSphere ? 1 : 0;
-    const size = config.boundsSize;
+    const size = this.smoothBoundsSize;
     const hx = size.x * 0.5;
     const hz = size.z * 0.5;
     const minY = -5.0;
@@ -513,7 +533,8 @@ export class FluidSimulation {
       this.context.getCurrentTexture().createView(),
       this.config,
       this.buffers,
-      viewMatrix
+      viewMatrix,
+      this.smoothBoundsSize
     );
     this.device.queue.submit([encoder.finish()]);
   }
