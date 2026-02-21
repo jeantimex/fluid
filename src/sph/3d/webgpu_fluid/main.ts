@@ -459,6 +459,7 @@ let activeAdapter: FluidAppAdapter | null = null;
 let device: GPUDevice;
 let context: GPUCanvasContext;
 let format: GPUTextureFormat;
+let supportsSubgroups: boolean;
 let updateInertia: (() => void) | null = null;
 let isSwitching = false;
 
@@ -899,7 +900,7 @@ async function switchAdapter(name: string): Promise<void> {
 
   setCanvasSize();
   configureContext(context, device, format);
-  activeAdapter.init({ device, context, canvas, format });
+  activeAdapter.init({ device, context, canvas, format, supportsSubgroups });
   activeAdapter.resize();
 
   updateGui(activeAdapter);
@@ -913,7 +914,7 @@ async function switchAdapter(name: string): Promise<void> {
 
 async function main() {
   try {
-    ({ device, context, format } = await initWebGPU(canvas));
+    ({ device, context, format, supportsSubgroups } = await initWebGPU(canvas));
   } catch (error) {
     if (error instanceof WebGPUInitError) {
       app!.innerHTML = `<p>${error.message}</p>`;

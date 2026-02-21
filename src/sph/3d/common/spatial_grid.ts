@@ -4,6 +4,7 @@ import type { FluidBuffers } from './fluid_buffers.ts';
 import hashShader from './shaders/hash_linear.wgsl?raw';
 import sortShader from './shaders/sort_linear.wgsl?raw';
 import prefixSumShader from './shaders/prefix_sum.wgsl?raw';
+import prefixSumSubgroupShader from './shaders/prefix_sum_subgroup.wgsl?raw';
 import scatterShader from './shaders/scatter_linear.wgsl?raw';
 import reorderShader from './shaders/reorder.wgsl?raw';
 
@@ -50,16 +51,25 @@ export class SpatialGrid {
   private reorderBG!: GPUBindGroup;
   private copyBackBG!: GPUBindGroup;
 
-  constructor(device: GPUDevice) {
+  constructor(device: GPUDevice, supportsSubgroups: boolean = false) {
     this.device = device;
+
+    // Select the appropriate prefix sum shader based on subgroup support
+    const prefixShader = supportsSubgroups
+      ? prefixSumSubgroupShader
+      : prefixSumShader;
+
+    if (supportsSubgroups) {
+      console.log('SpatialGrid: Using subgroup-optimized prefix sum');
+    }
 
     // Create Pipelines
     this.hashPipeline = this.createPipeline(hashShader, 'main');
     this.clearOffsetsPipeline = this.createPipeline(sortShader, 'clearOffsets');
     this.countOffsetsPipeline = this.createPipeline(sortShader, 'countOffsets');
-    this.prefixScanPipeline = this.createPipeline(prefixSumShader, 'blockScan');
+    this.prefixScanPipeline = this.createPipeline(prefixShader, 'blockScan');
     this.prefixCombinePipeline = this.createPipeline(
-      prefixSumShader,
+      prefixShader,
       'blockCombine'
     );
     this.scatterPipeline = this.createPipeline(scatterShader, 'scatter');

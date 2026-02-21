@@ -6,6 +6,7 @@ export interface AdapterInitOptions {
   context: GPUCanvasContext;
   canvas: HTMLCanvasElement;
   format: GPUTextureFormat;
+  supportsSubgroups: boolean;
 }
 
 export interface FluidAppAdapter<TConfig extends SimConfig = SimConfig> {

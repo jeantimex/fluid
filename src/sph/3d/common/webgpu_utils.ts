@@ -23,6 +23,8 @@ export interface WebGPUContext {
   context: GPUCanvasContext;
   /** The preferred texture format for the canvas (e.g., 'bgra8unorm') */
   format: GPUTextureFormat;
+  /** Whether subgroup operations are supported */
+  supportsSubgroups: boolean;
 }
 
 /**
@@ -71,9 +73,22 @@ export async function initWebGPU(
     throw new WebGPUInitError('Unable to acquire a WebGPU adapter.');
   }
 
+  // Check if subgroups are supported for optimized prefix sum operations
+  const supportsSubgroups = adapter.features.has('subgroups');
+  if (supportsSubgroups) {
+    console.log('WebGPU subgroups supported - enabling optimized prefix sum');
+  }
+
   // Request a logical device from the adapter
   // The device is used to create all GPU resources (buffers, textures, pipelines)
-  const device = await adapter.requestDevice();
+  // Request subgroups feature if available for optimized compute operations
+  const requiredFeatures: GPUFeatureName[] = [];
+  if (supportsSubgroups) {
+    requiredFeatures.push('subgroups' as GPUFeatureName);
+  }
+  const device = await adapter.requestDevice({
+    requiredFeatures,
+  });
 
   // Get a WebGPU rendering context from the canvas
   // This context manages the textures used for displaying rendered frames
@@ -86,7 +101,7 @@ export async function initWebGPU(
   // This is typically 'bgra8unorm' on most systems
   const format = navigator.gpu.getPreferredCanvasFormat();
 
-  return { device, context, format };
+  return { device, context, format, supportsSubgroups };
 }
 
 /**

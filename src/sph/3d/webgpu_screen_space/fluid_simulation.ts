@@ -73,7 +73,8 @@ export class FluidSimulation {
     context: GPUCanvasContext,
     canvas: HTMLCanvasElement,
     config: ScreenSpaceConfig,
-    format: GPUTextureFormat
+    format: GPUTextureFormat,
+    supportsSubgroups: boolean = false
   ) {
     this.device = device;
     this.context = context;
@@ -81,7 +82,7 @@ export class FluidSimulation {
     this.config = config;
 
     this.physics = new FluidPhysics(device);
-    this.grid = new SpatialGrid(device);
+    this.grid = new SpatialGrid(device, supportsSubgroups);
     this.foam = new FoamPipeline(device);
     this.renderer = new ScreenSpaceRenderer(device, canvas, format, config);
     this.pickingSystem = new PickingSystem(device);
