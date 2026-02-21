@@ -80,7 +80,7 @@ export class FluidSimulation {
     this.physics = new FluidPhysics(device);
     this.grid = new SpatialGrid(device, supportsSubgroups);
     this.splatPipeline = new SplatPipeline(device);
-    this.renderer = new MarchingCubesRenderer(device, canvas, format);
+    this.renderer = new MarchingCubesRenderer(device, canvas, format, supportsSubgroups);
     this.pickingSystem = new PickingSystem(device);
 
     // Create all uniform buffers upfront
