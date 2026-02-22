@@ -187,7 +187,7 @@ import{b as Q,c as P,a as F,O as se,s as re,r as le,h as ce,i as de,W as ue,d as
   font-weight: 400;
   opacity: 0.6;
   letter-spacing: 0.01em;
-`;const Y=new Date("2026-02-22T18:47:30.261Z");K.textContent=`Build: ${Y.toLocaleDateString()} ${Y.toLocaleTimeString()}`;b.appendChild(K);const Z=document.createElement("div");Z.id="gui-features";Z.style.cssText=`
+`;const Y=new Date("2026-02-22T19:11:34.089Z");K.textContent=`Build: ${Y.toLocaleDateString()} ${Y.toLocaleTimeString()}`;b.appendChild(K);const Z=document.createElement("div");Z.id="gui-features";Z.style.cssText=`
   padding: 5px 11px 10px 11px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 `;b.appendChild(Z);const $=document.createElement("div");$.id="gui-interactions";$.style.cssText=`
