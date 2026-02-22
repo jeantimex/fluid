@@ -68,11 +68,11 @@ struct SplatParams {
   particleCount: u32,     // Number of active particles
   fixedPointScale: f32,   // Float-to-integer conversion factor (e.g. 1000)
   minBounds: vec3<f32>,   // Simulation domain min corner
-  voxelsPerUnit: f32,     // Fixed world-to-voxel scale
+  vpuX: f32,              // Voxels per unit X
   maxBounds: vec3<f32>,   // Simulation domain max corner
-  pad1: f32,
+  vpuY: f32,              // Voxels per unit Y
   volumeSize: vec3<u32>,  // Density texture resolution (voxels per axis)
-  pad2: u32,
+  vpuZ: f32,              // Voxels per unit Z
 };
 
 /// Predicted particle positions (vec4 per particle; xyz = position, w unused).
@@ -104,7 +104,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
   let particlePos = predicted[particleIdx].xyz;
   let radius = params.radius;
-  let worldToVoxel = params.voxelsPerUnit;
+  let worldToVoxel = vec3<f32>(params.vpuX, params.vpuY, params.vpuZ);
 
   // Convert world position to continuous voxel-space coordinates [0, volumeSize − 1].
   let voxelPos = (particlePos - params.minBounds) * worldToVoxel;

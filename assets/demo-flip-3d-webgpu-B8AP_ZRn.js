@@ -2101,7 +2101,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         font-weight: 400;
         opacity: 0.6;
         letter-spacing: 0.01em;
-    `;const S=new Date("2026-02-21T19:23:46.722Z");T.textContent=`Build: ${S.toLocaleDateString()} ${S.toLocaleTimeString()}`,u.appendChild(T);const x=document.createElement("div");x.style.cssText=`
+    `;const S=new Date("2026-02-22T03:34:19.182Z");T.textContent=`Build: ${S.toLocaleDateString()} ${S.toLocaleTimeString()}`,u.appendChild(T);const x=document.createElement("div");x.style.cssText=`
         padding: 5px 11px 10px 11px;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
     `;const C=document.createElement("div");C.style.cssText=`
