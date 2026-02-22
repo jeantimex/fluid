@@ -21,7 +21,7 @@ import type { SimConfig } from './types.ts';
 export function createConfig(): SimConfig {
   return {
     // === Time Integration ===
-    timeScale: 1, // Real-time simulation
+    timeScale: 2, // Default to 2x simulation speed
     maxTimestepFPS: 60, // Cap timestep at 1/60s for stability
     iterationsPerFrame: 2, // 2 substeps balances accuracy vs performance
 
@@ -65,7 +65,7 @@ export function createConfig(): SimConfig {
     ],
 
     // === Particle Spawning ===
-    spawnDensity: 35, // Particles per unit area
+    spawnDensity: 100, // Particles per unit area
     initialVelocity: { x: 0, y: 0 }, // Start at rest
     jitterStr: 0.03, // Small random offset to break symmetry
 

@@ -268,6 +268,7 @@ const canvas = createCanvas(app);
 
 // Create simulation configuration with default parameters
 const config = createConfig();
+config.spawnDensity = 100;
 
 // Simulation instance (initialized asynchronously)
 let simulation: FluidSimulation | null = null;
