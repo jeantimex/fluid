@@ -849,10 +849,13 @@ export class Renderer {
    * Builds wireframe geometry for the simulation bounds.
    * Creates 12 edges (lines) representing the bounding box.
    */
-  private buildBoundsWireframe(config: ParticlesConfig): number {
-    const hx = config.boundsSize.x * 0.5;
-    const hy = config.boundsSize.y * 0.5;
-    const hz = config.boundsSize.z * 0.5;
+  private buildBoundsWireframe(
+    config: ParticlesConfig,
+    boundsSize: { x: number; y: number; z: number }
+  ): number {
+    const hx = boundsSize.x * 0.5;
+    const hy = boundsSize.y * 0.5;
+    const hz = boundsSize.z * 0.5;
 
     // Bounds center is at origin, bottom at -hy (adjusted for floor)
     const cy = hy - 5.0; // Offset to match the density bounds minY = -5.0
@@ -928,8 +931,11 @@ export class Renderer {
     view: GPUTextureView,
     config: ParticlesConfig,
     buffers: FluidBuffers,
-    viewMatrix: Float32Array
+    viewMatrix: Float32Array,
+    smoothBoundsSize?: { x: number; y: number; z: number }
   ) {
+    // Use smooth bounds if provided, otherwise fall back to config
+    const boundsSize = smoothBoundsSize ?? config.boundsSize;
     const obsCol = config.obstacleColor ?? { r: 1, g: 0, b: 0 };
     const obsAlpha = config.obstacleAlpha ?? 0.8;
 
@@ -1028,9 +1034,8 @@ export class Renderer {
     // -------------------------------------------------------------------------
 
     const densityUniforms = new Float32Array(16);
-    const size = config.boundsSize;
-    const hx = size.x * 0.5;
-    const hz = size.z * 0.5;
+    const hx = boundsSize.x * 0.5;
+    const hz = boundsSize.z * 0.5;
     const minY = -5.0; // Fixed bottom
 
     // minBounds
@@ -1041,7 +1046,7 @@ export class Renderer {
 
     // maxBounds
     densityUniforms[4] = hx;
-    densityUniforms[5] = minY + size.y;
+    densityUniforms[5] = minY + boundsSize.y;
     densityUniforms[6] = hz;
     densityUniforms[7] = 0.0; // pad
 
@@ -1063,7 +1068,7 @@ export class Renderer {
     // Shadow Pass Calculations
     // -------------------------------------------------------------------------
 
-    const bounds = config.boundsSize;
+    const bounds = boundsSize;
     const floor = config.floorSize;
     const sunDir = config.dirToSun;
 
@@ -1133,12 +1138,12 @@ export class Renderer {
     // Build & Upload Bounds Wireframe Geometry (cached)
     // -------------------------------------------------------------------------
 
-    const wireframeParamKey = `${config.showBoundsWireframe}-${config.boundsSize.x}-${config.boundsSize.y}-${config.boundsSize.z}-${config.boundsWireframeColor.r}-${config.boundsWireframeColor.g}-${config.boundsWireframeColor.b}`;
+    const wireframeParamKey = `${config.showBoundsWireframe}-${boundsSize.x.toFixed(3)}-${boundsSize.y.toFixed(3)}-${boundsSize.z.toFixed(3)}-${config.boundsWireframeColor.r}-${config.boundsWireframeColor.g}-${config.boundsWireframeColor.b}`;
 
     if (wireframeParamKey !== this.lastWireframeParams) {
       let wireframeVertexCount = 0;
       if (config.showBoundsWireframe) {
-        wireframeVertexCount = this.buildBoundsWireframe(config);
+        wireframeVertexCount = this.buildBoundsWireframe(config, boundsSize);
         this.device.queue.writeBuffer(
           this.wireframeVertexBuffer,
           0,

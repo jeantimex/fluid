@@ -25,6 +25,38 @@ export interface WebGPUContext {
   format: GPUTextureFormat;
   /** Whether subgroup operations are supported */
   supportsSubgroups: boolean;
+  /** Whether running on a mobile device (use for performance optimizations) */
+  isMobile: boolean;
+}
+
+/**
+ * Detects if the current device is a mobile device.
+ * Used to enable mobile-specific optimizations like shared memory shaders.
+ */
+export function detectMobile(): boolean {
+  // Check for mobile user agent patterns
+  const userAgent = navigator.userAgent.toLowerCase();
+  const mobileKeywords = [
+    'android',
+    'iphone',
+    'ipad',
+    'ipod',
+    'mobile',
+    'tablet',
+  ];
+  const isMobileUA = mobileKeywords.some((keyword) =>
+    userAgent.includes(keyword)
+  );
+
+  // Also check for touch capability as a secondary signal
+  const hasTouch =
+    'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+  // Check screen size (mobile typically < 1024px width)
+  const isSmallScreen = window.innerWidth < 1024;
+
+  // Consider mobile if user agent matches OR (has touch AND small screen)
+  return isMobileUA || (hasTouch && isSmallScreen);
 }
 
 /**
@@ -101,7 +133,13 @@ export async function initWebGPU(
   // This is typically 'bgra8unorm' on most systems
   const format = navigator.gpu.getPreferredCanvasFormat();
 
-  return { device, context, format, supportsSubgroups };
+  // Detect mobile for performance optimizations
+  const isMobile = detectMobile();
+  if (isMobile) {
+    console.log('Mobile device detected - enabling shared memory optimizations');
+  }
+
+  return { device, context, format, supportsSubgroups, isMobile };
 }
 
 /**

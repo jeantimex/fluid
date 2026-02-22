@@ -347,6 +347,19 @@ export function createGui(params: {
     'WebGPU Author: <a href="https://github.com/jeantimex" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">jeantimex</a>';
   aboutContent.appendChild(webgpuAuthor);
 
+  // Build timestamp
+  const buildInfo = document.createElement('div');
+  buildInfo.style.cssText = `
+        padding: 0 11px 10px 11px;
+        font-size: 10px;
+        font-weight: 400;
+        opacity: 0.6;
+        letter-spacing: 0.01em;
+    `;
+  const buildDate = new Date(__BUILD_TIMESTAMP__);
+  buildInfo.textContent = `Build: ${buildDate.toLocaleDateString()} ${buildDate.toLocaleTimeString()}`;
+  aboutContent.appendChild(buildInfo);
+
   const featContainer = document.createElement('div');
   featContainer.style.cssText = `
         padding: 5px 11px 10px 11px;

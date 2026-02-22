@@ -53,6 +53,7 @@ export class ScreenSpaceAdapter implements FluidAppAdapter<ScreenSpaceConfig> {
   private canvas!: HTMLCanvasElement;
   private format!: GPUTextureFormat;
   private supportsSubgroups!: boolean;
+  private isMobile!: boolean;
   private simulation: FluidSimulation | null = null;
 
   init(options: AdapterInitOptions): void {
@@ -61,6 +62,7 @@ export class ScreenSpaceAdapter implements FluidAppAdapter<ScreenSpaceConfig> {
     this.canvas = options.canvas;
     this.format = options.format;
     this.supportsSubgroups = options.supportsSubgroups;
+    this.isMobile = options.isMobile;
 
     this.simulation = new FluidSimulation(
       this.device,
@@ -68,7 +70,8 @@ export class ScreenSpaceAdapter implements FluidAppAdapter<ScreenSpaceConfig> {
       this.canvas,
       this.config,
       this.format,
-      this.supportsSubgroups
+      this.supportsSubgroups,
+      this.isMobile
     );
   }
 

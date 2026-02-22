@@ -4,7 +4,9 @@ import type { SpatialGrid } from './spatial_grid.ts';
 // Shader imports
 import externalForcesShader from './shaders/external_forces.wgsl?raw';
 import densityShader from './shaders/density_linear.wgsl?raw';
+import densitySharedShader from './shaders/density_shared.wgsl?raw';
 import pressureShader from './shaders/pressure_linear.wgsl?raw';
+import pressureSharedShader from './shaders/pressure_shared.wgsl?raw';
 import viscosityShader from './shaders/viscosity_linear.wgsl?raw';
 import integrateShader from './shaders/integrate.wgsl?raw';
 
@@ -49,16 +51,34 @@ export class FluidPhysics {
   private viscosityBG!: GPUBindGroup;
   private integrateBG!: GPUBindGroup;
 
-  constructor(device: GPUDevice) {
+  // Workgroup size for density/pressure (64 for shared memory, 256 for standard)
+  private readonly densityPressureWorkgroupSize: number;
+
+  constructor(device: GPUDevice, useSharedMemory: boolean = false) {
     this.device = device;
+
+    // Select shaders based on shared memory preference
+    const selectedDensityShader = useSharedMemory
+      ? densitySharedShader
+      : densityShader;
+    const selectedPressureShader = useSharedMemory
+      ? pressureSharedShader
+      : pressureShader;
+
+    // Shared memory shaders use workgroup size 64, standard use 256
+    this.densityPressureWorkgroupSize = useSharedMemory ? 64 : 256;
+
+    if (useSharedMemory) {
+      console.log('FluidPhysics: Using shared memory optimized shaders');
+    }
 
     // Create Pipelines
     this.externalForcesPipeline = this.createPipeline(
       externalForcesShader,
       'main'
     );
-    this.densityPipeline = this.createPipeline(densityShader, 'main');
-    this.pressurePipeline = this.createPipeline(pressureShader, 'main');
+    this.densityPipeline = this.createPipeline(selectedDensityShader, 'main');
+    this.pressurePipeline = this.createPipeline(selectedPressureShader, 'main');
     this.viscosityPipeline = this.createPipeline(viscosityShader, 'main');
     this.integratePipeline = this.createPipeline(integrateShader, 'main');
   }
@@ -139,38 +159,41 @@ export class FluidPhysics {
     includeViscosity: boolean = true,
     rebuildGrid: boolean = true
   ) {
-    const numBlocks = Math.ceil(particleCount / 256);
+    const numBlocks256 = Math.ceil(particleCount / 256);
+    const numBlocksDensityPressure = Math.ceil(
+      particleCount / this.densityPressureWorkgroupSize
+    );
 
     // 1. External Forces (Gravity, Input) -> Predicts Positions
     pass.setPipeline(this.externalForcesPipeline);
     pass.setBindGroup(0, this.externalBG);
-    pass.dispatchWorkgroups(numBlocks);
+    pass.dispatchWorkgroups(numBlocks256);
 
     // 2. Spatial Grid Pass (Hash, Sort, Reorder, CopyBack)
     if (rebuildGrid) {
       grid.dispatch(pass, particleCount, gridTotalCells);
     }
 
-    // 3. Density Pass
+    // 3. Density Pass (uses shared memory workgroup size if enabled)
     pass.setPipeline(this.densityPipeline);
     pass.setBindGroup(0, this.densityBG);
-    pass.dispatchWorkgroups(numBlocks);
+    pass.dispatchWorkgroups(numBlocksDensityPressure);
 
-    // 4. Pressure Pass
+    // 4. Pressure Pass (uses shared memory workgroup size if enabled)
     pass.setPipeline(this.pressurePipeline);
     pass.setBindGroup(0, this.pressureBG);
-    pass.dispatchWorkgroups(numBlocks);
+    pass.dispatchWorkgroups(numBlocksDensityPressure);
 
     // 5. Viscosity Pass (Optional)
     if (includeViscosity) {
       pass.setPipeline(this.viscosityPipeline);
       pass.setBindGroup(0, this.viscosityBG);
-      pass.dispatchWorkgroups(numBlocks);
+      pass.dispatchWorkgroups(numBlocks256);
     }
 
     // 6. Integration Pass (Velocity -> Position, Boundary Collisions)
     pass.setPipeline(this.integratePipeline);
     pass.setBindGroup(0, this.integrateBG);
-    pass.dispatchWorkgroups(numBlocks);
+    pass.dispatchWorkgroups(numBlocks256);
   }
 }

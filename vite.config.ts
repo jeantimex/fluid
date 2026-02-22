@@ -3,6 +3,9 @@ import { resolve } from 'path';
 
 export default defineConfig({
   base: '/fluid/',
+  define: {
+    __BUILD_TIMESTAMP__: JSON.stringify(new Date().toISOString()),
+  },
   build: {
     rollupOptions: {
       input: {

@@ -136,7 +136,7 @@ const { stats, gui } = setupGui(
   config,
   {
     onReset: () => simulation?.reset(),
-    onSmoothingRadiusChange: () => {},
+    onSmoothingRadiusChange: () => simulation?.reset(),
   },
   {
     trackGPU: true, // Enable GPU timing statistics

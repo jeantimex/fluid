@@ -52,13 +52,13 @@ struct RaymarchParams {
   cameraForward: vec3<f32>,          // 12-14
   pad3: f32,                         // 15
   minBounds: vec3<f32>,              // 16-18
-  voxelsPerUnit: f32,                // 19
+  vpuX: f32,                         // 19
   maxBounds: vec3<f32>,              // 20-22
-  floorY: f32,                       // 23
+  vpuY: f32,                         // 23
   densityOffset: f32,                // 24
   densityMultiplier: f32,            // 25
   stepSize: f32,                     // 26
-  lightStepSize: f32,                // 27
+  vpuZ: f32,                         // 27
   aspect: f32,                       // 28
   fovY: f32,                         // 29
   maxSteps: f32,                     // 30
@@ -66,7 +66,7 @@ struct RaymarchParams {
   tileDarkOffset: f32,               // 32
   globalBrightness: f32,             // 33
   globalSaturation: f32,             // 34
-  pad_align2: f32,                   // 35
+  lightStepSize: f32,                // 35
   tileCol1: vec3<f32>,               // 36-38
   pad6: f32,                         // 39
   tileCol2: vec3<f32>,               // 40-42
@@ -81,35 +81,36 @@ struct RaymarchParams {
   pad10: f32,                        // 59
   extinctionCoefficients: vec3<f32>, // 60-62
   sunPower: f32,                     // 63
-  pad12: vec4<f32>,                  // 64-67
+  floorY: f32,                       // 64
+  indexOfRefraction: f32,            // 65
+  numRefractions: f32,               // 66
+  tileDarkFactor: f32,               // 67
   skyColorHorizon: vec3<f32>,        // 68-70
-  indexOfRefraction: f32,            // 71
+  floorAmbient: f32,                 // 71
   skyColorZenith: vec3<f32>,         // 72-74
-  numRefractions: f32,               // 75
+  sceneExposure: f32,                // 75
   skyColorGround: vec3<f32>,         // 76-78
-  tileDarkFactor: f32,               // 79
-  floorAmbient: f32,                 // 80
-  sceneExposure: f32,                // 81
-  pad_align_floor: vec2<f32>,        // 82-83
-  floorSize: vec3<f32>,              // 84-86
-  pad14: f32,                        // 87
-  floorCenter: vec3<f32>,            // 88-90
-  pad15: f32,                        // 91
-  obstacleCenter: vec3<f32>,         // 92-94
-  pad16: f32,                        // 95
-  obstacleHalfSize: vec3<f32>,       // 96-98
-  pad17: f32,                        // 99
-  obstacleRotation: vec3<f32>,       // 100-102
-  obstacleAlpha: f32,                // 103
-  obstacleColor: vec3<f32>,          // 104-106
-  shadowSoftness: f32,               // 107
-  showFluidShadows: f32,             // 108
-  obstacleShape: f32,                // 109
-  pad19: f32,                        // 110
-  pad20: f32,                        // 111
-  pad21: vec4<f32>,                  // 112-115
-  pad22: vec4<f32>,                  // 116-119
-  pad23: vec4<f32>,                  // 120-123
+  pad12: f32,                        // 79
+  floorSize: vec3<f32>,              // 80-82
+  pad14: f32,                        // 83
+  floorCenter: vec3<f32>,            // 84-86
+  pad15: f32,                        // 87
+  obstacleCenter: vec3<f32>,         // 88-90
+  pad16: f32,                        // 91
+  obstacleHalfSize: vec3<f32>,       // 92-94
+  pad17: f32,                        // 95
+  obstacleRotation: vec3<f32>,       // 96-98
+  obstacleAlpha: f32,                // 99
+  obstacleColor: vec3<f32>,          // 100-102
+  shadowSoftness: f32,               // 103
+  showFluidShadows: f32,             // 104
+  obstacleShape: f32,                // 105
+  pad19: f32,                        // 106
+  pad20: f32,                        // 107
+  pad21: vec4<f32>,                  // 108-111
+  pad22: vec4<f32>,                  // 112-115
+  pad23: vec4<f32>,                  // 116-119
+  pad24: vec4<f32>,                  // 120-123
 };
 
 
@@ -288,7 +289,7 @@ fn obstacleHitInfo(origin: vec3<f32>, dir: vec3<f32>) -> ObstacleHit {
 /// Negative results indicate the point is below the iso-surface (outside fluid).
 fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
   let volumeSizeF = vec3<f32>(textureDimensions(densityTex, 0));
-  let worldToVoxel = params.voxelsPerUnit;
+  let worldToVoxel = vec3<f32>(params.vpuX, params.vpuY, params.vpuZ);
   let uvw = (pos - params.minBounds) * worldToVoxel / (volumeSizeF - vec3<f32>(1.0));
   return textureSampleLevel(densityTex, densitySampler, uvw, 0.0).r - params.densityOffset;
 }
@@ -298,7 +299,7 @@ fn sampleDensityRaw(pos: vec3<f32>) -> f32 {
 /// preventing edge artifacts where the texture wraps or clamps.
 fn sampleDensity(pos: vec3<f32>) -> f32 {
   let volumeSizeF = vec3<f32>(textureDimensions(densityTex, 0));
-  let worldToVoxel = params.voxelsPerUnit;
+  let worldToVoxel = vec3<f32>(params.vpuX, params.vpuY, params.vpuZ);
   let uvw = (pos - params.minBounds) * worldToVoxel / (volumeSizeF - vec3<f32>(1.0));
   let epsilon = 0.0001;
   if (any(uvw >= vec3<f32>(1.0 - epsilon)) || any(uvw <= vec3<f32>(epsilon))) {
@@ -354,7 +355,8 @@ fn calculateNormal(pos: vec3<f32>) -> vec3<f32> {
   let dy = sampleDensity(pos - offsetY) - sampleDensity(pos + offsetY);
   let dz = sampleDensity(pos - offsetZ) - sampleDensity(pos + offsetZ);
 
-  let volumeNormal = normalize(vec3<f32>(dx, dy, dz));
+  let worldToVoxel = vec3<f32>(params.vpuX, params.vpuY, params.vpuZ);
+  let volumeNormal = normalize(vec3<f32>(dx * worldToVoxel.x, dy * worldToVoxel.y, dz * worldToVoxel.z));
 
   // Smoothly blend toward face normal near the simulation boundary
   let minDiff = pos - params.minBounds;

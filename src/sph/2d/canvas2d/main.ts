@@ -63,6 +63,7 @@ const { stats, gui } = setupGui(
       'Mouse Wheel: Zoom In/Out',
     ],
     githubUrl: 'https://github.com/jeantimex/fluid',
+    buildTimestamp: __BUILD_TIMESTAMP__,
   }
 );
 

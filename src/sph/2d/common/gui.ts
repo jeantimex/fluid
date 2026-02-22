@@ -44,6 +44,7 @@ export interface GuiOptions {
   githubUrl?: string;
   features?: string[];
   interactions?: string[];
+  buildTimestamp?: string;
 }
 
 export interface GuiSetup {
@@ -381,6 +382,21 @@ export function setupGui(
             <a href="https://youtu.be/rSKMYc1CQHE?si=oe9BznpAUnMWUslT" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Coding Adventure: Simulating Fluids</a>
           `;
     aboutContent.appendChild(youtube);
+
+    // Build timestamp
+    if (options.buildTimestamp) {
+      const buildInfo = document.createElement('div');
+      buildInfo.style.cssText = `
+        padding: 0 11px 10px 11px;
+        font-size: 10px;
+        font-weight: 400;
+        opacity: 0.6;
+        letter-spacing: 0.01em;
+      `;
+      const buildDate = new Date(options.buildTimestamp);
+      buildInfo.textContent = `Build: ${buildDate.toLocaleDateString()} ${buildDate.toLocaleTimeString()}`;
+      aboutContent.appendChild(buildInfo);
+    }
 
     if (options.features && options.features.length > 0) {
       const featContainer = document.createElement('div');
