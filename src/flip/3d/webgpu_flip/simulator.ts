@@ -387,6 +387,21 @@ export class Simulator {
     f32[21] = mouseRayDirection[1];
     f32[22] = mouseRayDirection[2];
     f32[23] = 0.0; // padding
+
+    // Proper aspect-ratio handling for pressure solver
+    const invDx = this.nx / this.gridWidth;
+    const invDy = this.ny / this.gridHeight;
+    const invDz = this.nz / this.gridDepth;
+    const invDx2 = invDx * invDx;
+    const invDy2 = invDy * invDy;
+    const invDz2 = invDz * invDz;
+    const precomputeJacobi = 1.0 / (2.0 * (invDx2 + invDy2 + invDz2));
+
+    f32[24] = invDx;
+    f32[25] = invDy;
+    f32[26] = invDz;
+    f32[27] = precomputeJacobi;
+
     this.device.queue.writeBuffer(this.uniformBuffer, 0, data);
     this.frameNumber++;
   }

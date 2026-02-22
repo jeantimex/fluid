@@ -134,6 +134,12 @@ struct Uniforms {
   // Mouse ray for interaction (origin + direction in world space).
   mouseRayOrigin: vec3<f32>, _pad5: f32,
   mouseRayDirection: vec3<f32>, _pad6: f32,
+
+  // Grid-dependent scaling factors for non-cubic cells.
+  // invDx = nx / width, invDy = ny / height, invDz = nz / depth.
+  invDx: f32, invDy: f32, invDz: f32,
+  // precomputeJacobi = 1.0 / (2.0 * (invDx^2 + invDy^2 + invDz^2))
+  precomputeJacobi: f32,
 };
 
 // =============================================================================
@@ -671,7 +677,9 @@ fn computeDivergence(@builtin(global_invocation_id) id: vec3<u32>) {
   let frontZ = gridVel[velIdx(id.x, id.y, id.z + 1u)].z;  // Front face Vz
 
   // Compute discrete divergence (units: 1/time, or velocity/distance)
-  var div = (rightX - leftX) + (topY - bottomY) + (frontZ - backZ);
+  var div = uniforms.invDx * (rightX - leftX) +
+            uniforms.invDy * (topY - bottomY) +
+            uniforms.invDz * (frontZ - backZ);
 
   // =================================================================
   // Density Correction Term
@@ -738,9 +746,13 @@ fn jacobi(@builtin(global_invocation_id) id: vec3<u32>) {
   if (id.z > 0u) { pBk = pressure[scalarIdx(id.x, id.y, id.z - 1u)]; }
   if (id.z < uniforms.nz - 1u) { pFr = pressure[scalarIdx(id.x, id.y, id.z + 1u)]; }
 
-  // Jacobi update: P_new = (sum_of_neighbors - divergence) / 6
+  // Jacobi update: P_new = (sum_of_scaled_neighbors - divergence) * precomputeJacobi
   // This is one step toward solving: ∇²P = divergence
-  pressure[si] = (pL + pR + pB + pT + pBk + pFr - div) / 6.0;
+  let invDx2 = uniforms.invDx * uniforms.invDx;
+  let invDy2 = uniforms.invDy * uniforms.invDy;
+  let invDz2 = uniforms.invDz * uniforms.invDz;
+
+  pressure[si] = (invDx2 * (pL + pR) + invDy2 * (pB + pT) + invDz2 * (pBk + pFr) - div) * uniforms.precomputeJacobi;
 }
 
 // =============================================================================
@@ -787,7 +799,11 @@ fn jacobiRed(@builtin(global_invocation_id) id: vec3<u32>) {
   if (id.z > 0u) { pBk = pressure[scalarIdx(id.x, id.y, id.z - 1u)]; }
   if (id.z < uniforms.nz - 1u) { pFr = pressure[scalarIdx(id.x, id.y, id.z + 1u)]; }
 
-  pressure[si] = (pL + pR + pB + pT + pBk + pFr - div) / 6.0;
+  let invDx2 = uniforms.invDx * uniforms.invDx;
+  let invDy2 = uniforms.invDy * uniforms.invDy;
+  let invDz2 = uniforms.invDz * uniforms.invDz;
+
+  pressure[si] = (invDx2 * (pL + pR) + invDy2 * (pB + pT) + invDz2 * (pBk + pFr) - div) * uniforms.precomputeJacobi;
 }
 
 /// Black phase: Update cells where (x + y + z) is odd
@@ -813,7 +829,11 @@ fn jacobiBlack(@builtin(global_invocation_id) id: vec3<u32>) {
   if (id.z > 0u) { pBk = pressure[scalarIdx(id.x, id.y, id.z - 1u)]; }
   if (id.z < uniforms.nz - 1u) { pFr = pressure[scalarIdx(id.x, id.y, id.z + 1u)]; }
 
-  pressure[si] = (pL + pR + pB + pT + pBk + pFr - div) / 6.0;
+  let invDx2 = uniforms.invDx * uniforms.invDx;
+  let invDy2 = uniforms.invDy * uniforms.invDy;
+  let invDz2 = uniforms.invDz * uniforms.invDz;
+
+  pressure[si] = (invDx2 * (pL + pR) + invDy2 * (pB + pT) + invDz2 * (pBk + pFr) - div) * uniforms.precomputeJacobi;
 }
 
 // =============================================================================
@@ -850,28 +870,28 @@ fn applyPressure(@builtin(global_invocation_id) id: vec3<u32>) {
   // X-Velocity Update (lives on yz-face at x = id.x)
   // =================================================================
   // The face separates cells (id.x-1, y, z) and (id.x, y, z)
-  // Gradient: ∂P/∂x = P_right - P_left
+  // Gradient: ∂P/∂x = (P_right - P_left) / dx
   let pRight = pressure[scalarIdx(id.x, id.y, id.z)];
   let pLeft = pressure[scalarIdx(id.x - 1u, id.y, id.z)];
-  v.x -= (pRight - pLeft);
+  v.x -= uniforms.invDx * (pRight - pLeft);
 
   // =================================================================
   // Y-Velocity Update (lives on xz-face at y = id.y)
   // =================================================================
   // The face separates cells (x, id.y-1, z) and (x, id.y, z)
-  // Gradient: ∂P/∂y = P_top - P_bottom
+  // Gradient: ∂P/∂y = (P_top - P_bottom) / dy
   let pTop = pressure[scalarIdx(id.x, id.y, id.z)];
   let pBottom = pressure[scalarIdx(id.x, id.y - 1u, id.z)];
-  v.y -= (pTop - pBottom);
+  v.y -= uniforms.invDy * (pTop - pBottom);
 
   // =================================================================
   // Z-Velocity Update (lives on xy-face at z = id.z)
   // =================================================================
   // The face separates cells (x, y, id.z-1) and (x, y, id.z)
-  // Gradient: ∂P/∂z = P_front - P_back
+  // Gradient: ∂P/∂z = (P_front - P_back) / dz
   let pFront = pressure[scalarIdx(id.x, id.y, id.z)];
   let pBack = pressure[scalarIdx(id.x, id.y, id.z - 1u)];
-  v.z -= (pFront - pBack);
+  v.z -= uniforms.invDz * (pFront - pBack);
 
   gridVel[vi] = v;
 }

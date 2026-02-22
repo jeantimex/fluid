@@ -193,7 +193,13 @@ async function init() {
   // Typical values: 16-64 per axis for real-time simulation
 
   const RESOLUTION_X = 32; // Cells along width
-  const RESOLUTION_Y = 16; // Cells along height
+  const BASE_BOX_HEIGHT = simConfig.boxHeight;
+  const RESOLUTION_Y_BASE = 16; // Baseline cells along height at BASE_BOX_HEIGHT
+  // Match lil-gui max to reserve enough Y-cells for tall containers.
+  const MAX_BOX_HEIGHT = 50;
+  const RESOLUTION_Y_MAX = Math.ceil(
+    (MAX_BOX_HEIGHT / BASE_BOX_HEIGHT) * RESOLUTION_Y_BASE
+  );
   const RESOLUTION_Z = 16; // Cells along depth
 
   const camera = new Camera(canvas, [0, 0, 0]); // Orbit around world origin
@@ -235,7 +241,7 @@ async function init() {
   const simulator = new Simulator(
     device,
     RESOLUTION_X,
-    RESOLUTION_Y,
+    RESOLUTION_Y_MAX,
     RESOLUTION_Z,
     getInternalGridWidth(),
     getInternalGridHeight(),
@@ -572,6 +578,19 @@ async function init() {
     simulator.gridHeight = getInternalGridHeight();
     simulator.gridDepth = getInternalGridDepth();
 
+    // Keep vertical cell size approximately constant as height changes.
+    // This avoids artificial flattening when only container height increases.
+    const desiredNy = Math.max(
+      1,
+      Math.min(
+        RESOLUTION_Y_MAX,
+        Math.round(
+          (smoothConfig.boxHeight / BASE_BOX_HEIGHT) * RESOLUTION_Y_BASE
+        )
+      )
+    );
+    simulator.ny = desiredNy;
+
     const interaction = mouseInteraction.sample(FOV, [
       getSimOffsetX(),
       getSimOffsetY(),
@@ -593,16 +612,20 @@ async function init() {
       // -----------------------------------------------------------------------
       // The "target density" controls how compressed particles are allowed to be.
       // It's derived from:
-      //   - cellSize: How big each grid cell is (boxWidth / resolution)
-      //   - targetSpacing: How far apart particles "want" to be
+      //   - cellVolume: The physical volume of a single grid cell (dx * dy * dz)
+      //   - targetSpacing: How far apart particles "want" to be in world units
       //
       // When density exceeds target, the pressure solver adds artificial
       // divergence to push particles apart, preventing unnatural clustering.
-      const cellSize = smoothConfig.boxWidth / 32.0;
+      const dx = smoothConfig.boxWidth / RESOLUTION_X;
+      const dy = smoothConfig.boxHeight / simulator.ny;
+      const dz = smoothConfig.boxDepth / RESOLUTION_Z;
+      const cellVolume = dx * dy * dz;
+
       const targetSpacing = simConfig.spacingFactor * simConfig.particleRadius;
       const targetDensity = Math.max(
         0.5,
-        Math.min(500.0, Math.pow(cellSize / targetSpacing, 3.0))
+        Math.min(500.0, cellVolume / Math.pow(targetSpacing, 3.0))
       );
 
       simulator.step(
