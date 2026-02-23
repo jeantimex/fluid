@@ -323,7 +323,14 @@ async function main() {
   // Simulation Setup
   // -------------------------------------------------------------------------
 
-  simulation = new FluidSimulation(device, context, canvas, config, format, supportsSubgroups);
+  simulation = new FluidSimulation(
+    device,
+    context,
+    canvas,
+    config,
+    format,
+    supportsSubgroups
+  );
 
   // Set up input handlers (camera control + particle interaction)
   const updateInertia = setupInputHandlers(

@@ -50,9 +50,9 @@ export class Simulator {
   nz: number; // Z-axis cell count
 
   // World-space container dimensions (can change at runtime for dynamic containers)
-  gridWidth: number;  // Container width (X)
+  gridWidth: number; // Container width (X)
   gridHeight: number; // Container height (Y)
-  gridDepth: number;  // Container depth (Z)
+  gridDepth: number; // Container depth (Z)
 
   // =========================================================================
   // MAC Grid Buffers
@@ -346,9 +346,21 @@ export class Simulator {
     // SDF bind group layout: uniforms, marker (read), sdf (read_write)
     const sdfBindGroupLayout = device.createBindGroupLayout({
       entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+        {
+          binding: 0,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'read-only-storage' },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'storage' },
+        },
       ],
     });
 
@@ -698,7 +710,11 @@ export class Simulator {
       const pass = encoder.beginComputePass();
       pass.setPipeline(this.jfaPassPipeline);
       pass.setBindGroup(0, this.sdfBindGroup);
-      pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+      pass.dispatchWorkgroups(
+        scalarGridWG[0],
+        scalarGridWG[1],
+        scalarGridWG[2]
+      );
       pass.end();
       this.device.queue.submit([encoder.finish()]);
 

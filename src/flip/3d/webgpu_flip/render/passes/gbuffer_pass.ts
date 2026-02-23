@@ -81,8 +81,16 @@ export class GBufferPass {
     this.uniformData[3] = params.simOffset[1];
     this.uniformData[4] = params.simOffset[2];
 
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, params.projectionMatrix as any);
-    this.device.queue.writeBuffer(this.uniformBuffer, 64, params.viewMatrix as any);
+    this.device.queue.writeBuffer(
+      this.uniformBuffer,
+      0,
+      params.projectionMatrix as any
+    );
+    this.device.queue.writeBuffer(
+      this.uniformBuffer,
+      64,
+      params.viewMatrix as any
+    );
     this.device.queue.writeBuffer(this.uniformBuffer, 128, this.uniformData);
 
     const pass = params.encoder.beginRenderPass({

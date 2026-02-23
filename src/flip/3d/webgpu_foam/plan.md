@@ -19,60 +19,61 @@ Our codebase already has significant infrastructure that reduces implementation 
 
 ### From `flip_simulation.wgsl`
 
-| Function | Purpose | Reuse For |
-|----------|---------|-----------|
-| `sampleVelocity(pos)` | Trilinear velocity interpolation (MAC-staggered) | Bubble drag, foam advection |
-| `sampleXVelocity/Y/Z()` | Per-component velocity sampling | Curl computation for turbulence |
-| `worldToGrid(pos)` | World → grid coordinate conversion | All grid lookups |
-| `kernel(v)`, `h(r)` | Trilinear interpolation weights | SDF interpolation |
-| `clampToGrid()` | Boundary clamping | Safe grid access |
+| Function                | Purpose                                          | Reuse For                       |
+| ----------------------- | ------------------------------------------------ | ------------------------------- |
+| `sampleVelocity(pos)`   | Trilinear velocity interpolation (MAC-staggered) | Bubble drag, foam advection     |
+| `sampleXVelocity/Y/Z()` | Per-component velocity sampling                  | Curl computation for turbulence |
+| `worldToGrid(pos)`      | World → grid coordinate conversion               | All grid lookups                |
+| `kernel(v)`, `h(r)`     | Trilinear interpolation weights                  | SDF interpolation               |
+| `clampToGrid()`         | Boundary clamping                                | Safe grid access                |
 
 ### From `simulator.ts`
 
-| Resource | Status | Notes |
-|----------|--------|-------|
-| `gridMarkerBuffer` | Bound to whitewater | Can use for basic inside/outside test |
-| `gridVelocityFloatBuffer` | Bound to whitewater | Velocity field access ready |
-| `diffuseParticlesBuffer` | Created (100k capacity) | Particle storage ready |
-| `diffuseCountBuffer` | Created | Atomic counter ready |
-| `emitWhitewaterPipeline` | Created | Just needs better logic |
-| `updateWhitewaterPipeline` | Created | Just needs better physics |
+| Resource                   | Status                  | Notes                                 |
+| -------------------------- | ----------------------- | ------------------------------------- |
+| `gridMarkerBuffer`         | Bound to whitewater     | Can use for basic inside/outside test |
+| `gridVelocityFloatBuffer`  | Bound to whitewater     | Velocity field access ready           |
+| `diffuseParticlesBuffer`   | Created (100k capacity) | Particle storage ready                |
+| `diffuseCountBuffer`       | Created                 | Atomic counter ready                  |
+| `emitWhitewaterPipeline`   | Created                 | Just needs better logic               |
+| `updateWhitewaterPipeline` | Created                 | Just needs better physics             |
 
 ### From `whitewater.wgsl`
 
-| Function | Status | Notes |
-|----------|--------|-------|
-| `hash()`, `rand()` | Working | PCG random number generation |
-| `emit()` | Basic | Needs energy/turbulence potentials |
-| `update()` | Basic | Needs proper physics per type |
+| Function           | Status  | Notes                              |
+| ------------------ | ------- | ---------------------------------- |
+| `hash()`, `rand()` | Working | PCG random number generation       |
+| `emit()`           | Basic   | Needs energy/turbulence potentials |
+| `update()`         | Basic   | Needs proper physics per type      |
 
 ### From `whitewater_render.wgsl`
 
-| Feature | Status |
-|---------|--------|
-| Billboard rendering | Working |
-| Lifetime-based fade | Working |
-| Type-based sizing | Basic (needs color differentiation) |
+| Feature             | Status                              |
+| ------------------- | ----------------------------------- |
+| Billboard rendering | Working                             |
+| Lifetime-based fade | Working                             |
+| Type-based sizing   | Basic (needs color differentiation) |
 
 ---
 
 ## Current State vs. Target
 
-| Feature | Current | Target |
-|---------|---------|--------|
-| Emission criteria | Speed-based only | Energy + Wavecrest + Turbulence potentials |
-| Type classification | Y-threshold | SDF-based (inside/surface/above) |
-| Spray physics | Gravity only | Gravity + air drag + collision |
-| Bubble physics | Simple buoyancy | Buoyancy + drag toward fluid velocity |
-| Foam physics | Simple advection | Surface-clamped advection |
-| Foam preservation | None | Density-based lifetime extension |
-| Surface detection | None | Signed Distance Field (SDF) |
+| Feature             | Current          | Target                                     |
+| ------------------- | ---------------- | ------------------------------------------ |
+| Emission criteria   | Speed-based only | Energy + Wavecrest + Turbulence potentials |
+| Type classification | Y-threshold      | SDF-based (inside/surface/above)           |
+| Spray physics       | Gravity only     | Gravity + air drag + collision             |
+| Bubble physics      | Simple buoyancy  | Buoyancy + drag toward fluid velocity      |
+| Foam physics        | Simple advection | Surface-clamped advection                  |
+| Foam preservation   | None             | Density-based lifetime extension           |
+| Surface detection   | None             | Signed Distance Field (SDF)                |
 
 ---
 
 ## Implementation Phases
 
 ### Phase 1: Copy Velocity Sampling to Whitewater Shader
+
 **Priority: HIGH | Effort: 30 minutes | Unlocks: Phase 2, 4, 5**
 
 Copy the velocity sampling functions from `flip_simulation.wgsl` to `whitewater.wgsl` so diffuse particles can sample the fluid velocity field.
@@ -80,6 +81,7 @@ Copy the velocity sampling functions from `flip_simulation.wgsl` to `whitewater.
 #### 1.1 Add Shared Utilities to `whitewater.wgsl`
 
 Copy these functions from `flip_simulation.wgsl`:
+
 - `worldToGrid()`
 - `sampleXVelocity()`, `sampleYVelocity()`, `sampleZVelocity()`
 - `sampleVelocity()`
@@ -141,6 +143,7 @@ fn sampleFluidVelocity(pos: vec3<f32>) -> vec3<f32> {
 ```
 
 #### Expected Result After Phase 1
+
 - Bubbles now move WITH the fluid currents, not just straight up
 - Bubbles in swirling water will spiral and follow the flow
 - More natural-looking bubble behavior in turbulent regions
@@ -149,6 +152,7 @@ fn sampleFluidVelocity(pos: vec3<f32>) -> vec3<f32> {
 ---
 
 ### Phase 2: Marker-Based Type Classification
+
 **Priority: HIGH | Effort: 1 hour | Unlocks: Better type transitions**
 
 Use the existing `marker` buffer to determine if a particle is inside fluid or in air.
@@ -221,6 +225,7 @@ dp.particleKind = newType;
 ```
 
 #### Expected Result After Phase 2
+
 - Particles automatically change type based on position:
   - Deep underwater → Bubble (rises)
   - At water surface → Foam (floats)
@@ -232,6 +237,7 @@ dp.particleKind = newType;
 ---
 
 ### Phase 3: Improved Emission with Energy Potential
+
 **Priority: HIGH | Effort: 1-2 hours**
 
 Add proper energy-based emission so particles spawn from high-energy regions.
@@ -242,13 +248,14 @@ Update `simulator.ts` uniform buffer (extend existing whitewater section):
 
 ```typescript
 // In updateUniforms(), add after existing whitewater params:
-f32[32] = 0.1;   // minEnergy
-f32[33] = 60.0;  // maxEnergy
+f32[32] = 0.1; // minEnergy
+f32[33] = 60.0; // maxEnergy
 f32[34] = 100.0; // minTurbulence
 f32[35] = 200.0; // maxTurbulence
 ```
 
 Update uniform struct in `whitewater.wgsl`:
+
 ```wgsl
 struct Uniforms {
   // ... existing fields ...
@@ -326,6 +333,7 @@ fn emit(@builtin(global_invocation_id) id: vec3<u32>) {
 ```
 
 #### Expected Result After Phase 3
+
 - More particles spawn from splashes and impacts (high energy)
 - Fewer particles spawn from calm water
 - Particles spawn at the surface (foam) and inside turbulent regions (bubbles)
@@ -335,6 +343,7 @@ fn emit(@builtin(global_invocation_id) id: vec3<u32>) {
 ---
 
 ### Phase 4: Proper Physics Per Type
+
 **Priority: MEDIUM | Effort: 1 hour**
 
 Implement accurate physics for each particle type.
@@ -419,6 +428,7 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
 ```
 
 #### Expected Result After Phase 4
+
 - **Spray**: Falls in arcs, affected by gravity and air drag
 - **Foam**: Slides along the water surface following fluid flow
 - **Bubbles**: Rise up while being pushed by underwater currents
@@ -431,6 +441,7 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
 ---
 
 ### Phase 5: Surface SDF for Accurate Classification
+
 **Priority: MEDIUM | Effort: 2-3 hours | Significant quality improvement**
 
 Replace the binary marker-based classification with a smooth signed distance field.
@@ -546,12 +557,13 @@ pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
 
 // Propagate 4 times
 for (let i = 0; i < 4; i++) {
-    pass.setPipeline(this.propagateSDFPipeline);
-    pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+  pass.setPipeline(this.propagateSDFPipeline);
+  pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
 }
 ```
 
 #### Expected Result After Phase 5
+
 - Smooth particle type transitions (no flickering)
 - Foam layer has consistent thickness around water surface
 - Better handling of splashing water (spray → foam transition)
@@ -564,6 +576,7 @@ for (let i = 0; i < 4; i++) {
 ---
 
 ### Phase 6: Turbulence Field for Better Emission
+
 **Priority: LOW-MEDIUM | Effort: 2 hours | Improves emission realism**
 
 Compute the curl (vorticity) of the velocity field to emit particles from churning water.
@@ -639,6 +652,7 @@ let emissionStrength = Ie * (1.0 + It * 2.0); // Boost emission in turbulent are
 ```
 
 #### Expected Result After Phase 6
+
 - More particles spawn in churning/swirling water
 - Waterfalls and impacts create dense bubble clouds
 - Calm water produces very few particles
@@ -651,6 +665,7 @@ let emissionStrength = Ie * (1.0 + It * 2.0); // Boost emission in turbulent are
 ---
 
 ### Phase 7: Foam Preservation
+
 **Priority: LOW | Effort: 1-2 hours | Visual polish**
 
 Keep foam clumped together by extending lifetime based on local density.
@@ -704,6 +719,7 @@ fn applyFoamPreservation(@builtin(global_invocation_id) id: vec3<u32>) {
 ```
 
 #### Expected Result After Phase 7
+
 - Foam forms visible clumps and streaks
 - Isolated foam particles fade quickly
 - Dense foam patches persist longer (like real sea foam)
@@ -716,6 +732,7 @@ fn applyFoamPreservation(@builtin(global_invocation_id) id: vec3<u32>) {
 ---
 
 ### Phase 8: Particle Cleanup (Compaction)
+
 **Priority: LOW | Effort: 1-2 hours | Performance**
 
 Remove dead particles to maintain performance.
@@ -725,28 +742,29 @@ Remove dead particles to maintain performance.
 ```typescript
 // In main.ts, every 60 frames:
 if (frameCount % 60 === 0) {
-    await compactDiffuseParticles();
+  await compactDiffuseParticles();
 }
 
 async function compactDiffuseParticles() {
-    // Read count
-    const countBuffer = device.createBuffer({
-        size: 4,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
-    });
-    commandEncoder.copyBufferToBuffer(diffuseCountBuffer, 0, countBuffer, 0, 4);
-    await countBuffer.mapAsync(GPUMapMode.READ);
-    const count = new Uint32Array(countBuffer.getMappedRange())[0];
-    countBuffer.unmap();
+  // Read count
+  const countBuffer = device.createBuffer({
+    size: 4,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+  commandEncoder.copyBufferToBuffer(diffuseCountBuffer, 0, countBuffer, 0, 4);
+  await countBuffer.mapAsync(GPUMapMode.READ);
+  const count = new Uint32Array(countBuffer.getMappedRange())[0];
+  countBuffer.unmap();
 
-    if (count < 1000) return; // Don't bother if few particles
+  if (count < 1000) return; // Don't bother if few particles
 
-    // Read all particles, filter dead ones, re-upload
-    // ... (CPU-side compaction)
+  // Read all particles, filter dead ones, re-upload
+  // ... (CPU-side compaction)
 }
 ```
 
 #### Expected Result After Phase 8
+
 - Particle count stays bounded
 - No gradual slowdown over time
 - Memory usage remains stable
@@ -756,16 +774,16 @@ async function compactDiffuseParticles() {
 
 ## Summary: Implementation Order
 
-| Phase | Effort | Impact | Dependency |
-|-------|--------|--------|------------|
-| **1. Velocity Sampling** | 30 min | HIGH | None |
-| **2. Marker Classification** | 1 hr | HIGH | Phase 1 |
-| **3. Energy Emission** | 1-2 hr | HIGH | Phase 2 |
-| **4. Type Physics** | 1 hr | HIGH | Phase 1, 2 |
-| **5. Surface SDF** | 2-3 hr | MEDIUM | None |
-| **6. Turbulence** | 2 hr | MEDIUM | Phase 5 |
-| **7. Foam Preservation** | 1-2 hr | LOW | Phase 4 |
-| **8. Compaction** | 1-2 hr | LOW | None |
+| Phase                        | Effort | Impact | Dependency |
+| ---------------------------- | ------ | ------ | ---------- |
+| **1. Velocity Sampling**     | 30 min | HIGH   | None       |
+| **2. Marker Classification** | 1 hr   | HIGH   | Phase 1    |
+| **3. Energy Emission**       | 1-2 hr | HIGH   | Phase 2    |
+| **4. Type Physics**          | 1 hr   | HIGH   | Phase 1, 2 |
+| **5. Surface SDF**           | 2-3 hr | MEDIUM | None       |
+| **6. Turbulence**            | 2 hr   | MEDIUM | Phase 5    |
+| **7. Foam Preservation**     | 1-2 hr | LOW    | Phase 4    |
+| **8. Compaction**            | 1-2 hr | LOW    | None       |
 
 **Recommended order**: 1 → 2 → 4 → 3 → 5 → 6 → 7 → 8
 
@@ -778,6 +796,7 @@ async function compactDiffuseParticles() {
 ## Quick Reference: Buffer Bindings for Whitewater
 
 Current (`whitewater.wgsl`):
+
 ```wgsl
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var<storage, read> liquidPositions: array<vec4<f32>>;
@@ -789,12 +808,14 @@ Current (`whitewater.wgsl`):
 ```
 
 After Phase 5-6 (add):
+
 ```wgsl
 @group(0) @binding(7) var<storage, read> sdf: array<f32>;
 @group(0) @binding(8) var<storage, read> turbulence: array<f32>;
 ```
 
 After Phase 7 (add):
+
 ```wgsl
 @group(0) @binding(9) var<storage, read_write> foamDensity: array<atomic<u32>>;
 ```

@@ -954,7 +954,14 @@ async function switchAdapter(name: string): Promise<void> {
 
   setCanvasSize();
   configureContext(context, device, format);
-  activeAdapter.init({ device, context, canvas, format, supportsSubgroups, isMobile });
+  activeAdapter.init({
+    device,
+    context,
+    canvas,
+    format,
+    supportsSubgroups,
+    isMobile,
+  });
   activeAdapter.resize();
 
   updateGui(activeAdapter);
@@ -968,7 +975,8 @@ async function switchAdapter(name: string): Promise<void> {
 
 async function main() {
   try {
-    ({ device, context, format, supportsSubgroups, isMobile } = await initWebGPU(canvas));
+    ({ device, context, format, supportsSubgroups, isMobile } =
+      await initWebGPU(canvas));
   } catch (error) {
     if (error instanceof WebGPUInitError) {
       app!.innerHTML = `<p>${error.message}</p>`;
@@ -991,7 +999,9 @@ async function main() {
 
   // Use URL param renderer if valid, otherwise default to first adapter
   const initialAdapterName = initialRenderer;
-  const initialAdapter = adapterRegistry.find((a) => a.name === initialAdapterName) ?? adapterRegistry[0];
+  const initialAdapter =
+    adapterRegistry.find((a) => a.name === initialAdapterName) ??
+    adapterRegistry[0];
   if (!initialAdapter) {
     throw new Error('No adapters registered');
   }

@@ -49,8 +49,7 @@ export function detectMobile(): boolean {
   );
 
   // Also check for touch capability as a secondary signal
-  const hasTouch =
-    'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
   // Check screen size (mobile typically < 1024px width)
   const isSmallScreen = window.innerWidth < 1024;
@@ -136,7 +135,9 @@ export async function initWebGPU(
   // Detect mobile for performance optimizations
   const isMobile = detectMobile();
   if (isMobile) {
-    console.log('Mobile device detected - enabling shared memory optimizations');
+    console.log(
+      'Mobile device detected - enabling shared memory optimizations'
+    );
   }
 
   return { device, context, format, supportsSubgroups, isMobile };

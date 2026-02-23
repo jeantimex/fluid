@@ -223,7 +223,8 @@ export class SplatPipeline {
 
     const targetRes = Math.max(1, Math.round(config.densityTextureRes));
     const width = Math.max(1, Math.round((bounds.x / maxAxis) * targetRes)) + 1;
-    const height = Math.max(1, Math.round((bounds.y / maxAxis) * targetRes)) + 1;
+    const height =
+      Math.max(1, Math.round((bounds.y / maxAxis) * targetRes)) + 1;
     const depth = Math.max(1, Math.round((bounds.z / maxAxis) * targetRes)) + 1;
 
     this.densityTextureSize = { x: width, y: height, z: depth };

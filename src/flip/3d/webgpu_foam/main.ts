@@ -261,7 +261,8 @@ async function init() {
   // 3. Velocity magnitude (should be reasonable, not exploding)
 
   const scalarBufferSize = RESOLUTION_X * RESOLUTION_Y_MAX * RESOLUTION_Z * 4;
-  const velGridSize = (RESOLUTION_X + 1) * (RESOLUTION_Y_MAX + 1) * (RESOLUTION_Z + 1);
+  const velGridSize =
+    (RESOLUTION_X + 1) * (RESOLUTION_Y_MAX + 1) * (RESOLUTION_Z + 1);
   const velBufferSize = velGridSize * 16; // vec4<f32>
 
   const markerStagingBuffer = device.createBuffer({
@@ -292,20 +293,32 @@ async function init() {
     // Copy all diagnostic buffers
     const commandEncoder = device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(
-      simulator.gridMarkerBuffer, 0,
-      markerStagingBuffer, 0, scalarBufferSize
+      simulator.gridMarkerBuffer,
+      0,
+      markerStagingBuffer,
+      0,
+      scalarBufferSize
     );
     commandEncoder.copyBufferToBuffer(
-      simulator.pressureTempBuffer, 0, // Contains divergence after computeDivergence
-      divergenceStagingBuffer, 0, scalarBufferSize
+      simulator.pressureTempBuffer,
+      0, // Contains divergence after computeDivergence
+      divergenceStagingBuffer,
+      0,
+      scalarBufferSize
     );
     commandEncoder.copyBufferToBuffer(
-      simulator.gridVelocityFloatBuffer, 0,
-      velocityStagingBuffer, 0, velBufferSize
+      simulator.gridVelocityFloatBuffer,
+      0,
+      velocityStagingBuffer,
+      0,
+      velBufferSize
     );
     commandEncoder.copyBufferToBuffer(
-      simulator.surfaceSDFBuffer, 0,
-      sdfStagingBuffer, 0, scalarBufferSize
+      simulator.surfaceSDFBuffer,
+      0,
+      sdfStagingBuffer,
+      0,
+      scalarBufferSize
     );
     device.queue.submit([commandEncoder.finish()]);
 
@@ -317,10 +330,18 @@ async function init() {
       sdfStagingBuffer.mapAsync(GPUMapMode.READ),
     ]);
 
-    const markerData = new Uint32Array(markerStagingBuffer.getMappedRange().slice(0));
-    const divergenceData = new Float32Array(divergenceStagingBuffer.getMappedRange().slice(0));
-    const velocityData = new Float32Array(velocityStagingBuffer.getMappedRange().slice(0));
-    const sdfData = new Float32Array(sdfStagingBuffer.getMappedRange().slice(0));
+    const markerData = new Uint32Array(
+      markerStagingBuffer.getMappedRange().slice(0)
+    );
+    const divergenceData = new Float32Array(
+      divergenceStagingBuffer.getMappedRange().slice(0)
+    );
+    const velocityData = new Float32Array(
+      velocityStagingBuffer.getMappedRange().slice(0)
+    );
+    const sdfData = new Float32Array(
+      sdfStagingBuffer.getMappedRange().slice(0)
+    );
 
     markerStagingBuffer.unmap();
     divergenceStagingBuffer.unmap();
@@ -415,7 +436,8 @@ async function init() {
           const vy = velocityData[idx + 1];
           const vz = velocityData[idx + 2];
           const mag = Math.sqrt(vx * vx + vy * vy + vz * vz);
-          if (mag > 0.001) { // Only count non-zero velocities
+          if (mag > 0.001) {
+            // Only count non-zero velocities
             maxVelocity = Math.max(maxVelocity, mag);
             avgVelocity += mag;
             velCount++;
@@ -439,7 +461,7 @@ async function init() {
     // 4. Surface SDF Verification
     // -------------------------------------------------------------------------
     // Check SDF values and verify JFA propagated proper distances
-    let sdfInsideCount = 0;  // SDF < 0 (inside fluid)
+    let sdfInsideCount = 0; // SDF < 0 (inside fluid)
     let sdfOutsideCount = 0; // SDF > 0 (outside fluid)
     let sdfMismatchCount = 0; // Cells where SDF sign doesn't match marker
     let minSDF = Infinity;
@@ -1039,7 +1061,10 @@ async function init() {
     // Run physics diagnostic periodically
     // Wait until frame 10 for simulation to stabilize, then every 60 frames
     diagnosticFrameCount++;
-    if (diagnosticFrameCount === 10 || diagnosticFrameCount % DIAGNOSTIC_INTERVAL === 0) {
+    if (
+      diagnosticFrameCount === 10 ||
+      diagnosticFrameCount % DIAGNOSTIC_INTERVAL === 0
+    ) {
       runPhysicsDiagnostic();
     }
 

@@ -33,7 +33,9 @@ export class CompositePass {
     this.linearSampler = linearSampler;
     this.shadowSampler = shadowSampler;
 
-    const shaderModule = device.createShaderModule({ code: compositeShaderCode });
+    const shaderModule = device.createShaderModule({
+      code: compositeShaderCode,
+    });
     this.pipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: shaderModule, entryPoint: 'vs_main' },

@@ -49,9 +49,9 @@ export class Simulator {
   nz: number; // Z-axis cell count
 
   // World-space container dimensions (can change at runtime for dynamic containers)
-  gridWidth: number;  // Container width (X)
+  gridWidth: number; // Container width (X)
   gridHeight: number; // Container height (Y)
-  gridDepth: number;  // Container depth (Z)
+  gridDepth: number; // Container depth (Z)
 
   // =========================================================================
   // MAC Grid Buffers

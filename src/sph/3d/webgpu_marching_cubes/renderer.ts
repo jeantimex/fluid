@@ -905,7 +905,7 @@ export class MarchingCubesRenderer {
     this.paramsU32[2] = this.densityTextureSize.z;
     this.paramsU32[3] = this.maxTriangles;
     this.paramsF32[4] = config.isoLevel;
-    
+
     const vpuX = (this.densityTextureSize.x - 1) / boundsSize.x;
     const vpuY = (this.densityTextureSize.y - 1) / boundsSize.y;
     const vpuZ = (this.densityTextureSize.z - 1) / boundsSize.z;

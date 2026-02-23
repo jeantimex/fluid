@@ -9,11 +9,13 @@
 ## Overview
 
 The SDF provides distance-to-surface information for every grid cell:
+
 - **Negative values**: Inside fluid (deeper = more negative)
 - **Positive values**: Outside fluid (farther = more positive)
 - **Near zero**: At the fluid surface
 
 This is essential for whitewater because:
+
 - `SDF < -threshold` → deep inside fluid → **bubble**
 - `SDF ≈ 0` → at surface → **foam**
 - `SDF > +threshold` → outside fluid → **spray**
@@ -27,6 +29,7 @@ This is essential for whitewater because:
 Created a separate shader module to stay within WebGPU's 10 storage buffer per-stage limit. The main `flip_simulation.wgsl` already uses 10 buffers, so SDF operations needed isolation.
 
 **Uniforms:**
+
 ```wgsl
 struct SDFUniforms {
   nx: u32,        // Grid X dimension
@@ -46,12 +49,14 @@ struct SDFUniforms {
 **Kernels:**
 
 #### `initSDF` - Initialize SDF from marker buffer
+
 ```wgsl
 @compute @workgroup_size(8, 4, 4)
 fn initSDF(@builtin(global_invocation_id) id: vec3<u32>)
 ```
 
 Logic:
+
 1. Check if cell is a "surface cell" (fluid with air neighbor OR air with fluid neighbor)
 2. Initialize values:
    - Surface fluid cells: `-0.5` (just inside)
@@ -60,12 +65,14 @@ Logic:
    - Far air cells: `+1000.0` (unknown distance, outside)
 
 #### `jfaPass` - Jump Flooding Algorithm pass
+
 ```wgsl
 @compute @workgroup_size(8, 4, 4)
 fn jfaPass(@builtin(global_invocation_id) id: vec3<u32>)
 ```
 
 Logic:
+
 1. Read current cell's SDF (distance and sign)
 2. Check 26 neighbors at `jumpSize` distance (3x3x3 cube minus center)
 3. For each neighbor: compute `newDist = neighborDist + stepDist`
@@ -77,6 +84,7 @@ Logic:
 ### 2. `simulator.ts` - Additions
 
 **New Properties:**
+
 ```typescript
 // SDF buffer (same size as marker grid)
 surfaceSDFBuffer: GPUBuffer;
@@ -93,20 +101,34 @@ jfaPassPipeline!: GPUComputePipeline;
 ```
 
 **Buffer Creation:**
+
 ```typescript
 this.surfaceSDFBuffer = createBuffer(
-  scalarGridCount * 4,  // float32 per cell
+  scalarGridCount * 4, // float32 per cell
   GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
 );
 ```
 
 **Bind Group Setup:**
+
 ```typescript
 const sdfBindGroupLayout = device.createBindGroupLayout({
   entries: [
-    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    {
+      binding: 0,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: { type: 'uniform' },
+    },
+    {
+      binding: 1,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: { type: 'read-only-storage' },
+    },
+    {
+      binding: 2,
+      visibility: GPUShaderStage.COMPUTE,
+      buffer: { type: 'storage' },
+    },
   ],
 });
 
@@ -121,6 +143,7 @@ this.sdfBindGroup = device.createBindGroup({
 ```
 
 **In `step()` method - dispatch initSDF:**
+
 ```typescript
 // After marker update, before pressure solve
 pass.setPipeline(this.initSDFPipeline);
@@ -130,6 +153,7 @@ pass.setBindGroup(0, this.simBindGroup); // Restore main bind group
 ```
 
 **New `runJFA()` method:**
+
 ```typescript
 runJFA() {
   const scalarGridWG = [
@@ -170,6 +194,7 @@ runJFA() {
 ### 3. `main.ts` - Additions
 
 **SDF Staging Buffer (for diagnostics):**
+
 ```typescript
 const sdfStagingBuffer = device.createBuffer({
   size: scalarBufferSize,
@@ -178,6 +203,7 @@ const sdfStagingBuffer = device.createBuffer({
 ```
 
 **Frame Loop - Simulation/JFA Ordering:**
+
 ```typescript
 // Run simulation step
 simulator.step(computePass, ...);
@@ -195,6 +221,7 @@ commandEncoder = device.createCommandEncoder();
 ```
 
 **Diagnostic Output:**
+
 ```typescript
 // SDF analysis
 let sdfInsideCount = 0;
@@ -233,6 +260,7 @@ console.log(`
 ### Bug 1: Storage Buffer Limit Exceeded (11 > 10)
 
 **Error:**
+
 ```
 Exceeded the maximum number of storage buffers per shader stage (11 > 10)
 ```
@@ -250,6 +278,7 @@ Exceeded the maximum number of storage buffers per shader stage (11 > 10)
 **Cause:** `isSurfaceCell()` only checked fluid cells for air neighbors, not air cells for fluid neighbors.
 
 **Fix:** Added else branch to check air cells:
+
 ```wgsl
 fn isSurfaceCell(x: u32, y: u32, z: u32) -> bool {
   let isFluid = marker[si] == 1u;
@@ -274,6 +303,7 @@ fn isSurfaceCell(x: u32, y: u32, z: u32) -> bool {
 **Cause:** `writeBuffer` calls in loop all completed before any compute passes ran, leaving uniform with final value.
 
 **Fix:** Submit each JFA pass separately:
+
 ```typescript
 while (jumpSize >= 1) {
   this.device.queue.writeBuffer(...);  // Update uniform
@@ -295,6 +325,7 @@ while (jumpSize >= 1) {
 **Cause:** Main command encoder (containing initSDF) wasn't submitted before `runJFA()` was called.
 
 **Fix:** Split command encoder submission:
+
 ```typescript
 simulator.step(computePass, ...);
 computePass.end();
@@ -314,6 +345,7 @@ commandEncoder = device.createCommandEncoder();
 ## Verification Results
 
 **Diagnostic Output (steady state):**
+
 ```
 ├─ Surface SDF ──────────────────────────────
 │ Inside (SDF<0): 2581 | Outside (SDF>0): 5611
@@ -325,6 +357,7 @@ commandEncoder = device.createCommandEncoder();
 ```
 
 **Interpretation:**
+
 - Inside/Outside counts match marker buffer exactly
 - SDF range is reasonable (max ~14 grid cells from surface)
 - ~1000 cells near surface (|SDF| < 1)
@@ -337,6 +370,7 @@ commandEncoder = device.createCommandEncoder();
 JFA efficiently computes approximate distance fields in O(log n) passes.
 
 **Steps:**
+
 1. Initialize seeds (surface cells) with distance 0
 2. Initialize non-seeds with large distance (±1000)
 3. For `jumpSize` in [n/2, n/4, ..., 2, 1]:
@@ -345,6 +379,7 @@ JFA efficiently computes approximate distance fields in O(log n) passes.
 4. After all passes, each cell has approximate distance to nearest seed
 
 **For 32x16x16 grid:**
+
 - Max dimension = 32
 - Jump sizes: 16, 8, 4, 2, 1 (5 passes)
 - Each pass: 8192 cells × 26 neighbors checked
@@ -358,6 +393,7 @@ JFA efficiently computes approximate distance fields in O(log n) passes.
 - **Memory**: 1 additional float32 buffer (same size as marker grid)
 
 For a 32×16×16 grid:
+
 - SDF buffer: 8192 × 4 bytes = 32 KB
 - JFA passes: 5 × single dispatch
 

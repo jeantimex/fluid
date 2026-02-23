@@ -490,9 +490,7 @@ export function createGui(params: {
   simFolder
     .add(params.simConfig, 'jacobiIterations', 1, 100, 1)
     .name('Pressure Iterations');
-  simFolder
-    .add(params.simConfig, 'useRedBlackGS')
-    .name('Red-Black GS');
+  simFolder.add(params.simConfig, 'useRedBlackGS').name('Red-Black GS');
   simFolder
     .add(params.simConfig, 'particleWorkgroupSize', [32, 64, 128, 256])
     .name('Workgroup Size')
@@ -509,7 +507,9 @@ export function createGui(params: {
   simFolder.close();
 
   const containerFolder = gui.addFolder('Container');
-  containerFolder.add(params.simConfig, 'boxWidth', 10, 100, 1).name('Box Width');
+  containerFolder
+    .add(params.simConfig, 'boxWidth', 10, 100, 1)
+    .name('Box Width');
   containerFolder
     .add(params.simConfig, 'boxHeight', 5, 50, 1)
     .name('Box Height');
