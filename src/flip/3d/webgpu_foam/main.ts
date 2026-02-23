@@ -276,6 +276,10 @@ async function init() {
     size: velBufferSize,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
   });
+  const sdfStagingBuffer = device.createBuffer({
+    size: scalarBufferSize,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
 
   let isDiagnosticPending = false;
   let diagnosticFrameCount = 0;
@@ -299,6 +303,10 @@ async function init() {
       simulator.gridVelocityFloatBuffer, 0,
       velocityStagingBuffer, 0, velBufferSize
     );
+    commandEncoder.copyBufferToBuffer(
+      simulator.surfaceSDFBuffer, 0,
+      sdfStagingBuffer, 0, scalarBufferSize
+    );
     device.queue.submit([commandEncoder.finish()]);
 
     // Read back all data
@@ -306,15 +314,18 @@ async function init() {
       markerStagingBuffer.mapAsync(GPUMapMode.READ),
       divergenceStagingBuffer.mapAsync(GPUMapMode.READ),
       velocityStagingBuffer.mapAsync(GPUMapMode.READ),
+      sdfStagingBuffer.mapAsync(GPUMapMode.READ),
     ]);
 
     const markerData = new Uint32Array(markerStagingBuffer.getMappedRange().slice(0));
     const divergenceData = new Float32Array(divergenceStagingBuffer.getMappedRange().slice(0));
     const velocityData = new Float32Array(velocityStagingBuffer.getMappedRange().slice(0));
+    const sdfData = new Float32Array(sdfStagingBuffer.getMappedRange().slice(0));
 
     markerStagingBuffer.unmap();
     divergenceStagingBuffer.unmap();
     velocityStagingBuffer.unmap();
+    sdfStagingBuffer.unmap();
 
     // Get actual grid dimensions
     const nx = RESOLUTION_X;
@@ -425,6 +436,45 @@ async function init() {
     }
 
     // -------------------------------------------------------------------------
+    // 4. Surface SDF Verification
+    // -------------------------------------------------------------------------
+    // Check that SDF values match expected: fluid=-0.5, air=100.0
+    let sdfInsideCount = 0;  // SDF < 0 (inside fluid)
+    let sdfOutsideCount = 0; // SDF > 0 (outside fluid)
+    let sdfMismatchCount = 0; // Cells where SDF sign doesn't match marker
+
+    for (let z = 0; z < nz; z++) {
+      for (let y = 0; y < ny; y++) {
+        for (let x = 0; x < nx; x++) {
+          const idx = x + y * nx + z * nx * ny;
+          const isFluid = markerData[idx] === 1;
+          const sdf = sdfData[idx];
+
+          if (sdf < 0) {
+            sdfInsideCount++;
+          } else {
+            sdfOutsideCount++;
+          }
+
+          // Check for mismatches
+          if (isFluid && sdf > 0) {
+            sdfMismatchCount++; // Fluid cell but SDF says outside
+          } else if (!isFluid && sdf < 0) {
+            sdfMismatchCount++; // Air cell but SDF says inside
+          }
+        }
+      }
+    }
+
+    let sdfStatus = '✓ Good';
+    if (sdfMismatchCount > 0) {
+      sdfStatus = `⚠ ${sdfMismatchCount} mismatches`;
+    }
+    if (sdfInsideCount === 0 && fluidCells > 0) {
+      sdfStatus = '⚠ No inside cells (SDF not initialized?)';
+    }
+
+    // -------------------------------------------------------------------------
     // Output
     // -------------------------------------------------------------------------
     console.log(`[Physics Diagnostic]
@@ -441,6 +491,11 @@ async function init() {
   ├─ Velocity Field ───────────────────────────
   │ Max: ${maxVelocity.toFixed(2)} | Avg: ${avgVelocity.toFixed(2)} (units/s)
   │ Status: ${velocityStatus}
+  │
+  ├─ Surface SDF ──────────────────────────────
+  │ Inside (SDF<0): ${sdfInsideCount} | Outside (SDF>0): ${sdfOutsideCount}
+  │ Expected: Inside=${fluidCells}, Outside=${nx * ny * nz - fluidCells}
+  │ Status: ${sdfStatus}
   └────────────────────────────────────────────`);
 
     isDiagnosticPending = false;
