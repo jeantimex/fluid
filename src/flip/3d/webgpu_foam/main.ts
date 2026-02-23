@@ -252,6 +252,93 @@ async function init() {
     simConfig.particleWorkgroupSize
   );
 
+  // =========================================================================
+  // PARTICLE DENSITY DIAGNOSTIC
+  // =========================================================================
+  // Reads the marker buffer from GPU to count fluid cells and calculate
+  // particles per cell. Runs once after startup, then every 60 frames.
+
+  const markerBufferSize = RESOLUTION_X * RESOLUTION_Y_MAX * RESOLUTION_Z * 4;
+  const markerStagingBuffer = device.createBuffer({
+    size: markerBufferSize,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+
+  let isDiagnosticPending = false;
+  let diagnosticFrameCount = 0;
+  const DIAGNOSTIC_INTERVAL = 60; // Run every 60 frames
+
+  async function runParticleDensityDiagnostic() {
+    if (isDiagnosticPending) return;
+    isDiagnosticPending = true;
+
+    // Copy marker buffer to staging buffer
+    const commandEncoder = device.createCommandEncoder();
+    commandEncoder.copyBufferToBuffer(
+      simulator.gridMarkerBuffer,
+      0,
+      markerStagingBuffer,
+      0,
+      markerBufferSize
+    );
+    device.queue.submit([commandEncoder.finish()]);
+
+    // Read back the data
+    await markerStagingBuffer.mapAsync(GPUMapMode.READ);
+    const markerData = new Uint32Array(markerStagingBuffer.getMappedRange().slice(0));
+    markerStagingBuffer.unmap();
+
+    // Get actual grid dimensions being used by the simulation
+    // The shader indexes as: x + y * nx + z * nx * ny
+    // We need to use the same dimensions to correctly interpret the buffer
+    const nx = RESOLUTION_X;
+    const ny = simulator.ny; // Actual Y resolution (varies with container height)
+    const nz = RESOLUTION_Z;
+
+    // Count fluid cells using the correct indexing
+    let fluidCells = 0;
+    for (let z = 0; z < nz; z++) {
+      for (let y = 0; y < ny; y++) {
+        for (let x = 0; x < nx; x++) {
+          const idx = x + y * nx + z * nx * ny;
+          if (markerData[idx] === 1) {
+            fluidCells++;
+          }
+        }
+      }
+    }
+
+    // Calculate particles per cell
+    const particlesPerCell = fluidCells > 0 ? particleCount / fluidCells : 0;
+    const targetPPC = 8.0; // Blender's target
+    const deviation = Math.abs(particlesPerCell - targetPPC) / targetPPC * 100;
+
+    // Determine status
+    // Blender uses 8 particles/cell as baseline
+    // 6-16 is acceptable range; higher = better quality but more compute
+    let status = '✓ Good';
+    if (particlesPerCell < 4) {
+      status = '⚠ Very low (surface gaps likely)';
+    } else if (particlesPerCell < 6) {
+      status = '⚠ Low (may have minor gaps)';
+    } else if (particlesPerCell > 20) {
+      status = '⚠ Very high (diminishing returns)';
+    } else if (particlesPerCell > 16) {
+      status = '○ High (good quality, more compute)';
+    }
+
+    console.log(`[Particle Diagnostic]
+  Grid: ${nx}x${ny}x${nz} (${nx * ny * nz} cells)
+  Total Particles: ${particleCount}
+  Fluid Cells: ${fluidCells}
+  Particles/Cell: ${particlesPerCell.toFixed(2)}
+  Target (Blender): ${targetPPC.toFixed(2)}
+  Deviation: ${deviation.toFixed(1)}%
+  Status: ${status}`);
+
+    isDiagnosticPending = false;
+  }
+
   // Generate sphere geometry (2 iterations) for G-buffer - good balance of quality and performance
   const sphereGeom = generateSphereGeometry(2);
   const sphereVertexBuffer = device.createBuffer({
@@ -762,6 +849,14 @@ async function init() {
     device.queue.submit([commandEncoder.finish()]);
     guiApi.stats.end();
     guiApi.stats.update();
+
+    // Run particle density diagnostic periodically
+    // Wait until frame 10 for simulation to stabilize, then every 60 frames
+    diagnosticFrameCount++;
+    if (diagnosticFrameCount === 10 || diagnosticFrameCount % DIAGNOSTIC_INTERVAL === 0) {
+      runParticleDensityDiagnostic();
+    }
+
     requestAnimationFrame(frame);
   }
 

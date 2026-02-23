@@ -186,7 +186,11 @@ export class Simulator {
     this.gridVelocityOrigBuffer = createBuffer(velGridCount * 16); // vec4<f32>
 
     // Cell markers: 0 = air, 1 = fluid.
-    this.gridMarkerBuffer = createBuffer(scalarGridCount * 4);
+    // COPY_SRC allows reading back for diagnostics.
+    this.gridMarkerBuffer = createBuffer(
+      scalarGridCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
 
     // Pressure + divergence/temp buffers.
     this.pressureBuffer = createBuffer(scalarGridCount * 4);

@@ -196,17 +196,31 @@ Before adding whitewater, verify these properties:
 
 ### Numerical Checks
 
-- [ ] **Particles per Cell**: Average ~8 in fluid regions
+- [x] **Particles per Cell**: ~13.7 (above Blender's 8 baseline - good quality) ✓
 - [ ] **Pressure Residual**: Divergence near zero after solve
 - [ ] **Velocity Magnitude**: Reasonable range (not exploding)
 
-### Add Diagnostic Code
+### Diagnostic Results (2026-02-22)
+
+**Configuration:**
+- Grid: 32×16×16 (8,192 cells)
+- Particles: 35,000
+- Container: 24×10×15
+
+**Measured:**
+- Fluid Cells: ~2,550 (31% fill)
+- Particles/Cell: **13.7** (71% above Blender's 8.0 target)
+- Status: ✓ Good (6-16 range is acceptable)
+
+**Conclusion:** Particle density is healthy for whitewater implementation.
+Higher density means more emission candidates for foam/spray/bubbles.
+
+### Legacy Diagnostic Code (now in main.ts)
 
 ```typescript
-// In simulation loop, periodically log:
-const numFluidCells = countFluidCells();  // Cells where marker > 0
-const avgParticlesPerCell = particleCount / numFluidCells;
-console.log(`Avg particles/cell: ${avgParticlesPerCell.toFixed(2)}`);  // Target: ~8
+// Diagnostic is now implemented in main.ts
+// Runs at frame 10, then every 60 frames
+// Uses GPU buffer readback of gridMarkerBuffer
 ```
 
 ---
