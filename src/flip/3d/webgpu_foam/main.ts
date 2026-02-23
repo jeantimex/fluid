@@ -438,10 +438,13 @@ async function init() {
     // -------------------------------------------------------------------------
     // 4. Surface SDF Verification
     // -------------------------------------------------------------------------
-    // Check that SDF values match expected: fluid=-0.5, air=100.0
+    // Check SDF values and verify JFA propagated proper distances
     let sdfInsideCount = 0;  // SDF < 0 (inside fluid)
     let sdfOutsideCount = 0; // SDF > 0 (outside fluid)
     let sdfMismatchCount = 0; // Cells where SDF sign doesn't match marker
+    let minSDF = Infinity;
+    let maxSDF = -Infinity;
+    let surfaceCells = 0; // Cells near surface (|SDF| < 1)
 
     for (let z = 0; z < nz; z++) {
       for (let y = 0; y < ny; y++) {
@@ -449,6 +452,13 @@ async function init() {
           const idx = x + y * nx + z * nx * ny;
           const isFluid = markerData[idx] === 1;
           const sdf = sdfData[idx];
+
+          minSDF = Math.min(minSDF, sdf);
+          maxSDF = Math.max(maxSDF, sdf);
+
+          if (Math.abs(sdf) < 1.0) {
+            surfaceCells++;
+          }
 
           if (sdf < 0) {
             sdfInsideCount++;
@@ -473,6 +483,8 @@ async function init() {
     if (sdfInsideCount === 0 && fluidCells > 0) {
       sdfStatus = '⚠ No inside cells (SDF not initialized?)';
     }
+    // Check if JFA propagated (distances should be < 1000)
+    const jfaWorking = maxSDF < 500 && minSDF > -500;
 
     // -------------------------------------------------------------------------
     // Output
@@ -495,6 +507,9 @@ async function init() {
   ├─ Surface SDF ──────────────────────────────
   │ Inside (SDF<0): ${sdfInsideCount} | Outside (SDF>0): ${sdfOutsideCount}
   │ Expected: Inside=${fluidCells}, Outside=${nx * ny * nz - fluidCells}
+  │ SDF Range: [${minSDF.toFixed(2)}, ${maxSDF.toFixed(2)}]
+  │ Surface Cells (|SDF|<1): ${surfaceCells}
+  │ JFA Status: ${jfaWorking ? '✓ Propagated' : '⚠ Not propagated (values still ±1000)'}
   │ Status: ${sdfStatus}
   └────────────────────────────────────────────`);
 
@@ -806,7 +821,7 @@ async function init() {
    */
   function frame() {
     guiApi.stats.begin();
-    const commandEncoder = device.createCommandEncoder();
+    let commandEncoder = device.createCommandEncoder();
 
     // =========================================================================
     // SMOOTH CONTAINER TRANSITIONS
@@ -890,6 +905,15 @@ async function init() {
         interaction.worldSpaceMouseRay
       );
       computePass.end();
+
+      // Submit simulation work before running JFA (JFA needs initSDF to be complete)
+      device.queue.submit([commandEncoder.finish()]);
+
+      // Run JFA to propagate SDF distances (separate submissions for uniform updates)
+      simulator.runJFA();
+
+      // Create new command encoder for rendering passes
+      commandEncoder = device.createCommandEncoder();
     }
 
     if (particleCount > 0) {

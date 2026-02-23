@@ -118,6 +118,9 @@ export class Simulator {
   /** Initialize SDF from marker buffer (for whitewater classification). */
   initSDFPipeline!: GPUComputePipeline;
 
+  /** JFA pass for SDF distance propagation. */
+  jfaPassPipeline!: GPUComputePipeline;
+
   /** Step 5: Apply gravity and mouse interaction forces. */
   addGravityPipeline!: GPUComputePipeline;
 
@@ -362,10 +365,14 @@ export class Simulator {
       ],
     });
 
-    // Create SDF pipeline
+    // Create SDF pipelines
     this.initSDFPipeline = device.createComputePipeline({
       layout: this.sdfPipelineLayout,
       compute: { module: this.sdfShaderModule, entryPoint: 'initSDF' },
+    });
+    this.jfaPassPipeline = device.createComputePipeline({
+      layout: this.sdfPipelineLayout,
+      compute: { module: this.sdfShaderModule, entryPoint: 'jfaPass' },
     });
 
     this.updateUniforms(0, 0.99, 40.0, 10.0, [0, 0, 0], [0, 0, 0], [0, 0, 1]);
@@ -580,6 +587,8 @@ export class Simulator {
     pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
     pass.setBindGroup(0, this.simBindGroup); // Restore main bind group
 
+    // Note: JFA passes are run separately via runJFA() after this pass ends
+
     // Step 4: Normalize - Convert atomic weighted sums to average velocities
     // Also saves snapshot to gridVelOrig for FLIP delta calculation
     pass.setPipeline(this.normalizeGridPipeline);
@@ -655,5 +664,45 @@ export class Simulator {
     // Uses RK2 (midpoint) integration + small turbulent noise
     pass.setPipeline(this.advectPipeline);
     pass.dispatchWorkgroups(particleWG);
+  }
+
+  /**
+   * Run JFA (Jump Flooding Algorithm) passes to propagate SDF distances.
+   * Each pass is submitted separately to ensure uniform buffer updates take effect.
+   * Call this after step() has been submitted.
+   */
+  runJFA() {
+    const scalarGridWG = [
+      Math.ceil(this.nx / 8),
+      Math.ceil(this.ny / 4),
+      Math.ceil(this.nz / 4),
+    ];
+
+    // Calculate starting jump size (next power of 2 >= max dimension, then halve)
+    const maxDim = Math.max(this.nx, this.ny, this.nz);
+    let jumpSize = 1;
+    while (jumpSize < maxDim) {
+      jumpSize *= 2;
+    }
+    jumpSize = jumpSize / 2; // Start at half
+
+    // Run JFA passes with decreasing jump sizes
+    // Each pass must be submitted separately so uniform updates take effect
+    while (jumpSize >= 1) {
+      // Update jumpSize in uniform buffer
+      const sdfData = new Uint32Array([this.nx, this.ny, this.nz, jumpSize]);
+      this.device.queue.writeBuffer(this.sdfUniformBuffer, 0, sdfData);
+
+      // Create, record, and submit one JFA pass
+      const encoder = this.device.createCommandEncoder();
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.jfaPassPipeline);
+      pass.setBindGroup(0, this.sdfBindGroup);
+      pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+      pass.end();
+      this.device.queue.submit([encoder.finish()]);
+
+      jumpSize = Math.floor(jumpSize / 2);
+    }
   }
 }
