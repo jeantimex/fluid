@@ -86,6 +86,15 @@ export class Simulator {
   /** Divergence / temp buffer for Jacobi iteration (cell-centered). */
   pressureTempBuffer: GPUBuffer;
 
+  /**
+   * Surface SDF (Signed Distance Field) for whitewater classification.
+   * - Negative values: inside fluid
+   * - Zero: at fluid surface
+   * - Positive values: outside fluid (in air)
+   * Used to classify diffuse particles as foam (surface), bubble (inside), or spray (outside).
+   */
+  surfaceSDFBuffer: GPUBuffer;
+
   /** Uniform block containing per-frame simulation parameters. */
   uniformBuffer: GPUBuffer;
 
@@ -203,6 +212,14 @@ export class Simulator {
       scalarGridCount * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     ); // divergence
+
+    // Surface SDF for whitewater particle classification.
+    // Stores signed distance to fluid surface (f32 per cell).
+    // COPY_SRC allows reading back for diagnostics.
+    this.surfaceSDFBuffer = createBuffer(
+      scalarGridCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
 
     // Uniform block mirrors `Uniforms` in `flip_simulation.wgsl` (112 bytes).
     this.uniformBuffer = createBuffer(
