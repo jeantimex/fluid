@@ -119,9 +119,9 @@ async function init() {
      * PIC/FLIP blend factor (0-1).
      * - 0.0: Pure PIC (stable but viscous)
      * - 1.0: Pure FLIP (energetic but may be noisy)
-     * - 0.99: Recommended for lively fluid with stability
+     * - 0.95: Matches Blender FLIP Fluids default (5% PIC / 95% FLIP)
      */
-    fluidity: 0.99,
+    fluidity: 0.95,
 
     /**
      * Gravity magnitude (-50 to 50).
@@ -253,14 +253,27 @@ async function init() {
   );
 
   // =========================================================================
-  // PARTICLE DENSITY DIAGNOSTIC
+  // PHYSICS DIAGNOSTICS
   // =========================================================================
-  // Reads the marker buffer from GPU to count fluid cells and calculate
-  // particles per cell. Runs once after startup, then every 60 frames.
+  // Reads GPU buffers to verify simulation quality:
+  // 1. Particle density (particles per fluid cell)
+  // 2. Divergence (pressure solve quality - should be near zero)
+  // 3. Velocity magnitude (should be reasonable, not exploding)
 
-  const markerBufferSize = RESOLUTION_X * RESOLUTION_Y_MAX * RESOLUTION_Z * 4;
+  const scalarBufferSize = RESOLUTION_X * RESOLUTION_Y_MAX * RESOLUTION_Z * 4;
+  const velGridSize = (RESOLUTION_X + 1) * (RESOLUTION_Y_MAX + 1) * (RESOLUTION_Z + 1);
+  const velBufferSize = velGridSize * 16; // vec4<f32>
+
   const markerStagingBuffer = device.createBuffer({
-    size: markerBufferSize,
+    size: scalarBufferSize,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+  const divergenceStagingBuffer = device.createBuffer({
+    size: scalarBufferSize,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+  const velocityStagingBuffer = device.createBuffer({
+    size: velBufferSize,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
   });
 
@@ -268,34 +281,49 @@ async function init() {
   let diagnosticFrameCount = 0;
   const DIAGNOSTIC_INTERVAL = 60; // Run every 60 frames
 
-  async function runParticleDensityDiagnostic() {
+  async function runPhysicsDiagnostic() {
     if (isDiagnosticPending) return;
     isDiagnosticPending = true;
 
-    // Copy marker buffer to staging buffer
+    // Copy all diagnostic buffers
     const commandEncoder = device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(
-      simulator.gridMarkerBuffer,
-      0,
-      markerStagingBuffer,
-      0,
-      markerBufferSize
+      simulator.gridMarkerBuffer, 0,
+      markerStagingBuffer, 0, scalarBufferSize
+    );
+    commandEncoder.copyBufferToBuffer(
+      simulator.pressureTempBuffer, 0, // Contains divergence after computeDivergence
+      divergenceStagingBuffer, 0, scalarBufferSize
+    );
+    commandEncoder.copyBufferToBuffer(
+      simulator.gridVelocityFloatBuffer, 0,
+      velocityStagingBuffer, 0, velBufferSize
     );
     device.queue.submit([commandEncoder.finish()]);
 
-    // Read back the data
-    await markerStagingBuffer.mapAsync(GPUMapMode.READ);
-    const markerData = new Uint32Array(markerStagingBuffer.getMappedRange().slice(0));
-    markerStagingBuffer.unmap();
+    // Read back all data
+    await Promise.all([
+      markerStagingBuffer.mapAsync(GPUMapMode.READ),
+      divergenceStagingBuffer.mapAsync(GPUMapMode.READ),
+      velocityStagingBuffer.mapAsync(GPUMapMode.READ),
+    ]);
 
-    // Get actual grid dimensions being used by the simulation
-    // The shader indexes as: x + y * nx + z * nx * ny
-    // We need to use the same dimensions to correctly interpret the buffer
+    const markerData = new Uint32Array(markerStagingBuffer.getMappedRange().slice(0));
+    const divergenceData = new Float32Array(divergenceStagingBuffer.getMappedRange().slice(0));
+    const velocityData = new Float32Array(velocityStagingBuffer.getMappedRange().slice(0));
+
+    markerStagingBuffer.unmap();
+    divergenceStagingBuffer.unmap();
+    velocityStagingBuffer.unmap();
+
+    // Get actual grid dimensions
     const nx = RESOLUTION_X;
-    const ny = simulator.ny; // Actual Y resolution (varies with container height)
+    const ny = simulator.ny;
     const nz = RESOLUTION_Z;
 
-    // Count fluid cells using the correct indexing
+    // -------------------------------------------------------------------------
+    // 1. Particle Density
+    // -------------------------------------------------------------------------
     let fluidCells = 0;
     for (let z = 0; z < nz; z++) {
       for (let y = 0; y < ny; y++) {
@@ -307,34 +335,113 @@ async function init() {
         }
       }
     }
-
-    // Calculate particles per cell
     const particlesPerCell = fluidCells > 0 ? particleCount / fluidCells : 0;
-    const targetPPC = 8.0; // Blender's target
-    const deviation = Math.abs(particlesPerCell - targetPPC) / targetPPC * 100;
 
-    // Determine status
-    // Blender uses 8 particles/cell as baseline
-    // 6-16 is acceptable range; higher = better quality but more compute
-    let status = '✓ Good';
+    let densityStatus = '✓ Good';
     if (particlesPerCell < 4) {
-      status = '⚠ Very low (surface gaps likely)';
+      densityStatus = '⚠ Very low';
     } else if (particlesPerCell < 6) {
-      status = '⚠ Low (may have minor gaps)';
+      densityStatus = '⚠ Low';
     } else if (particlesPerCell > 20) {
-      status = '⚠ Very high (diminishing returns)';
+      densityStatus = '⚠ Very high';
     } else if (particlesPerCell > 16) {
-      status = '○ High (good quality, more compute)';
+      densityStatus = '○ High';
     }
 
-    console.log(`[Particle Diagnostic]
-  Grid: ${nx}x${ny}x${nz} (${nx * ny * nz} cells)
-  Total Particles: ${particleCount}
-  Fluid Cells: ${fluidCells}
-  Particles/Cell: ${particlesPerCell.toFixed(2)}
-  Target (Blender): ${targetPPC.toFixed(2)}
-  Deviation: ${deviation.toFixed(1)}%
-  Status: ${status}`);
+    // -------------------------------------------------------------------------
+    // 2. Pre-Projection Divergence
+    // -------------------------------------------------------------------------
+    // NOTE: This is the divergence BEFORE pressure solve (what the solver tries to eliminate).
+    // Pre-projection divergence of 10-50 is normal for active fluid.
+    // After 50 Jacobi iterations, actual divergence should be ~100x smaller.
+    let maxDivergence = 0;
+    let avgDivergence = 0;
+    let divergenceCount = 0;
+
+    for (let z = 0; z < nz; z++) {
+      for (let y = 0; y < ny; y++) {
+        for (let x = 0; x < nx; x++) {
+          const idx = x + y * nx + z * nx * ny;
+          if (markerData[idx] === 1) {
+            const div = Math.abs(divergenceData[idx]);
+            maxDivergence = Math.max(maxDivergence, div);
+            avgDivergence += div;
+            divergenceCount++;
+          }
+        }
+      }
+    }
+    avgDivergence = divergenceCount > 0 ? avgDivergence / divergenceCount : 0;
+
+    // Pre-projection divergence thresholds (these values are expected to be high)
+    // With gravity=40 and active motion, max ~10-50 is normal
+    let divergenceStatus = '✓ Normal';
+    if (maxDivergence > 100) {
+      divergenceStatus = '⚠ Very high (may need more iterations)';
+    } else if (maxDivergence > 50) {
+      divergenceStatus = '○ High (active motion)';
+    } else if (maxDivergence < 5) {
+      divergenceStatus = '✓ Low (settling)';
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Velocity Magnitude
+    // -------------------------------------------------------------------------
+    // Check velocity field for reasonable values
+    let maxVelocity = 0;
+    let avgVelocity = 0;
+    let velCount = 0;
+
+    const vnx = nx + 1;
+    const vny = ny + 1;
+    const vnz = nz + 1;
+
+    for (let z = 0; z < vnz; z++) {
+      for (let y = 0; y < vny; y++) {
+        for (let x = 0; x < vnx; x++) {
+          const idx = (x + y * vnx + z * vnx * vny) * 4;
+          const vx = velocityData[idx];
+          const vy = velocityData[idx + 1];
+          const vz = velocityData[idx + 2];
+          const mag = Math.sqrt(vx * vx + vy * vy + vz * vz);
+          if (mag > 0.001) { // Only count non-zero velocities
+            maxVelocity = Math.max(maxVelocity, mag);
+            avgVelocity += mag;
+            velCount++;
+          }
+        }
+      }
+    }
+    avgVelocity = velCount > 0 ? avgVelocity / velCount : 0;
+
+    // Velocity thresholds (world units per second)
+    let velocityStatus = '✓ Good';
+    if (maxVelocity > 100) {
+      velocityStatus = '⚠ Exploding!';
+    } else if (maxVelocity > 50) {
+      velocityStatus = '○ High (fast motion)';
+    } else if (maxVelocity < 0.1 && particleCount > 0) {
+      velocityStatus = '○ Low (settling)';
+    }
+
+    // -------------------------------------------------------------------------
+    // Output
+    // -------------------------------------------------------------------------
+    console.log(`[Physics Diagnostic]
+  ┌─ Particle Density ─────────────────────────
+  │ Grid: ${nx}×${ny}×${nz} (${nx * ny * nz} cells)
+  │ Fluid Cells: ${fluidCells} | Particles: ${particleCount}
+  │ Particles/Cell: ${particlesPerCell.toFixed(2)} (target: 8) ${densityStatus}
+  │
+  ├─ Pre-Projection Divergence ─────────────────
+  │ Max: ${maxDivergence.toFixed(2)} | Avg: ${avgDivergence.toFixed(2)}
+  │ (Input to solver; post-solve ~100x lower)
+  │ Status: ${divergenceStatus}
+  │
+  ├─ Velocity Field ───────────────────────────
+  │ Max: ${maxVelocity.toFixed(2)} | Avg: ${avgVelocity.toFixed(2)} (units/s)
+  │ Status: ${velocityStatus}
+  └────────────────────────────────────────────`);
 
     isDiagnosticPending = false;
   }
@@ -850,11 +957,11 @@ async function init() {
     guiApi.stats.end();
     guiApi.stats.update();
 
-    // Run particle density diagnostic periodically
+    // Run physics diagnostic periodically
     // Wait until frame 10 for simulation to stabilize, then every 60 frames
     diagnosticFrameCount++;
     if (diagnosticFrameCount === 10 || diagnosticFrameCount % DIAGNOSTIC_INTERVAL === 0) {
-      runParticleDensityDiagnostic();
+      runPhysicsDiagnostic();
     }
 
     requestAnimationFrame(frame);

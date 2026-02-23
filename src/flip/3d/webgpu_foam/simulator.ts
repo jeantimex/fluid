@@ -182,7 +182,11 @@ export class Simulator {
     this.gridVelocityBuffer = createBuffer(velGridCount * 16); // vec4<i32>
     this.gridWeightBuffer = createBuffer(velGridCount * 16); // vec4<i32>
     // Float velocities after normalization; Orig preserves pre-pressure state.
-    this.gridVelocityFloatBuffer = createBuffer(velGridCount * 16); // vec4<f32>
+    // COPY_SRC allows reading back for velocity magnitude diagnostics.
+    this.gridVelocityFloatBuffer = createBuffer(
+      velGridCount * 16,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    ); // vec4<f32>
     this.gridVelocityOrigBuffer = createBuffer(velGridCount * 16); // vec4<f32>
 
     // Cell markers: 0 = air, 1 = fluid.
@@ -193,8 +197,12 @@ export class Simulator {
     );
 
     // Pressure + divergence/temp buffers.
+    // COPY_SRC allows reading back divergence for diagnostics.
     this.pressureBuffer = createBuffer(scalarGridCount * 4);
-    this.pressureTempBuffer = createBuffer(scalarGridCount * 4); // divergence
+    this.pressureTempBuffer = createBuffer(
+      scalarGridCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    ); // divergence
 
     // Uniform block mirrors `Uniforms` in `flip_simulation.wgsl` (112 bytes).
     this.uniformBuffer = createBuffer(
