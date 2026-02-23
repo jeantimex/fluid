@@ -573,6 +573,13 @@ export class Simulator {
     pass.setPipeline(this.markCellsPipeline);
     pass.dispatchWorkgroups(particleWG);
 
+    // Step 3b: Initialize SDF from marker buffer (for whitewater classification)
+    // Uses separate bind group to stay within buffer limits
+    pass.setPipeline(this.initSDFPipeline);
+    pass.setBindGroup(0, this.sdfBindGroup);
+    pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+    pass.setBindGroup(0, this.simBindGroup); // Restore main bind group
+
     // Step 4: Normalize - Convert atomic weighted sums to average velocities
     // Also saves snapshot to gridVelOrig for FLIP delta calculation
     pass.setPipeline(this.normalizeGridPipeline);
