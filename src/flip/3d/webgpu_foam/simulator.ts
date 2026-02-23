@@ -1,4 +1,5 @@
 import flipSimulationShader from './shaders/flip_simulation.wgsl?raw';
+import sdfShader from './shaders/sdf.wgsl?raw';
 
 /**
  * GPU FLIP Fluid Simulation Driver
@@ -114,6 +115,9 @@ export class Simulator {
   /** Step 3: Mark cells containing particles as fluid (vs air). */
   markCellsPipeline!: GPUComputePipeline;
 
+  /** Initialize SDF from marker buffer (for whitewater classification). */
+  initSDFPipeline!: GPUComputePipeline;
+
   /** Step 5: Apply gravity and mouse interaction forces. */
   addGravityPipeline!: GPUComputePipeline;
 
@@ -156,6 +160,12 @@ export class Simulator {
   /** Cached references for pipeline recreation. */
   private shaderModule: GPUShaderModule;
   private pipelineLayout: GPUPipelineLayout;
+
+  /** SDF shader resources (separate to stay within buffer limits). */
+  private sdfShaderModule: GPUShaderModule;
+  private sdfPipelineLayout: GPUPipelineLayout;
+  private sdfBindGroup: GPUBindGroup;
+  private sdfUniformBuffer: GPUBuffer;
 
   constructor(
     device: GPUDevice,
@@ -291,11 +301,12 @@ export class Simulator {
       ],
     });
 
+    // Pipeline layout for FLIP kernels (only group 0)
     this.pipelineLayout = device.createPipelineLayout({
       bindGroupLayouts: [bindGroupLayout],
     });
 
-    // Create all compute pipelines
+    // Create FLIP compute pipelines
     this.createPipelines();
 
     this.simBindGroup = device.createBindGroup({
@@ -317,6 +328,45 @@ export class Simulator {
 
     // Reserved for ping-pong variants; current solver uses a single group.
     this.simBindGroupAlt = this.simBindGroup;
+
+    // =========================================================================
+    // SDF Shader Resources (separate module to stay within buffer limits)
+    // =========================================================================
+    this.sdfShaderModule = device.createShaderModule({ code: sdfShader });
+
+    // SDF uniform buffer: { nx, ny, nz, _pad }
+    this.sdfUniformBuffer = device.createBuffer({
+      size: 16, // 4 u32 values
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // SDF bind group layout: uniforms, marker (read), sdf (read_write)
+    const sdfBindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+      ],
+    });
+
+    this.sdfPipelineLayout = device.createPipelineLayout({
+      bindGroupLayouts: [sdfBindGroupLayout],
+    });
+
+    this.sdfBindGroup = device.createBindGroup({
+      layout: sdfBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.sdfUniformBuffer } },
+        { binding: 1, resource: { buffer: this.gridMarkerBuffer } },
+        { binding: 2, resource: { buffer: this.surfaceSDFBuffer } },
+      ],
+    });
+
+    // Create SDF pipeline
+    this.initSDFPipeline = device.createComputePipeline({
+      layout: this.sdfPipelineLayout,
+      compute: { module: this.sdfShaderModule, entryPoint: 'initSDF' },
+    });
 
     this.updateUniforms(0, 0.99, 40.0, 10.0, [0, 0, 0], [0, 0, 0], [0, 0, 1]);
   }
@@ -356,6 +406,8 @@ export class Simulator {
     this.jacobiRedPipeline = makeGridPipeline('jacobiRed');
     this.jacobiBlackPipeline = makeGridPipeline('jacobiBlack');
     this.applyPressurePipeline = makeGridPipeline('applyPressure');
+
+    // Note: initSDFPipeline is created in constructor (uses separate shader module)
 
     // Particle-based pipelines (use configurable workgroup size)
     this.transferToGridPipeline = makeParticlePipeline('transferToGrid');
@@ -433,6 +485,10 @@ export class Simulator {
 
     this.device.queue.writeBuffer(this.uniformBuffer, 0, data);
     this.frameNumber++;
+
+    // Update SDF uniforms (nx, ny, nz, _pad)
+    const sdfData = new Uint32Array([this.nx, this.ny, this.nz, 0]);
+    this.device.queue.writeBuffer(this.sdfUniformBuffer, 0, sdfData);
   }
 
   /**

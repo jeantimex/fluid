@@ -75,7 +75,7 @@ async function init() {
 
   const device = await adapter.requestDevice({
     requiredLimits: {
-      maxStorageBuffersPerShaderStage: 10,
+      maxStorageBuffersPerShaderStage: 10, // Hardware limit on many GPUs
     },
   });
   const canvas = document.getElementById('canvas') as HTMLCanvasElement;
