@@ -1007,6 +1007,9 @@ async function init() {
       // Run JFA to propagate SDF distances (separate submissions for uniform updates)
       simulator.runJFA();
 
+      // Compute whitewater emission potentials (Ita, Iwc, Ike)
+      simulator.computeEmissionPotentials();
+
       // Create new command encoder for rendering passes
       commandEncoder = device.createCommandEncoder();
     }

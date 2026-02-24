@@ -1,5 +1,6 @@
 import flipSimulationShader from './shaders/flip_simulation.wgsl?raw';
 import sdfShader from './shaders/sdf.wgsl?raw';
+import emissionShader from './shaders/emission.wgsl?raw';
 
 /**
  * GPU FLIP Fluid Simulation Driver
@@ -196,6 +197,17 @@ export class Simulator {
   private sdfPipelineLayout: GPUPipelineLayout;
   private sdfBindGroup: GPUBindGroup;
   private sdfUniformBuffer: GPUBuffer;
+
+  /** Emission potential shader resources. */
+  private emissionShaderModule: GPUShaderModule;
+  private emissionPipelineLayout: GPUPipelineLayout;
+  private emissionBindGroup: GPUBindGroup;
+  private emissionUniformBuffer: GPUBuffer;
+
+  /** Emission potential compute pipelines. */
+  computeTrappedAirPipeline!: GPUComputePipeline;
+  computeWaveCrestPipeline!: GPUComputePipeline;
+  computeKineticEnergyPipeline!: GPUComputePipeline;
 
   constructor(
     device: GPUDevice,
@@ -433,6 +445,85 @@ export class Simulator {
     this.jfaPassPipeline = device.createComputePipeline({
       layout: this.sdfPipelineLayout,
       compute: { module: this.sdfShaderModule, entryPoint: 'jfaPass' },
+    });
+
+    // -------------------------------------------------------------------------
+    // Emission Potential Shader Setup
+    // -------------------------------------------------------------------------
+    this.emissionShaderModule = device.createShaderModule({
+      code: emissionShader,
+    });
+
+    // Emission uniform buffer: { nx, ny, nz, _pad }
+    this.emissionUniformBuffer = device.createBuffer({
+      size: 16, // 4 u32 values
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Emission bind group layout
+    const emissionBindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'uniform' },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'read-only-storage' },
+        }, // velocity
+        {
+          binding: 2,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'read-only-storage' },
+        }, // surfaceSDF
+        {
+          binding: 3,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'storage' },
+        }, // trappedAirPotential
+        {
+          binding: 4,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'storage' },
+        }, // waveCrestPotential
+        {
+          binding: 5,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: 'storage' },
+        }, // kineticEnergyPotential
+      ],
+    });
+
+    this.emissionPipelineLayout = device.createPipelineLayout({
+      bindGroupLayouts: [emissionBindGroupLayout],
+    });
+
+    this.emissionBindGroup = device.createBindGroup({
+      layout: emissionBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.emissionUniformBuffer } },
+        { binding: 1, resource: { buffer: this.gridVelocityFloatBuffer } },
+        { binding: 2, resource: { buffer: this.surfaceSDFBuffer } },
+        { binding: 3, resource: { buffer: this.trappedAirPotentialBuffer } },
+        { binding: 4, resource: { buffer: this.waveCrestPotentialBuffer } },
+        { binding: 5, resource: { buffer: this.kineticEnergyPotentialBuffer } },
+      ],
+    });
+
+    // Create emission pipelines
+    this.computeTrappedAirPipeline = device.createComputePipeline({
+      layout: this.emissionPipelineLayout,
+      compute: { module: this.emissionShaderModule, entryPoint: 'computeTrappedAir' },
+    });
+    this.computeWaveCrestPipeline = device.createComputePipeline({
+      layout: this.emissionPipelineLayout,
+      compute: { module: this.emissionShaderModule, entryPoint: 'computeWaveCrest' },
+    });
+    this.computeKineticEnergyPipeline = device.createComputePipeline({
+      layout: this.emissionPipelineLayout,
+      compute: { module: this.emissionShaderModule, entryPoint: 'computeKineticEnergy' },
     });
 
     this.updateUniforms(0, 0.99, 40.0, 10.0, [0, 0, 0], [0, 0, 0], [0, 0, 1]);
@@ -768,5 +859,40 @@ export class Simulator {
 
       jumpSize = Math.floor(jumpSize / 2);
     }
+  }
+
+  /**
+   * Compute whitewater emission potentials (Ita, Iwc, Ike).
+   * Must be called after step() and runJFA() are complete.
+   * Runs all three potential kernels in a single compute pass.
+   */
+  computeEmissionPotentials() {
+    const scalarGridWG = [
+      Math.ceil(this.nx / 8),
+      Math.ceil(this.ny / 4),
+      Math.ceil(this.nz / 4),
+    ];
+
+    // Update emission uniforms
+    const emissionData = new Uint32Array([this.nx, this.ny, this.nz, 0]);
+    this.device.queue.writeBuffer(this.emissionUniformBuffer, 0, emissionData);
+
+    // Create encoder and compute pass
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setBindGroup(0, this.emissionBindGroup);
+
+    // Compute all three potentials
+    pass.setPipeline(this.computeTrappedAirPipeline);
+    pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+
+    pass.setPipeline(this.computeWaveCrestPipeline);
+    pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+
+    pass.setPipeline(this.computeKineticEnergyPipeline);
+    pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
   }
 }
