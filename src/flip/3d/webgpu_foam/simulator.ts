@@ -124,6 +124,38 @@ export class Simulator {
    */
   kineticEnergyPotentialBuffer: GPUBuffer;
 
+  // =========================================================================
+  // Whitewater Particle Buffers
+  // =========================================================================
+  // Separate particle system for foam, spray, and bubbles.
+  // These particles are emitted from the fluid surface based on emission
+  // potentials and have different physics based on their type.
+
+  /** Maximum number of whitewater particles. */
+  maxWhitewaterParticles: number;
+
+  /**
+   * Whitewater particle positions and lifetimes.
+   * vec4(position.xyz, lifetime) where lifetime is 0-1 (0 = just born, 1 = dead)
+   */
+  whitewaterPosLifeBuffer: GPUBuffer;
+
+  /**
+   * Whitewater particle velocities and types.
+   * vec4(velocity.xyz, type) where type is:
+   * 0 = inactive/dead
+   * 1 = foam (at surface)
+   * 2 = spray (above surface)
+   * 3 = bubble (below surface)
+   */
+  whitewaterVelTypeBuffer: GPUBuffer;
+
+  /**
+   * Atomic counter for active whitewater particles.
+   * Used for efficient emission and compaction.
+   */
+  whitewaterCountBuffer: GPUBuffer;
+
   /** Uniform block containing per-frame simulation parameters. */
   uniformBuffer: GPUBuffer;
 
@@ -292,6 +324,30 @@ export class Simulator {
     this.kineticEnergyPotentialBuffer = createBuffer(
       scalarGridCount * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+
+    // -------------------------------------------------------------------------
+    // Whitewater Particle Buffers
+    // -------------------------------------------------------------------------
+    // Default to 10% of main particle count, minimum 1000
+    this.maxWhitewaterParticles = Math.max(1000, Math.floor(scalarGridCount * 2));
+
+    // Position + Lifetime: vec4(pos.xyz, life) per particle
+    this.whitewaterPosLifeBuffer = createBuffer(
+      this.maxWhitewaterParticles * 16, // 4 floats * 4 bytes
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+
+    // Velocity + Type: vec4(vel.xyz, type) per particle
+    this.whitewaterVelTypeBuffer = createBuffer(
+      this.maxWhitewaterParticles * 16,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+
+    // Atomic counter for active particles (single u32)
+    this.whitewaterCountBuffer = createBuffer(
+      4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
     );
 
     // Uniform block mirrors `Uniforms` in `flip_simulation.wgsl` (112 bytes).
