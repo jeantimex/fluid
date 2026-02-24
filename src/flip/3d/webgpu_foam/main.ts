@@ -311,6 +311,7 @@ async function init() {
   let isDiagnosticPending = false;
   let diagnosticFrameCount = 0;
   const DIAGNOSTIC_INTERVAL = 60; // Run every 60 frames
+  let lastWhitewaterCount = 0; // Track counter for dynamic copy offset
 
   async function runPhysicsDiagnostic() {
     if (isDiagnosticPending) return;
@@ -368,6 +369,36 @@ async function init() {
       0,
       scalarBufferSize
     );
+    // Whitewater diagnostic buffers
+    commandEncoder.copyBufferToBuffer(
+      simulator.whitewaterCountBuffer,
+      0,
+      whitewaterCountStagingBuffer,
+      0,
+      4
+    );
+    // Copy from region containing RECENT particles (near last known write position)
+    // This ensures we sample live particles, not old dead ones
+    const maxParticlesForCopy = simulator.maxWhitewaterParticles;
+    const estimatedWritePos = lastWhitewaterCount % maxParticlesForCopy;
+    // Start copying from (estimatedWritePos - maxSampleParticles) to capture recent particles
+    const copyStartIdx = Math.max(
+      0,
+      estimatedWritePos - maxSampleParticles + 100
+    ); // +100 buffer for new emissions
+    const copyOffset = copyStartIdx * 16; // bytes
+    // Ensure we don't read past buffer end
+    const safeCopySize = Math.min(
+      maxSampleParticles * 16,
+      maxParticlesForCopy * 16 - copyOffset
+    );
+    commandEncoder.copyBufferToBuffer(
+      simulator.whitewaterVelTypeBuffer,
+      copyOffset,
+      whitewaterVelTypeStagingBuffer,
+      0,
+      safeCopySize
+    );
     device.queue.submit([commandEncoder.finish()]);
 
     // Read back all data
@@ -379,6 +410,8 @@ async function init() {
       trappedAirStagingBuffer.mapAsync(GPUMapMode.READ),
       waveCrestStagingBuffer.mapAsync(GPUMapMode.READ),
       kineticEnergyStagingBuffer.mapAsync(GPUMapMode.READ),
+      whitewaterCountStagingBuffer.mapAsync(GPUMapMode.READ),
+      whitewaterVelTypeStagingBuffer.mapAsync(GPUMapMode.READ),
     ]);
 
     const markerData = new Uint32Array(
@@ -402,6 +435,12 @@ async function init() {
     const kineticEnergyData = new Float32Array(
       kineticEnergyStagingBuffer.getMappedRange().slice(0)
     );
+    const whitewaterCountData = new Uint32Array(
+      whitewaterCountStagingBuffer.getMappedRange().slice(0)
+    );
+    const whitewaterVelTypeData = new Float32Array(
+      whitewaterVelTypeStagingBuffer.getMappedRange().slice(0)
+    );
 
     markerStagingBuffer.unmap();
     divergenceStagingBuffer.unmap();
@@ -410,6 +449,8 @@ async function init() {
     trappedAirStagingBuffer.unmap();
     waveCrestStagingBuffer.unmap();
     kineticEnergyStagingBuffer.unmap();
+    whitewaterCountStagingBuffer.unmap();
+    whitewaterVelTypeStagingBuffer.unmap();
 
     // Get actual grid dimensions
     const nx = RESOLUTION_X;
@@ -701,6 +742,45 @@ async function init() {
     }
 
     // -------------------------------------------------------------------------
+    // 7. Whitewater Particles
+    // -------------------------------------------------------------------------
+    // With circular buffer, raw count can exceed maxParticles
+    const rawEmissionCount = whitewaterCountData[0];
+    const maxParticles = simulator.maxWhitewaterParticles;
+    const bufferWrapped = rawEmissionCount > maxParticles;
+    const currentWritePos = rawEmissionCount % maxParticles;
+
+    let foamCount = 0;
+    let sprayCount = 0;
+    let bubbleCount = 0;
+    let deadCount = 0;
+    let sampledCount = 0;
+
+    // Sample from staging buffer (now contains particles near write position)
+    for (let i = 0; i < maxSampleParticles; i++) {
+      const particleType = Math.round(whitewaterVelTypeData[i * 4 + 3]);
+      if (particleType === 0) deadCount++;
+      else if (particleType === 1) foamCount++;
+      else if (particleType === 2) sprayCount++;
+      else if (particleType === 3) bubbleCount++;
+      sampledCount++;
+    }
+
+    // Count active (non-dead) particles in sample
+    const activeInSample = foamCount + sprayCount + bubbleCount;
+
+    let whitewaterStatus = '✓ Good';
+    if (rawEmissionCount === 0) {
+      whitewaterStatus = '○ No particles (waiting for emission)';
+    } else if (activeInSample === 0 && rawEmissionCount > 100) {
+      whitewaterStatus = '⚠ No active particles (dying too fast?)';
+    } else if (bufferWrapped && activeInSample > 0) {
+      whitewaterStatus = `✓ Recycling, ${activeInSample} active`;
+    } else if (activeInSample > 0) {
+      whitewaterStatus = `✓ ${activeInSample} active particles`;
+    }
+
+    // -------------------------------------------------------------------------
     // Output
     // -------------------------------------------------------------------------
     console.log(`[Physics Diagnostic]
@@ -739,8 +819,16 @@ async function init() {
   │ Wave Crest (Iwc):  [${iwcCount > 0 ? iwcMin.toFixed(2) : '0'}, ${iwcMax.toFixed(2)}] avg=${iwcAvg.toFixed(2)} (${iwcCount} cells)
   │ Kinetic (Ike):     [${ikeCount > 0 ? ikeMin.toFixed(2) : '0'}, ${ikeMax.toFixed(2)}] avg=${ikeAvg.toFixed(2)} (${ikeCount} cells)
   │ Status: ${emissionStatus}
+  │
+  ├─ Whitewater Particles ──────────────────
+  │ Sampled: ${activeInSample} active, ${deadCount} dead (of ${sampledCount})
+  │ Foam: ${foamCount} | Spray: ${sprayCount} | Bubble: ${bubbleCount}
+  │ Write@${currentWritePos} | Emissions: ${rawEmissionCount} | Buffer: ${maxParticles}
+  │ Status: ${whitewaterStatus}
   └────────────────────────────────────────────`);
 
+    // Update counter for next diagnostic's copy offset
+    lastWhitewaterCount = rawEmissionCount;
     isDiagnosticPending = false;
   }
 
@@ -1144,6 +1232,7 @@ async function init() {
       simulator.computeEmissionPotentials();
 
       // Step whitewater particle simulation (emit, update, classify)
+      // Moderate emission rate (0.1) for visible particles without overflow
       simulator.stepWhitewater(1 / 60, 0.1, simConfig.gravity);
 
       // Create new command encoder for rendering passes

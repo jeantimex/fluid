@@ -1060,9 +1060,9 @@ export class Simulator {
 
     // f32 values (bytes 32-47): emission parameters
     f32View[8] = emissionRate;      // emissionRate
-    f32View[9] = 0.05;              // trappedAirWeight
-    f32View[10] = 0.08;             // waveCrestWeight
-    f32View[11] = 0.01;             // energyWeight
+    f32View[9] = 0.1;               // trappedAirWeight (increased from 0.05)
+    f32View[10] = 0.15;             // waveCrestWeight (increased from 0.08)
+    f32View[11] = 0.1;              // energyWeight (increased from 0.01)
 
     // f32 values (bytes 48-63): particle physics
     f32View[12] = 2.0;              // foamLifetime (seconds)

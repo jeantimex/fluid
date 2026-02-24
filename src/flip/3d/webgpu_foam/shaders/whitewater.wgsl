@@ -158,17 +158,10 @@ fn emitWhitewater(@builtin(global_invocation_id) id: vec3<u32>) {
   // Probabilistic emission
   if (rand > emissionProb) { return; }
 
-  // Check if we have room for more particles
-  let currentCount = atomicLoad(&particleCount);
-  if (currentCount >= uniforms.maxParticles) { return; }
-
-  // Allocate a particle slot
-  let particleIdx = atomicAdd(&particleCount, 1u);
-  if (particleIdx >= uniforms.maxParticles) {
-    // Rollback if we exceeded (race condition)
-    atomicSub(&particleCount, 1u);
-    return;
-  }
+  // Allocate a slot using atomic counter with circular wrapping
+  // When buffer is full, new particles overwrite oldest ones
+  let rawIdx = atomicAdd(&particleCount, 1u);
+  let particleIdx = rawIdx % uniforms.maxParticles;
 
   // Get world position and velocity at this cell
   let worldPos = gridToWorld(id.x, id.y, id.z);
@@ -220,15 +213,15 @@ fn emitWhitewater(@builtin(global_invocation_id) id: vec3<u32>) {
 @compute @workgroup_size(256)
 fn updateWhitewater(@builtin(global_invocation_id) id: vec3<u32>) {
   let idx = id.x;
-  let count = atomicLoad(&particleCount);
-  if (idx >= count) { return; }
+  // Process all slots up to maxParticles (circular buffer may wrap)
+  if (idx >= uniforms.maxParticles) { return; }
 
   var posLife = particlePosLife[idx];
   var velType = particleVelType[idx];
 
   let particleType = u32(velType.w);
 
-  // Skip dead particles
+  // Skip dead/uninitialized particles
   if (particleType == TYPE_DEAD) { return; }
 
   var pos = posLife.xyz;
@@ -293,8 +286,8 @@ fn updateWhitewater(@builtin(global_invocation_id) id: vec3<u32>) {
 @compute @workgroup_size(256)
 fn classifyWhitewater(@builtin(global_invocation_id) id: vec3<u32>) {
   let idx = id.x;
-  let count = atomicLoad(&particleCount);
-  if (idx >= count) { return; }
+  // Process all slots up to maxParticles (circular buffer may wrap)
+  if (idx >= uniforms.maxParticles) { return; }
 
   var posLife = particlePosLife[idx];
   var velType = particleVelType[idx];
