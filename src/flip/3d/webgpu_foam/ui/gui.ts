@@ -15,6 +15,11 @@ export interface SimulationGuiConfig {
   useRedBlackGS: boolean;
   particleWorkgroupSize: number;
   showWireframe: boolean;
+  // Whitewater settings
+  showWhitewater: boolean;
+  foamSize: number;
+  spraySize: number;
+  bubbleSize: number;
 }
 
 export interface GuiApi {
@@ -516,6 +521,21 @@ export function createGui(params: {
   containerFolder.add(params.simConfig, 'boxDepth', 5, 50, 1).name('Box Depth');
   containerFolder.add(params.simConfig, 'showWireframe').name('Show Wireframe');
   containerFolder.close();
+
+  const whitewaterFolder = gui.addFolder('Whitewater');
+  whitewaterFolder
+    .add(params.simConfig, 'showWhitewater')
+    .name('Show Whitewater');
+  whitewaterFolder
+    .add(params.simConfig, 'foamSize', 0.01, 0.3, 0.005)
+    .name('Foam Size');
+  whitewaterFolder
+    .add(params.simConfig, 'spraySize', 0.01, 0.2, 0.005)
+    .name('Spray Size');
+  whitewaterFolder
+    .add(params.simConfig, 'bubbleSize', 0.01, 0.2, 0.005)
+    .name('Bubble Size');
+  whitewaterFolder.close();
 
   const envFolder = gui.addFolder('Environment');
   const tileColorState = {

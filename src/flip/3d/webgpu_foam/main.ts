@@ -158,6 +158,21 @@ async function init() {
 
     /** Toggle wireframe rendering of container bounds. */
     showWireframe: true,
+
+    // =========================================================================
+    // WHITEWATER CONFIGURATION
+    // =========================================================================
+    /** Enable/disable whitewater rendering. */
+    showWhitewater: true,
+
+    /** Foam particle size (world units). Foam floats on the surface. */
+    foamSize: 0.08,
+
+    /** Spray particle size (world units). Spray is airborne droplets. */
+    spraySize: 0.04,
+
+    /** Bubble particle size (world units). Bubbles rise underwater. */
+    bubbleSize: 0.05,
   };
 
   // Smooth configuration for gradual transitions
