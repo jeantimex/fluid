@@ -296,6 +296,18 @@ async function init() {
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
   });
 
+  // Whitewater diagnostic staging buffers
+  const whitewaterCountStagingBuffer = device.createBuffer({
+    size: 4,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+  // Sample first 1000 particles for type breakdown
+  const maxSampleParticles = 1000;
+  const whitewaterVelTypeStagingBuffer = device.createBuffer({
+    size: maxSampleParticles * 16, // vec4 per particle
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+
   let isDiagnosticPending = false;
   let diagnosticFrameCount = 0;
   const DIAGNOSTIC_INTERVAL = 60; // Run every 60 frames
@@ -1130,6 +1142,9 @@ async function init() {
 
       // Compute whitewater emission potentials (Ita, Iwc, Ike)
       simulator.computeEmissionPotentials();
+
+      // Step whitewater particle simulation (emit, update, classify)
+      simulator.stepWhitewater(1 / 60, 0.1, simConfig.gravity);
 
       // Create new command encoder for rendering passes
       commandEncoder = device.createCommandEncoder();

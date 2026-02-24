@@ -1,6 +1,7 @@
 import flipSimulationShader from './shaders/flip_simulation.wgsl?raw';
 import sdfShader from './shaders/sdf.wgsl?raw';
 import emissionShader from './shaders/emission.wgsl?raw';
+import whitewaterShader from './shaders/whitewater.wgsl?raw';
 
 /**
  * GPU FLIP Fluid Simulation Driver
@@ -240,6 +241,17 @@ export class Simulator {
   computeTrappedAirPipeline!: GPUComputePipeline;
   computeWaveCrestPipeline!: GPUComputePipeline;
   computeKineticEnergyPipeline!: GPUComputePipeline;
+
+  /** Whitewater shader resources. */
+  private whitewaterShaderModule: GPUShaderModule;
+  private whitewaterPipelineLayout: GPUPipelineLayout;
+  private whitewaterBindGroup: GPUBindGroup;
+  private whitewaterUniformBuffer: GPUBuffer;
+
+  /** Whitewater compute pipelines. */
+  emitWhitewaterPipeline!: GPUComputePipeline;
+  updateWhitewaterPipeline!: GPUComputePipeline;
+  classifyWhitewaterPipeline!: GPUComputePipeline;
 
   constructor(
     device: GPUDevice,
@@ -580,6 +592,67 @@ export class Simulator {
     this.computeKineticEnergyPipeline = device.createComputePipeline({
       layout: this.emissionPipelineLayout,
       compute: { module: this.emissionShaderModule, entryPoint: 'computeKineticEnergy' },
+    });
+
+    // -------------------------------------------------------------------------
+    // Whitewater Particle Shader Setup
+    // -------------------------------------------------------------------------
+    this.whitewaterShaderModule = device.createShaderModule({
+      code: whitewaterShader,
+    });
+
+    // Whitewater uniform buffer (80 bytes for WhitewaterUniforms struct)
+    this.whitewaterUniformBuffer = device.createBuffer({
+      size: 80,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Whitewater bind group layout (9 bindings)
+    const whitewaterBindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // velocity
+        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // surfaceSDF
+        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // trappedAir
+        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // waveCrest
+        { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }, // kineticEnergy
+        { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // posLife
+        { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // velType
+        { binding: 8, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }, // count
+      ],
+    });
+
+    this.whitewaterPipelineLayout = device.createPipelineLayout({
+      bindGroupLayouts: [whitewaterBindGroupLayout],
+    });
+
+    this.whitewaterBindGroup = device.createBindGroup({
+      layout: whitewaterBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.whitewaterUniformBuffer } },
+        { binding: 1, resource: { buffer: this.gridVelocityFloatBuffer } },
+        { binding: 2, resource: { buffer: this.surfaceSDFBuffer } },
+        { binding: 3, resource: { buffer: this.trappedAirPotentialBuffer } },
+        { binding: 4, resource: { buffer: this.waveCrestPotentialBuffer } },
+        { binding: 5, resource: { buffer: this.kineticEnergyPotentialBuffer } },
+        { binding: 6, resource: { buffer: this.whitewaterPosLifeBuffer } },
+        { binding: 7, resource: { buffer: this.whitewaterVelTypeBuffer } },
+        { binding: 8, resource: { buffer: this.whitewaterCountBuffer } },
+      ],
+    });
+
+    // Create whitewater pipelines
+    this.emitWhitewaterPipeline = device.createComputePipeline({
+      layout: this.whitewaterPipelineLayout,
+      compute: { module: this.whitewaterShaderModule, entryPoint: 'emitWhitewater' },
+    });
+    this.updateWhitewaterPipeline = device.createComputePipeline({
+      layout: this.whitewaterPipelineLayout,
+      compute: { module: this.whitewaterShaderModule, entryPoint: 'updateWhitewater' },
+    });
+    this.classifyWhitewaterPipeline = device.createComputePipeline({
+      layout: this.whitewaterPipelineLayout,
+      compute: { module: this.whitewaterShaderModule, entryPoint: 'classifyWhitewater' },
     });
 
     this.updateUniforms(0, 0.99, 40.0, 10.0, [0, 0, 0], [0, 0, 0], [0, 0, 1]);
@@ -947,6 +1020,80 @@ export class Simulator {
 
     pass.setPipeline(this.computeKineticEnergyPipeline);
     pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
+  }
+
+  /**
+   * Step the whitewater particle simulation.
+   * Emits new particles, updates existing ones, and reclassifies based on SDF.
+   *
+   * @param dt - Time step in seconds
+   * @param emissionRate - Base emission rate multiplier (0.0 - 1.0)
+   * @param gravity - Gravity strength (default 9.8)
+   */
+  stepWhitewater(dt: number, emissionRate: number = 0.1, gravity: number = 9.8) {
+    const scalarGridWG = [
+      Math.ceil(this.nx / 8),
+      Math.ceil(this.ny / 4),
+      Math.ceil(this.nz / 4),
+    ];
+    const particleWG = Math.ceil(this.maxWhitewaterParticles / 256);
+
+    // Update whitewater uniforms
+    const uniformData = new ArrayBuffer(80);
+    const u32View = new Uint32Array(uniformData);
+    const f32View = new Float32Array(uniformData);
+
+    // u32 values (bytes 0-15)
+    u32View[0] = this.nx;
+    u32View[1] = this.ny;
+    u32View[2] = this.nz;
+    u32View[3] = this.maxWhitewaterParticles;
+
+    // f32 values (bytes 16-31): grid dimensions and dt
+    f32View[4] = this.gridWidth;
+    f32View[5] = this.gridHeight;
+    f32View[6] = this.gridDepth;
+    f32View[7] = dt;
+
+    // f32 values (bytes 32-47): emission parameters
+    f32View[8] = emissionRate;      // emissionRate
+    f32View[9] = 0.05;              // trappedAirWeight
+    f32View[10] = 0.08;             // waveCrestWeight
+    f32View[11] = 0.01;             // energyWeight
+
+    // f32 values (bytes 48-63): particle physics
+    f32View[12] = 2.0;              // foamLifetime (seconds)
+    f32View[13] = 1.5;              // sprayLifetime
+    f32View[14] = 3.0;              // bubbleLifetime
+    f32View[15] = gravity;          // gravity
+
+    // f32/u32 values (bytes 64-79): thresholds and frame number
+    f32View[16] = 0.5;              // surfaceThreshold
+    f32View[17] = 1.0;              // sprayThreshold
+    f32View[18] = 1.0;              // bubbleThreshold
+    u32View[19] = this.frameNumber; // frameNumber for random seed
+
+    this.device.queue.writeBuffer(this.whitewaterUniformBuffer, 0, uniformData);
+
+    // Create encoder and run whitewater passes
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setBindGroup(0, this.whitewaterBindGroup);
+
+    // 1. Emit new particles based on emission potentials
+    pass.setPipeline(this.emitWhitewaterPipeline);
+    pass.dispatchWorkgroups(scalarGridWG[0], scalarGridWG[1], scalarGridWG[2]);
+
+    // 2. Update existing particles (advection, physics, aging)
+    pass.setPipeline(this.updateWhitewaterPipeline);
+    pass.dispatchWorkgroups(particleWG);
+
+    // 3. Reclassify particles based on current SDF
+    pass.setPipeline(this.classifyWhitewaterPipeline);
+    pass.dispatchWorkgroups(particleWG);
 
     pass.end();
     this.device.queue.submit([encoder.finish()]);
