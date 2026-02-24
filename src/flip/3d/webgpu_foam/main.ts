@@ -509,6 +509,72 @@ async function init() {
     const jfaWorking = maxSDF < 500 && minSDF > -500;
 
     // -------------------------------------------------------------------------
+    // 5. Surface Normal Quality (from SDF gradient)
+    // -------------------------------------------------------------------------
+    // Compute gradient of SDF at surface cells to verify normals are usable
+    // for wave crest potential (velocity · normal)
+    let normalSampleCount = 0;
+    let normalMagSum = 0;
+    let normalMagMin = Infinity;
+    let normalMagMax = 0;
+    let degenerateNormals = 0; // Normals with magnitude < 0.1 or > 2.0
+
+    // Helper to get SDF value with bounds checking
+    const getSDF = (x: number, y: number, z: number): number => {
+      if (x < 0 || x >= nx || y < 0 || y >= ny || z < 0 || z >= nz) {
+        return 1000.0; // Outside domain = far outside fluid
+      }
+      return sdfData[x + y * nx + z * nx * ny];
+    };
+
+    // Sample surface cells (not at boundaries to allow gradient computation)
+    for (let z = 1; z < nz - 1; z++) {
+      for (let y = 1; y < ny - 1; y++) {
+        for (let x = 1; x < nx - 1; x++) {
+          const idx = x + y * nx + z * nx * ny;
+          const sdf = sdfData[idx];
+
+          // Only check surface cells (|SDF| < 1.5)
+          if (Math.abs(sdf) > 1.5) continue;
+
+          // Compute gradient using central differences
+          const gradX = (getSDF(x + 1, y, z) - getSDF(x - 1, y, z)) * 0.5;
+          const gradY = (getSDF(x, y + 1, z) - getSDF(x, y - 1, z)) * 0.5;
+          const gradZ = (getSDF(x, y, z + 1) - getSDF(x, y, z - 1)) * 0.5;
+
+          // Gradient magnitude (should be ~1 for a proper distance field)
+          const mag = Math.sqrt(gradX * gradX + gradY * gradY + gradZ * gradZ);
+
+          normalSampleCount++;
+          normalMagSum += mag;
+          normalMagMin = Math.min(normalMagMin, mag);
+          normalMagMax = Math.max(normalMagMax, mag);
+
+          // Check for degenerate normals
+          if (mag < 0.1 || mag > 2.0) {
+            degenerateNormals++;
+          }
+        }
+      }
+    }
+
+    const normalMagAvg =
+      normalSampleCount > 0 ? normalMagSum / normalSampleCount : 0;
+    const degeneratePercent =
+      normalSampleCount > 0
+        ? ((degenerateNormals / normalSampleCount) * 100).toFixed(1)
+        : '0';
+
+    let normalStatus = '✓ Good';
+    if (normalSampleCount === 0) {
+      normalStatus = '⚠ No surface cells to sample';
+    } else if (degenerateNormals > normalSampleCount * 0.1) {
+      normalStatus = `⚠ ${degeneratePercent}% degenerate`;
+    } else if (normalMagAvg < 0.5 || normalMagAvg > 1.5) {
+      normalStatus = `○ Avg magnitude off (${normalMagAvg.toFixed(2)})`;
+    }
+
+    // -------------------------------------------------------------------------
     // Output
     // -------------------------------------------------------------------------
     console.log(`[Physics Diagnostic]
@@ -533,6 +599,13 @@ async function init() {
   │ Surface Cells (|SDF|<1): ${surfaceCells}
   │ JFA Status: ${jfaWorking ? '✓ Propagated' : '⚠ Not propagated (values still ±1000)'}
   │ Status: ${sdfStatus}
+  │
+  ├─ Surface Normals (∇SDF) ─────────────────
+  │ Sampled: ${normalSampleCount} surface cells
+  │ Gradient Mag: [${normalMagMin.toFixed(2)}, ${normalMagMax.toFixed(2)}] avg=${normalMagAvg.toFixed(2)}
+  │ (Expected: ~1.0 for proper distance field)
+  │ Degenerate (<0.1 or >2.0): ${degenerateNormals} (${degeneratePercent}%)
+  │ Status: ${normalStatus}
   └────────────────────────────────────────────`);
 
     isDiagnosticPending = false;
