@@ -96,6 +96,33 @@ export class Simulator {
    */
   surfaceSDFBuffer: GPUBuffer;
 
+  // =========================================================================
+  // Whitewater Emission Potential Buffers
+  // =========================================================================
+  // These buffers store per-cell emission potentials used to determine
+  // where whitewater particles (foam, spray, bubbles) should spawn.
+
+  /**
+   * Trapped Air Potential (Ita) - measures turbulence/curvature.
+   * High values indicate regions where air gets trapped (bubble emission).
+   * Computed from velocity field curvature (Laplacian or curl magnitude).
+   */
+  trappedAirPotentialBuffer: GPUBuffer;
+
+  /**
+   * Wave Crest Potential (Iwc) - measures breaking waves.
+   * High values where fluid velocity points outward from surface.
+   * Computed as max(0, velocity · surfaceNormal).
+   */
+  waveCrestPotentialBuffer: GPUBuffer;
+
+  /**
+   * Kinetic Energy Potential (Ike) - measures overall fluid energy.
+   * Used as multiplier for emission rates.
+   * Computed as |velocity|².
+   */
+  kineticEnergyPotentialBuffer: GPUBuffer;
+
   /** Uniform block containing per-frame simulation parameters. */
   uniformBuffer: GPUBuffer;
 
@@ -230,6 +257,27 @@ export class Simulator {
     // Stores signed distance to fluid surface (f32 per cell).
     // COPY_SRC allows reading back for diagnostics.
     this.surfaceSDFBuffer = createBuffer(
+      scalarGridCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+
+    // -------------------------------------------------------------------------
+    // Whitewater Emission Potential Buffers
+    // -------------------------------------------------------------------------
+    // Trapped Air Potential (Ita) - turbulence/curvature for bubble emission
+    this.trappedAirPotentialBuffer = createBuffer(
+      scalarGridCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+
+    // Wave Crest Potential (Iwc) - breaking waves for spray emission
+    this.waveCrestPotentialBuffer = createBuffer(
+      scalarGridCount * 4,
+      GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+    );
+
+    // Kinetic Energy Potential (Ike) - energy multiplier for all emission
+    this.kineticEnergyPotentialBuffer = createBuffer(
       scalarGridCount * 4,
       GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     );
