@@ -282,6 +282,20 @@ async function init() {
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
   });
 
+  // Emission potential staging buffers
+  const trappedAirStagingBuffer = device.createBuffer({
+    size: scalarBufferSize,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+  const waveCrestStagingBuffer = device.createBuffer({
+    size: scalarBufferSize,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+  const kineticEnergyStagingBuffer = device.createBuffer({
+    size: scalarBufferSize,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+
   let isDiagnosticPending = false;
   let diagnosticFrameCount = 0;
   const DIAGNOSTIC_INTERVAL = 60; // Run every 60 frames
@@ -320,6 +334,28 @@ async function init() {
       0,
       scalarBufferSize
     );
+    // Emission potential buffers
+    commandEncoder.copyBufferToBuffer(
+      simulator.trappedAirPotentialBuffer,
+      0,
+      trappedAirStagingBuffer,
+      0,
+      scalarBufferSize
+    );
+    commandEncoder.copyBufferToBuffer(
+      simulator.waveCrestPotentialBuffer,
+      0,
+      waveCrestStagingBuffer,
+      0,
+      scalarBufferSize
+    );
+    commandEncoder.copyBufferToBuffer(
+      simulator.kineticEnergyPotentialBuffer,
+      0,
+      kineticEnergyStagingBuffer,
+      0,
+      scalarBufferSize
+    );
     device.queue.submit([commandEncoder.finish()]);
 
     // Read back all data
@@ -328,6 +364,9 @@ async function init() {
       divergenceStagingBuffer.mapAsync(GPUMapMode.READ),
       velocityStagingBuffer.mapAsync(GPUMapMode.READ),
       sdfStagingBuffer.mapAsync(GPUMapMode.READ),
+      trappedAirStagingBuffer.mapAsync(GPUMapMode.READ),
+      waveCrestStagingBuffer.mapAsync(GPUMapMode.READ),
+      kineticEnergyStagingBuffer.mapAsync(GPUMapMode.READ),
     ]);
 
     const markerData = new Uint32Array(
@@ -342,11 +381,23 @@ async function init() {
     const sdfData = new Float32Array(
       sdfStagingBuffer.getMappedRange().slice(0)
     );
+    const trappedAirData = new Float32Array(
+      trappedAirStagingBuffer.getMappedRange().slice(0)
+    );
+    const waveCrestData = new Float32Array(
+      waveCrestStagingBuffer.getMappedRange().slice(0)
+    );
+    const kineticEnergyData = new Float32Array(
+      kineticEnergyStagingBuffer.getMappedRange().slice(0)
+    );
 
     markerStagingBuffer.unmap();
     divergenceStagingBuffer.unmap();
     velocityStagingBuffer.unmap();
     sdfStagingBuffer.unmap();
+    trappedAirStagingBuffer.unmap();
+    waveCrestStagingBuffer.unmap();
+    kineticEnergyStagingBuffer.unmap();
 
     // Get actual grid dimensions
     const nx = RESOLUTION_X;
@@ -575,6 +626,69 @@ async function init() {
     }
 
     // -------------------------------------------------------------------------
+    // 6. Emission Potentials (Ita, Iwc, Ike)
+    // -------------------------------------------------------------------------
+    // Analyze emission potentials at surface cells (|SDF| < 2)
+    let itaMin = Infinity,
+      itaMax = 0,
+      itaSum = 0,
+      itaCount = 0;
+    let iwcMin = Infinity,
+      iwcMax = 0,
+      iwcSum = 0,
+      iwcCount = 0;
+    let ikeMin = Infinity,
+      ikeMax = 0,
+      ikeSum = 0,
+      ikeCount = 0;
+    let activeCells = 0; // Cells with any non-zero potential
+    const totalCells = nx * ny * nz;
+
+    for (let i = 0; i < totalCells; i++) {
+      const sdf = sdfData[i];
+      // Only check near-surface cells
+      if (Math.abs(sdf) > 3.0) continue;
+
+      const ita = trappedAirData[i];
+      const iwc = waveCrestData[i];
+      const ike = kineticEnergyData[i];
+
+      if (ita > 0 || iwc > 0 || ike > 0) {
+        activeCells++;
+      }
+
+      if (ita > 0) {
+        itaMin = Math.min(itaMin, ita);
+        itaMax = Math.max(itaMax, ita);
+        itaSum += ita;
+        itaCount++;
+      }
+      if (iwc > 0) {
+        iwcMin = Math.min(iwcMin, iwc);
+        iwcMax = Math.max(iwcMax, iwc);
+        iwcSum += iwc;
+        iwcCount++;
+      }
+      if (ike > 0) {
+        ikeMin = Math.min(ikeMin, ike);
+        ikeMax = Math.max(ikeMax, ike);
+        ikeSum += ike;
+        ikeCount++;
+      }
+    }
+
+    const itaAvg = itaCount > 0 ? itaSum / itaCount : 0;
+    const iwcAvg = iwcCount > 0 ? iwcSum / iwcCount : 0;
+    const ikeAvg = ikeCount > 0 ? ikeSum / ikeCount : 0;
+
+    let emissionStatus = '✓ Good';
+    if (activeCells === 0) {
+      emissionStatus = '○ No active cells (fluid settling)';
+    } else if (itaMax > 100 || iwcMax > 100 || ikeMax > 10000) {
+      emissionStatus = '⚠ Values very high';
+    }
+
+    // -------------------------------------------------------------------------
     // Output
     // -------------------------------------------------------------------------
     console.log(`[Physics Diagnostic]
@@ -606,6 +720,13 @@ async function init() {
   │ (Expected: ~1.0 for proper distance field)
   │ Degenerate (<0.1 or >2.0): ${degenerateNormals} (${degeneratePercent}%)
   │ Status: ${normalStatus}
+  │
+  ├─ Emission Potentials ───────────────────
+  │ Active Cells: ${activeCells} (near surface with potential > 0)
+  │ Trapped Air (Ita): [${itaCount > 0 ? itaMin.toFixed(2) : '0'}, ${itaMax.toFixed(2)}] avg=${itaAvg.toFixed(2)} (${itaCount} cells)
+  │ Wave Crest (Iwc):  [${iwcCount > 0 ? iwcMin.toFixed(2) : '0'}, ${iwcMax.toFixed(2)}] avg=${iwcAvg.toFixed(2)} (${iwcCount} cells)
+  │ Kinetic (Ike):     [${ikeCount > 0 ? ikeMin.toFixed(2) : '0'}, ${ikeMax.toFixed(2)}] avg=${ikeAvg.toFixed(2)} (${ikeCount} cells)
+  │ Status: ${emissionStatus}
   └────────────────────────────────────────────`);
 
     isDiagnosticPending = false;
