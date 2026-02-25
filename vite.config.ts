@@ -48,6 +48,10 @@ export default defineConfig({
           __dirname,
           'src/flip/3d/webgpu_flip/index.html'
         ),
+        'demo-flip-3d-foam': resolve(
+          __dirname,
+          'src/flip/3d/webgpu_foam/index.html'
+        ),
       },
     },
   },

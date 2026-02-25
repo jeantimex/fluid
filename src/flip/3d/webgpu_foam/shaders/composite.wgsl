@@ -3,49 +3,19 @@
 // =============================================================================
 //
 // This fullscreen pass produces the final rendered image by combining:
-// - Fluid particles (from G-buffer data)
+// - Fluid surface/particles (from G-buffer data)
 // - Shadow mapping (directional light shadows)
 // - Ambient occlusion (from AO pass)
 // - Procedural floor with checkerboard tiles
 // - Procedural sky gradient with sun
-//
-// ## Input Textures
-//
-// - **gBufferTex**: Particle normals (xy), speed, depth (rgba16float)
-// - **occlusionTex**: Accumulated ambient occlusion (r16float)
-// - **shadowTex**: Shadow depth map from light POV (depth32float)
-//
-// ## Fluid Shading
-//
-// 1. Reconstruct view-space normal from G-buffer (z = sqrt(1 - x² - y²))
-// 2. Reconstruct world position from depth + inverse view matrix
-// 3. Sample shadow map with 3x3 PCF (Percentage Closer Filtering)
-// 4. Apply HSV color based on particle speed (faster = bluer hue)
-// 5. Modulate by ambient occlusion and shadow
-//
-// ## Floor Rendering
-//
-// For background pixels (no fluid), we ray-cast to a floor plane:
-// 1. Compute ray-plane intersection
-// 2. Apply checkerboard pattern with 4 colors
-// 3. Add procedural HSV jitter per tile for visual interest
-// 4. Sample floor shadows from the same shadow map
-//
-// ## Sky Rendering
-//
-// For pixels that miss both fluid and floor:
-// 1. Blend between horizon and zenith colors based on ray direction
-// 2. Add sun highlight (Phong-style specular lobe)
+// =============================================================================
 
 struct Uniforms {
-  // Camera inverse view to reconstruct world rays/positions.
   inverseViewMatrix: mat4x4<f32>,
-  // Light view-projection for shadow-map lookup.
   lightProjectionViewMatrix: mat4x4<f32>,
   resolution: vec2<f32>,
   fov: f32,
   shadowResolution: f32,
-  // World-space camera origin for ray-plane intersection.
   cameraPos: vec3<f32>,
   _pad0: f32,
   dirToSun: vec3<f32>,
@@ -118,7 +88,6 @@ fn linearToSrgb(c: vec3<f32>) -> vec3<f32> { return pow(c, vec3<f32>(1.0 / 2.2))
 fn hashInt2(v: vec2<i32>) -> u32 { return u32(v.x) * 5023u + u32(v.y) * 96456u; }
 
 fn randomValue(state: ptr<function, u32>) -> f32 {
-  // Tiny hash-based PRNG for tile color variation.
   *state = *state * 747796405u + 2891336453u;
   let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
   return f32((word >> 22u) ^ word) / 4294967295.0;
@@ -133,7 +102,6 @@ fn randomSNorm3(state: ptr<function, u32>) -> vec3<f32> {
 }
 
 fn getSkyColor(dir: vec3<f32>) -> vec3<f32> {
-  // Horizon/zenith gradient + sun lobe.
   let sun = pow(max(0.0, dot(dir, uniforms.dirToSun)), uniforms.sunPower);
   let skyGradientT = pow(smoothstep(0.0, 0.4, dir.y), 0.35);
   let groundToSkyT = smoothstep(-0.01, 0.0, dir.y);
@@ -149,8 +117,7 @@ fn rayPlaneIntersect(ro: vec3<f32>, rd: vec3<f32>, planeY: f32) -> f32 {
   return select(-1.0, t, t > 0.0);
 }
 
-fn sampleFloorShadow(worldPos: vec3<f32>) -> f32 {
-  // Standard 3x3 PCF shadow filter.
+fn sampleShadowPCF(worldPos: vec3<f32>) -> f32 {
   var lightSpacePos = uniforms.lightProjectionViewMatrix * vec4<f32>(worldPos, 1.0);
   lightSpacePos = lightSpacePos / lightSpacePos.w;
   let lightCoords = vec2<f32>(lightSpacePos.x * 0.5 + 0.5, 0.5 - lightSpacePos.y * 0.5);
@@ -173,108 +140,117 @@ fn sampleFloorShadow(worldPos: vec3<f32>) -> f32 {
   return select(1.0, shadow, inBounds);
 }
 
-fn getSceneBackground(rayDir: vec3<f32>, floorShadow: f32) -> vec3<f32> {
-  // Intersect camera ray with floor plane and shade tile if hit is in bounds.
-  let t = rayPlaneIntersect(uniforms.cameraPos, rayDir, uniforms.floorY);
-
-  if (t > 0.0) {
-    let hitPos = uniforms.cameraPos + rayDir * t;
-    let halfSize = uniforms.floorSize * 0.5;
-    if (abs(hitPos.x) < halfSize && abs(hitPos.z) < halfSize) {
-      let rotatedPos = vec2<f32>(-hitPos.z, hitPos.x);
-
-      var tileCol: vec3<f32>;
-      if (rotatedPos.x < 0.0) { tileCol = uniforms.tileCol1; }
-      else { tileCol = uniforms.tileCol2; }
-      if (rotatedPos.y < 0.0) {
-        if (rotatedPos.x < 0.0) { tileCol = uniforms.tileCol3; }
-        else { tileCol = uniforms.tileCol4; }
-      }
-
-      tileCol = linearToSrgb(tileCol);
-      let tileCoord = floor(rotatedPos * uniforms.tileScale);
-
-      var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
-      let rv = randomSNorm3(&rngState) * vec3<f32>(0.2, 0.0, 0.73) * 0.1;
-      tileCol = tweakHsv(tileCol, rv);
-
-      let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
-      if (isDarkTile) {
-        tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, uniforms.tileDarkFactor));
-      }
-
-      let ambient = 0.4;
-      let shadowFactor = ambient + (1.0 - ambient) * floorShadow;
-      tileCol *= shadowFactor;
-
-      return tileCol;
-    }
+fn getBackgroundTileColor(hitPos: vec3<f32>, shadow: f32) -> vec3<f32> {
+  let rotatedPos = vec2<f32>(-hitPos.z, hitPos.x);
+  var tileCol: vec3<f32>;
+  if (rotatedPos.x < 0.0) { tileCol = uniforms.tileCol1; }
+  else { tileCol = uniforms.tileCol2; }
+  if (rotatedPos.y < 0.0) {
+    if (rotatedPos.x < 0.0) { tileCol = uniforms.tileCol3; }
+    else { tileCol = uniforms.tileCol4; }
   }
 
-  return getSkyColor(rayDir);
+  tileCol = linearToSrgb(tileCol);
+  let tileCoord = floor(rotatedPos * uniforms.tileScale);
+
+  var rngState = hashInt2(vec2<i32>(i32(tileCoord.x), i32(tileCoord.y)));
+  let rv = randomSNorm3(&rngState) * vec3<f32>(0.2, 0.0, 0.73) * 0.1;
+  tileCol = tweakHsv(tileCol, rv);
+
+  let isDarkTile = modulo(tileCoord.x, 2.0) == modulo(tileCoord.y, 2.0);
+  if (isDarkTile) {
+    tileCol = tweakHsv(tileCol, vec3<f32>(0.0, 0.0, uniforms.tileDarkFactor));
+  }
+
+  let ambient = 0.4;
+  let shadowFactor = ambient + (1.0 - ambient) * shadow;
+  return tileCol * shadowFactor;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  // G-buffer sample layout: normal.xy, speed, viewSpaceZ.
   let data = textureSample(gBufferTex, linearSamp, in.uv);
   let occlusion = textureSample(occlusionTex, linearSamp, in.uv).r;
 
   let speed = data.b;
   let viewSpaceZ = data.a;
 
-  // Reconstruct normal.z from unit-length constraint.
+  // Reconstruct normal
   let nx = data.r;
   let ny = data.g;
   let nz = sqrt(max(0.0, 1.0 - nx * nx - ny * ny));
+  let viewNormal = vec3<f32>(nx, ny, nz);
 
-  // Reconstruct view ray/position from UV + depth.
+  // Reconstruct camera ray
   let tanHalfFov = tan(uniforms.fov / 2.0);
   let viewRay = vec3<f32>(
     (in.uv.x * 2.0 - 1.0) * tanHalfFov * uniforms.resolution.x / uniforms.resolution.y,
     (1.0 - 2.0 * in.uv.y) * tanHalfFov,
     -1.0
   );
-  let viewSpacePos = viewRay * max(-viewSpaceZ, 0.01);
-  let worldSpacePos = (uniforms.inverseViewMatrix * vec4<f32>(viewSpacePos, 1.0)).xyz;
-
-  var lightSpacePos = uniforms.lightProjectionViewMatrix * vec4<f32>(worldSpacePos, 1.0);
-  lightSpacePos = lightSpacePos / lightSpacePos.w;
-  let lightCoords = vec2<f32>(lightSpacePos.x * 0.5 + 0.5, 0.5 - lightSpacePos.y * 0.5);
-  let lightDepth = lightSpacePos.z;
-
-  // Particle shadows via PCF in light space.
-  var shadow = 0.0;
-  let texelSize = 1.0 / uniforms.shadowResolution;
-  for (var x = -1; x <= 1; x++) {
-    for (var y = -1; y <= 1; y++) {
-      let offset = vec2<f32>(f32(x), f32(y)) * texelSize;
-      shadow += textureSampleCompare(shadowTex, shadowSamp, lightCoords + offset, lightDepth - 0.002);
-    }
-  }
-  shadow /= 9.0;
-
-  // Background if no fluid was written to this pixel.
-  let isBackground = speed < 0.0 || viewSpaceZ > -0.01;
-
   let rayDirNorm = normalize((uniforms.inverseViewMatrix * vec4<f32>(viewRay, 0.0)).xyz);
 
-  let floorT = rayPlaneIntersect(uniforms.cameraPos, rayDirNorm, uniforms.floorY);
-  let floorHitPos = uniforms.cameraPos + rayDirNorm * max(floorT, 0.0);
-  let floorShadow = sampleFloorShadow(floorHitPos);
+  // 1. Direct Background shadow (Always sample to keep control flow uniform)
+  let directT = rayPlaneIntersect(uniforms.cameraPos, rayDirNorm, uniforms.floorY);
+  let directHitPos = uniforms.cameraPos + rayDirNorm * max(0.0, directT);
+  let directShadow = sampleShadowPCF(directHitPos);
 
-  let bgColor = getSceneBackground(rayDirNorm, floorShadow);
+  // 2. Refracted shadow (Always sample to keep control flow uniform)
+  // Use dummy worldPos and worldNormal if background
+  let viewSpacePos = viewRay * max(-viewSpaceZ, 0.01);
+  let worldSpacePos = (uniforms.inverseViewMatrix * vec4<f32>(viewSpacePos, 1.0)).xyz;
+  let worldNormal = normalize((uniforms.inverseViewMatrix * vec4<f32>(viewNormal, 0.0)).xyz);
+  let viewDir = normalize(worldSpacePos - uniforms.cameraPos);
 
-  // Fluid base color shifts with speed for a lively stylized look.
-  let hue = max(0.6 - speed * 0.0025, 0.52);
-  var particleColor = hsvToRGB(vec3<f32>(hue, 0.75, 1.0));
+  let refractEta = 1.0 / 1.33;
+  let refractDir = refract(viewDir, worldNormal, refractEta);
+  let refractT = rayPlaneIntersect(worldSpacePos, refractDir, uniforms.floorY);
+  let refractHitPos = worldSpacePos + refractDir * max(0.0, refractT);
+  let refractShadow = sampleShadowPCF(refractHitPos);
 
-  // AO darkens ambient term; shadow darkens direct term.
-  let clampedOcclusion = min(occlusion * 0.5, 1.0);
-  let ambient = 1.0 - clampedOcclusion * 0.7;
-  let direct = 1.0 - (1.0 - shadow) * 0.8;
-  particleColor *= ambient * direct;
+  // --- Final Selection and Shading ---
 
-  let finalColor = select(particleColor, bgColor, isBackground);
-  return vec4<f32>(finalColor, 1.0);
+  let isBackground = speed < -0.5 || viewSpaceZ > -0.01;
+
+  if (isBackground) {
+    if (directT > 0.0 && abs(directHitPos.x) < uniforms.floorSize * 0.5 && abs(directHitPos.z) < uniforms.floorSize * 0.5) {
+      return vec4<f32>(getBackgroundTileColor(directHitPos, directShadow), 1.0);
+    }
+    return vec4<f32>(getSkyColor(rayDirNorm), 1.0);
+  }
+
+  // Water Shading logic
+  // Refracted color
+  var refractedColor = getSkyColor(refractDir);
+  if (refractT > 0.0 && abs(refractHitPos.x) < uniforms.floorSize * 0.5 && abs(refractHitPos.z) < uniforms.floorSize * 0.5) {
+    refractedColor = getBackgroundTileColor(refractHitPos, refractShadow);
+  }
+
+  // Beer's Law (Absorption)
+  let thickness = max(0.0, worldSpacePos.y - uniforms.floorY);
+  let absorbColor = vec3<f32>(1.5, 0.5, 0.2);
+  let transmittance = exp(-absorbColor * thickness * 0.5);
+  refractedColor *= transmittance;
+
+  // Fresnel & Reflection
+  let F0 = 0.02;
+  let fresnel = F0 + (1.0 - F0) * pow(1.0 - max(0.0, dot(-viewDir, worldNormal)), 5.0);
+  let reflectDir = reflect(viewDir, worldNormal);
+  let reflectionColor = getSkyColor(reflectDir);
+
+  // Specular Highlights
+  let h = normalize(-viewDir + uniforms.dirToSun);
+  let specular = pow(max(0.0, dot(worldNormal, h)), 100.0) * uniforms.sunBrightness * 2.0;
+
+  // Combine
+  let ambient = 1.0 - min(occlusion * 0.5, 0.8);
+  var waterColor = mix(refractedColor, reflectionColor, fresnel);
+  waterColor += specular;
+  waterColor *= ambient;
+
+  // Speed tint
+  let speedTint = hsvToRGB(vec3<f32>(max(0.6 - speed * 0.002, 0.55), 0.4, 1.0));
+  waterColor = mix(waterColor, waterColor * speedTint, 0.2);
+
+  return vec4<f32>(waterColor, 1.0);
 }

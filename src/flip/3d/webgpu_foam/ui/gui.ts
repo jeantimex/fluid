@@ -20,6 +20,8 @@ export interface SimulationGuiConfig {
   foamSize: number;
   spraySize: number;
   bubbleSize: number;
+  // Surface rendering
+  useSurfaceRendering: boolean;
 }
 
 export interface GuiApi {
@@ -496,6 +498,9 @@ export function createGui(params: {
     .add(params.simConfig, 'jacobiIterations', 1, 100, 1)
     .name('Pressure Iterations');
   simFolder.add(params.simConfig, 'useRedBlackGS').name('Red-Black GS');
+  simFolder
+    .add(params.simConfig, 'useSurfaceRendering')
+    .name('Surface Rendering');
   simFolder
     .add(params.simConfig, 'particleWorkgroupSize', [32, 64, 128, 256])
     .name('Workgroup Size')

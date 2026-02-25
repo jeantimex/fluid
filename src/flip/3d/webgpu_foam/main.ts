@@ -3,6 +3,7 @@ import { Camera } from './camera';
 import { BoxEditor } from './box_editor';
 import { generateSphereGeometry } from './renderer';
 import { Simulator } from './simulator';
+import { SurfaceRenderer } from './surface_renderer';
 import { GBufferPass } from './render/passes/gbuffer_pass';
 import { ShadowPass } from './render/passes/shadow_pass';
 import { AOPass } from './render/passes/ao_pass';
@@ -173,6 +174,9 @@ async function init() {
 
     /** Bubble particle size (world units). Bubbles rise underwater. */
     bubbleSize: 0.05,
+
+    /** Use SDF surface rendering instead of particle rendering for main fluid. */
+    useSurfaceRendering: true,
   };
 
   // Smooth configuration for gradual transitions
@@ -266,6 +270,26 @@ async function init() {
     particleRandomBuffer,
     simConfig.particleWorkgroupSize
   );
+
+  // =========================================================================
+  // SURFACE RENDERER (Marching Cubes)
+  // =========================================================================
+  // Creates smooth water surface mesh from particle positions using SDF
+  // and marching cubes algorithm. Toggle with simConfig.useSurfaceRendering.
+  const surfaceRenderer = new SurfaceRenderer(
+    device,
+    RESOLUTION_X,
+    RESOLUTION_Y_MAX,
+    RESOLUTION_Z,
+    getInternalGridWidth(),
+    getInternalGridHeight(),
+    getInternalGridDepth(),
+    particlePositionBuffer,
+    presentationFormat
+  );
+
+  // Set kernel radius based on particle spacing
+  surfaceRenderer.setKernelRadius(simConfig.particleRadius * simConfig.spacingFactor * 1.5);
 
   // =========================================================================
   // PHYSICS DIAGNOSTICS
@@ -1250,6 +1274,32 @@ async function init() {
       // Moderate emission rate (0.1) for visible particles without overflow
       simulator.stepWhitewater(1 / 60, 0.1, simConfig.gravity);
 
+      // Compute surface mesh if surface rendering is enabled
+      if (simConfig.useSurfaceRendering) {
+        // Update kernel radius - needs to be large enough to cover multiple grid cells
+        // Cell size is roughly boxWidth/nx, so use 2x cell size
+        const cellSize = smoothConfig.boxWidth / 32; // nx = 32
+        surfaceRenderer.setKernelRadius(cellSize * 2.0);
+
+        // Create command encoder for surface computation
+        const surfaceEncoder = device.createCommandEncoder();
+        surfaceRenderer.computeSurface(
+          surfaceEncoder,
+          particleCount,
+          smoothConfig.boxWidth,
+          smoothConfig.boxHeight,
+          smoothConfig.boxDepth
+        );
+        device.queue.submit([surfaceEncoder.finish()]);
+
+        // Read back triangle count (async, for next frame)
+        surfaceRenderer.readTriangleCount().then(count => {
+          if (diagnosticFrameCount % 60 === 0 || count > 0) {
+            console.log(`[Surface] Triangle count: ${count}, kernelRadius: ${cellSize * 2.0}, surfaceLevel: 0.2`);
+          }
+        }).catch((e) => console.error('[Surface] readTriangleCount error:', e));
+      }
+
       // Create new command encoder for rendering passes
       commandEncoder = device.createCommandEncoder();
     }
@@ -1265,49 +1315,116 @@ async function init() {
         currentSimOffsetZ,
       ];
 
-      gBufferPass.record({
-        encoder: commandEncoder,
-        projectionMatrix,
-        viewMatrix,
-        particleRadius: simConfig.particleRadius,
-        simOffset,
-        particleCount,
-        colorView: resources.gBufferView,
-        depthView: resources.depthView,
-        sphereVertexBuffer,
-        sphereNormalBuffer,
-        sphereIndexBuffer,
-        sphereIndexCount: sphereGeom.indices.length,
-      });
+      // Choose between particle rendering and surface rendering
+      if (simConfig.useSurfaceRendering && surfaceRenderer.getTriangleCount() > 0) {
+        // Surface rendering mode - render marching cubes mesh
+        // Update camera for surface renderer
+        const viewProjection = new Float32Array(16);
+        Utilities.premultiplyMatrix(viewProjection, viewMatrix, projectionMatrix);
+        surfaceRenderer.updateCamera(viewProjection, viewMatrix, simOffset);
 
-      shadowPass.record({
-        encoder: commandEncoder,
-        lightProjectionViewMatrix,
-        particleRadius: simConfig.particleRadius,
-        simOffset,
-        particleCount,
-        depthView: resources.shadowDepthView,
-        sphereVertexBuffer: aoSphereVertexBuffer,
-        sphereIndexBuffer: aoSphereIndexBuffer,
-        sphereIndexCount: aoSphereGeom.indices.length,
-      });
+        // Render surface mesh to G-buffer
+        const surfaceRenderPass = commandEncoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: resources.gBufferView,
+              clearValue: { r: 0, g: 0, b: -1, a: 0 },
+              loadOp: 'clear',
+              storeOp: 'store',
+            },
+          ],
+          depthStencilAttachment: {
+            view: resources.depthView,
+            depthClearValue: 1.0,
+            depthLoadOp: 'clear',
+            depthStoreOp: 'store',
+          },
+        });
+        surfaceRenderer.render(surfaceRenderPass);
+        surfaceRenderPass.end();
+      } else {
+        // Particle rendering mode - render instanced spheres
+        gBufferPass.record({
+          encoder: commandEncoder,
+          projectionMatrix,
+          viewMatrix,
+          particleRadius: simConfig.particleRadius,
+          simOffset,
+          particleCount,
+          colorView: resources.gBufferView,
+          depthView: resources.depthView,
+          sphereVertexBuffer,
+          sphereNormalBuffer,
+          sphereIndexBuffer,
+          sphereIndexCount: sphereGeom.indices.length,
+        });
+      }
 
-      aoPass.record({
-        encoder: commandEncoder,
-        projectionMatrix,
-        viewMatrix,
-        width: canvas.width,
-        height: canvas.height,
-        fov: FOV,
-        particleRadius: simConfig.particleRadius,
-        simOffset,
-        particleCount,
-        colorView: resources.occlusionView,
-        depthView: resources.depthView,
-        sphereVertexBuffer: aoSphereVertexBuffer,
-        sphereIndexBuffer: aoSphereIndexBuffer,
-        sphereIndexCount: aoSphereGeom.indices.length,
-      });
+      if (simConfig.useSurfaceRendering && surfaceRenderer.getTriangleCount() > 0) {
+        // Surface shadow pass
+        surfaceRenderer.updateShadowCamera(lightProjectionViewMatrix, simOffset);
+        const surfaceShadowPass = commandEncoder.beginRenderPass({
+          colorAttachments: [],
+          depthStencilAttachment: {
+            view: resources.shadowDepthView,
+            depthClearValue: 1.0,
+            depthLoadOp: 'clear',
+            depthStoreOp: 'store',
+          },
+        });
+        surfaceRenderer.renderShadow(surfaceShadowPass);
+        surfaceShadowPass.end();
+      } else {
+        shadowPass.record({
+          encoder: commandEncoder,
+          lightProjectionViewMatrix,
+          particleRadius: simConfig.particleRadius,
+          simOffset,
+          particleCount,
+          depthView: resources.shadowDepthView,
+          sphereVertexBuffer: aoSphereVertexBuffer,
+          sphereIndexBuffer: aoSphereIndexBuffer,
+          sphereIndexCount: aoSphereGeom.indices.length,
+        });
+      }
+
+      if (simConfig.useSurfaceRendering && surfaceRenderer.getTriangleCount() > 0) {
+        // Surface AO pass
+        const surfaceAOPass = commandEncoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: resources.occlusionView,
+              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              loadOp: 'clear',
+              storeOp: 'store',
+            },
+          ],
+          depthStencilAttachment: {
+            view: resources.depthView,
+            depthLoadOp: 'load',
+            depthStoreOp: 'store',
+          },
+        });
+        surfaceRenderer.renderAO(surfaceAOPass);
+        surfaceAOPass.end();
+      } else {
+        aoPass.record({
+          encoder: commandEncoder,
+          projectionMatrix,
+          viewMatrix,
+          width: canvas.width,
+          height: canvas.height,
+          fov: FOV,
+          particleRadius: simConfig.particleRadius,
+          simOffset,
+          particleCount,
+          colorView: resources.occlusionView,
+          depthView: resources.depthView,
+          sphereVertexBuffer: aoSphereVertexBuffer,
+          sphereIndexBuffer: aoSphereIndexBuffer,
+          sphereIndexCount: aoSphereGeom.indices.length,
+        });
+      }
 
       compositePass.record({
         encoder: commandEncoder,

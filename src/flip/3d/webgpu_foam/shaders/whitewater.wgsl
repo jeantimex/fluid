@@ -95,6 +95,122 @@ fn gridToWorld(x: u32, y: u32, z: u32) -> vec3<f32> {
   );
 }
 
+/// Convert world position to grid coordinates
+fn worldToGrid(p: vec3<f32>) -> vec3<f32> {
+  return vec3<f32>(
+    p.x * f32(uniforms.nx) / uniforms.gridWidth,
+    p.y * f32(uniforms.ny) / uniforms.gridHeight,
+    p.z * f32(uniforms.nz) / uniforms.gridDepth
+  );
+}
+
+/// Sample X velocity component with trilinear interpolation (MAC grid)
+fn sampleXVelocity(g: vec3<f32>) -> f32 {
+  // X velocity is stored at cell face centers: (i, j+0.5, k+0.5)
+  let p = vec3<f32>(g.x, g.y - 0.5, g.z - 0.5);
+  let base = vec3<i32>(i32(floor(p.x)), i32(floor(p.y)), i32(floor(p.z)));
+  let f = p - vec3<f32>(f32(base.x), f32(base.y), f32(base.z));
+
+  var v = 0.0;
+  for (var di = 0; di <= 1; di++) {
+    for (var dj = 0; dj <= 1; dj++) {
+      for (var dk = 0; dk <= 1; dk++) {
+        let w = select(1.0 - f.x, f.x, di == 1) *
+                select(1.0 - f.y, f.y, dj == 1) *
+                select(1.0 - f.z, f.z, dk == 1);
+        let ix = u32(clamp(base.x + di, 0, i32(uniforms.nx)));
+        let iy = u32(clamp(base.y + dj, 0, i32(uniforms.ny - 1u)));
+        let iz = u32(clamp(base.z + dk, 0, i32(uniforms.nz - 1u)));
+        v += w * velocity[velIdx(ix, iy, iz)].x;
+      }
+    }
+  }
+  return v;
+}
+
+/// Sample Y velocity component with trilinear interpolation (MAC grid)
+fn sampleYVelocity(g: vec3<f32>) -> f32 {
+  // Y velocity is stored at cell face centers: (i+0.5, j, k+0.5)
+  let p = vec3<f32>(g.x - 0.5, g.y, g.z - 0.5);
+  let base = vec3<i32>(i32(floor(p.x)), i32(floor(p.y)), i32(floor(p.z)));
+  let f = p - vec3<f32>(f32(base.x), f32(base.y), f32(base.z));
+
+  var v = 0.0;
+  for (var di = 0; di <= 1; di++) {
+    for (var dj = 0; dj <= 1; dj++) {
+      for (var dk = 0; dk <= 1; dk++) {
+        let w = select(1.0 - f.x, f.x, di == 1) *
+                select(1.0 - f.y, f.y, dj == 1) *
+                select(1.0 - f.z, f.z, dk == 1);
+        let ix = u32(clamp(base.x + di, 0, i32(uniforms.nx - 1u)));
+        let iy = u32(clamp(base.y + dj, 0, i32(uniforms.ny)));
+        let iz = u32(clamp(base.z + dk, 0, i32(uniforms.nz - 1u)));
+        v += w * velocity[velIdx(ix, iy, iz)].y;
+      }
+    }
+  }
+  return v;
+}
+
+/// Sample Z velocity component with trilinear interpolation (MAC grid)
+fn sampleZVelocity(g: vec3<f32>) -> f32 {
+  // Z velocity is stored at cell face centers: (i+0.5, j+0.5, k)
+  let p = vec3<f32>(g.x - 0.5, g.y - 0.5, g.z);
+  let base = vec3<i32>(i32(floor(p.x)), i32(floor(p.y)), i32(floor(p.z)));
+  let f = p - vec3<f32>(f32(base.x), f32(base.y), f32(base.z));
+
+  var v = 0.0;
+  for (var di = 0; di <= 1; di++) {
+    for (var dj = 0; dj <= 1; dj++) {
+      for (var dk = 0; dk <= 1; dk++) {
+        let w = select(1.0 - f.x, f.x, di == 1) *
+                select(1.0 - f.y, f.y, dj == 1) *
+                select(1.0 - f.z, f.z, dk == 1);
+        let ix = u32(clamp(base.x + di, 0, i32(uniforms.nx - 1u)));
+        let iy = u32(clamp(base.y + dj, 0, i32(uniforms.ny - 1u)));
+        let iz = u32(clamp(base.z + dk, 0, i32(uniforms.nz)));
+        v += w * velocity[velIdx(ix, iy, iz)].z;
+      }
+    }
+  }
+  return v;
+}
+
+/// Sample fluid velocity at arbitrary world position (trilinear interpolation)
+fn sampleFluidVelocity(worldPos: vec3<f32>) -> vec3<f32> {
+  let g = worldToGrid(worldPos);
+  return vec3<f32>(
+    sampleXVelocity(g),
+    sampleYVelocity(g),
+    sampleZVelocity(g)
+  );
+}
+
+/// Sample SDF at arbitrary world position
+fn sampleSDF(worldPos: vec3<f32>) -> f32 {
+  let g = worldToGrid(worldPos);
+  let i = u32(clamp(i32(g.x), 0, i32(uniforms.nx - 1u)));
+  let j = u32(clamp(i32(g.y), 0, i32(uniforms.ny - 1u)));
+  let k = u32(clamp(i32(g.z), 0, i32(uniforms.nz - 1u)));
+  return surfaceSDF[scalarIdx(i, j, k)];
+}
+
+// -----------------------------------------------------------------------------
+// Physics Constants
+// -----------------------------------------------------------------------------
+// These could be moved to uniforms for runtime tuning
+
+const SPRAY_DRAG: f32 = 0.3;              // Air drag coefficient for spray
+const SPRAY_DRAG_VARIANCE: f32 = 0.25;    // Per-particle drag variation
+const SPRAY_RESTITUTION: f32 = 0.3;       // Bounce factor on ground collision
+const SPRAY_FRICTION: f32 = 0.5;          // Friction on ground collision
+
+const BUBBLE_BUOYANCY: f32 = 2.0;         // Buoyancy strength (multiplier of gravity)
+const BUBBLE_DRAG: f32 = 2.0;             // Drag toward fluid velocity
+
+const FOAM_ADVECTION: f32 = 0.9;          // How strongly foam follows fluid (0-1)
+const FOAM_DAMPING: f32 = 0.98;           // Velocity damping per frame
+
 /// Simple hash function for random numbers
 fn hash(seed: u32) -> u32 {
   var x = seed;
@@ -205,9 +321,9 @@ fn emitWhitewater(@builtin(global_invocation_id) id: vec3<u32>) {
 // UPDATE WHITEWATER - Advect particles and apply physics
 // =============================================================================
 // Each thread processes one particle. Applies different physics based on type:
-// - Foam: Stays at surface, slight upward buoyancy
-// - Spray: Ballistic trajectory (gravity), air drag
-// - Bubble: Rises through fluid, buoyancy
+// - Spray: Ballistic trajectory with gravity, air drag, ground collision
+// - Bubble: Buoyancy (rises) + drag toward fluid velocity
+// - Foam: Follows fluid surface velocity with damping
 // =============================================================================
 
 @compute @workgroup_size(256)
@@ -246,25 +362,100 @@ fn updateWhitewater(@builtin(global_invocation_id) id: vec3<u32>) {
     return;
   }
 
+  // Gravity vector
+  let gravity = vec3<f32>(0.0, -uniforms.gravity, 0.0);
+
   // Apply physics based on type
   if (particleType == TYPE_SPRAY) {
-    // Spray: Full gravity, air drag
-    vel.y -= uniforms.gravity * dt;
-    vel *= 0.99; // Air drag
+    // =========================================================================
+    // SPRAY PHYSICS - Ballistic motion in air
+    // =========================================================================
+    // Spray particles are airborne droplets that follow ballistic arcs.
+    // They experience gravity and air drag, and can bounce off surfaces.
+
+    // Per-particle drag variation based on particle index (size variation)
+    let dragFactor = f32(idx % 256u) / 255.0;
+    let drag = SPRAY_DRAG * (1.0 - SPRAY_DRAG_VARIANCE + 2.0 * SPRAY_DRAG_VARIANCE * dragFactor);
+
+    // Apply gravity
+    vel += gravity * dt;
+
+    // Apply air drag (velocity-dependent resistance)
+    let dragForce = -drag * vel;
+    vel += dragForce * dt;
+
+    // Advect position
+    pos += vel * dt;
+
+    // Ground collision with bounce
+    if (pos.y < 0.01) {
+      pos.y = 0.01;
+      vel.y = -vel.y * SPRAY_RESTITUTION; // Bounce with energy loss
+      vel.x *= (1.0 - SPRAY_FRICTION);    // Friction on horizontal
+      vel.z *= (1.0 - SPRAY_FRICTION);
+    }
+
   } else if (particleType == TYPE_BUBBLE) {
-    // Bubble: Buoyancy (rise), water drag
-    vel.y += uniforms.gravity * 0.5 * dt; // Buoyancy (opposite of gravity)
-    vel *= 0.95; // Water drag (more than air)
+    // =========================================================================
+    // BUBBLE PHYSICS - Rises through fluid
+    // =========================================================================
+    // Bubbles experience buoyancy (rise against gravity) and drag toward
+    // the surrounding fluid velocity. They follow underwater currents.
+
+    // Sample fluid velocity at bubble position
+    let vFluid = sampleFluidVelocity(pos);
+
+    // Buoyancy force (opposes gravity, makes bubbles rise)
+    let buoyancy = -BUBBLE_BUOYANCY * gravity;
+
+    // Drag toward fluid velocity (bubbles are pushed by currents)
+    let dragForce = BUBBLE_DRAG * (vFluid - vel);
+
+    // Update velocity
+    vel += (buoyancy + dragForce) * dt;
+
+    // Advect position
+    pos += vel * dt;
+
   } else {
-    // Foam: Slight damping, stays at surface
-    vel *= 0.98;
-    // Could add surface tracking here
+    // =========================================================================
+    // FOAM PHYSICS - Floats on surface
+    // =========================================================================
+    // Foam particles stay at the fluid surface and follow the surface flow.
+    // They blend between their own velocity and the local fluid velocity.
+
+    // Sample fluid velocity at foam position
+    let vFluid = sampleFluidVelocity(pos);
+
+    // Blend toward fluid velocity (foam follows surface currents)
+    vel = mix(vel, vFluid, FOAM_ADVECTION);
+
+    // Apply damping
+    vel *= FOAM_DAMPING;
+
+    // Advect position
+    pos += vel * dt;
+
+    // Optional: Try to keep foam near the surface using SDF
+    let sdf = sampleSDF(pos);
+    let dx = uniforms.gridWidth / f32(uniforms.nx);
+    let surfaceThickness = dx * 1.5;
+
+    // If foam drifts too far from surface, nudge it back
+    if (abs(sdf) > surfaceThickness) {
+      // Compute approximate surface normal from SDF gradient
+      let eps = dx * 0.5;
+      let gradX = sampleSDF(pos + vec3<f32>(eps, 0.0, 0.0)) - sampleSDF(pos - vec3<f32>(eps, 0.0, 0.0));
+      let gradY = sampleSDF(pos + vec3<f32>(0.0, eps, 0.0)) - sampleSDF(pos - vec3<f32>(0.0, eps, 0.0));
+      let gradZ = sampleSDF(pos + vec3<f32>(0.0, 0.0, eps)) - sampleSDF(pos - vec3<f32>(0.0, 0.0, eps));
+      let normal = normalize(vec3<f32>(gradX, gradY, gradZ));
+
+      // Push foam toward surface
+      pos -= normal * sdf * 0.1;
+    }
   }
 
-  // Advect
-  pos += vel * dt;
-
-  // Boundary clamping
+  // Boundary clamping (keep particles inside simulation domain)
   pos.x = clamp(pos.x, 0.01, uniforms.gridWidth - 0.01);
   pos.y = clamp(pos.y, 0.01, uniforms.gridHeight - 0.01);
   pos.z = clamp(pos.z, 0.01, uniforms.gridDepth - 0.01);
