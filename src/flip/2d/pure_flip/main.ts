@@ -20,6 +20,7 @@ const DEFAULT_PARAMS: SimulationParams = {
   resolution: 70,
   relWaterWidth: 0.6,
   relWaterHeight: 0.8,
+  numParticles: 5000,
 };
 
 const COLOR_LERP_SPEED = 4;

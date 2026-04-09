@@ -7,6 +7,7 @@ export function setupFluidScene(
   resolution = 70,
   relWaterWidth = 0.6,
   relWaterHeight = 0.8,
+  numParticlesTarget = 0,
   baseColor?: RGB,
   foamColor?: RGB,
   colorDiffusionCoeff: number = 0.01,
@@ -21,8 +22,18 @@ export function setupFluidScene(
   const dx = 2.0 * r;
   const dy = (Math.sqrt(3.0) / 2.0) * dx;
 
-  const numX = Math.floor((relWaterWidth * tankWidth - 2.0 * h - 2.0 * r) / dx);
-  const numY = Math.floor((relWaterHeight * tankHeight - 2.0 * h - 2.0 * r) / dy);
+  const maxNumX = Math.floor((tankWidth - 2.0 * h - 2.0 * r) / dx);
+  const maxNumY = Math.floor((tankHeight - 2.0 * h - 2.0 * r) / dy);
+  let numX: number;
+  let numY: number;
+  if (numParticlesTarget > 0) {
+    // Square block: numX * dx = numY * dy => numY = sqrt(N * dx/dy), numX = N / numY
+    numY = Math.max(1, Math.min(Math.round(Math.sqrt(numParticlesTarget * dx / dy)), maxNumY));
+    numX = Math.max(1, Math.min(Math.round(numParticlesTarget / numY), maxNumX));
+  } else {
+    numX = Math.floor((relWaterWidth * tankWidth - 2.0 * h - 2.0 * r) / dx);
+    numY = Math.max(1, Math.floor((relWaterHeight * tankHeight - 2.0 * h - 2.0 * r) / dy));
+  }
   const maxParticles = numX * numY;
 
   const fluid = new FlipFluid(

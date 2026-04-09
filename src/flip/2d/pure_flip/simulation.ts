@@ -68,6 +68,7 @@ export class PureFlipSimulation {
       this.params.resolution,
       this.params.relWaterWidth,
       this.params.relWaterHeight,
+      this.params.numParticles,
       this.palette.fluidColor,
       this.palette.foamColor,
       this.palette.colorDiffusionCoeff,

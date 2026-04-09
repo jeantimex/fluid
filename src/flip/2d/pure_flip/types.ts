@@ -37,4 +37,5 @@ export interface SimulationParams {
   resolution: number;
   relWaterWidth: number;
   relWaterHeight: number;
+  numParticles: number;
 }

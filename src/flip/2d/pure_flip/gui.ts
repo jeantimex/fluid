@@ -18,6 +18,7 @@ export interface PureFlipGuiState {
   resolution: number;
   relWaterWidth: number;
   relWaterHeight: number;
+  numParticles: number;
   separateParticles: boolean;
   showGrid: boolean;
   reset: () => void;
@@ -86,6 +87,7 @@ export function setupGui(
     resolution: params.resolution,
     relWaterWidth: params.relWaterWidth,
     relWaterHeight: params.relWaterHeight,
+    numParticles: params.numParticles,
     separateParticles: params.separateParticles,
     showGrid: params.showGrid,
     reset: callbacks.onReset,
@@ -191,6 +193,13 @@ export function setupGui(
     .name('Water Height')
     .onFinishChange((value: number) => {
       params.relWaterHeight = value;
+      callbacks.onReset();
+    });
+  fluidFolder
+    .add(state, 'numParticles', 500, 20000, 100)
+    .name('Particle Count')
+    .onFinishChange((value: number) => {
+      params.numParticles = value;
       callbacks.onReset();
     });
 
