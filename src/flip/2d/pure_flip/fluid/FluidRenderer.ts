@@ -215,6 +215,10 @@ export class FluidRenderer {
     gl.drawArrays(gl.POINTS, 0, fluid.numParticles);
   }
 
+  invalidateGridBuffer(): void {
+    this.gridVertBufferInitialized = false;
+  }
+
   resize(width: number, height: number): void {
     const canvas = this.gl.canvas as HTMLCanvasElement;
     canvas.width = width;

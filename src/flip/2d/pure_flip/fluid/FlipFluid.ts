@@ -644,4 +644,54 @@ export class FlipFluid {
   setFoamReturnRate(rate: number): void {
     this.foamReturnRate = Math.max(0, rate);
   }
+
+  resizeDomain(newWidth: number, newHeight: number): void {
+    const newFNumX = Math.floor(newWidth / this.h) + 1;
+    const newFNumY = Math.floor(newHeight / this.h) + 1;
+    if (newFNumX === this.fNumX && newFNumY === this.fNumY) return;
+
+    this.fNumX = newFNumX;
+    this.fNumY = newFNumY;
+    this.fNumCells = this.fNumX * this.fNumY;
+
+    this.u = new Float32Array(this.fNumCells);
+    this.v = new Float32Array(this.fNumCells);
+    this.du = new Float32Array(this.fNumCells);
+    this.dv = new Float32Array(this.fNumCells);
+    this.prevU = new Float32Array(this.fNumCells);
+    this.prevV = new Float32Array(this.fNumCells);
+    this.p = new Float32Array(this.fNumCells);
+    this.s = new Float32Array(this.fNumCells);
+    this.cellType = new Int32Array(this.fNumCells);
+    this.cellColor = new Float32Array(3 * this.fNumCells);
+    this.particleDensity = new Float32Array(this.fNumCells);
+
+    // Rebuild solid boundaries: left, right, and bottom walls; top is open
+    const n = this.fNumY;
+    for (let i = 0; i < this.fNumX; i++) {
+      for (let j = 0; j < this.fNumY; j++) {
+        this.s[i * n + j] = (i === 0 || i === this.fNumX - 1 || j === 0) ? 0.0 : 1.0;
+      }
+    }
+
+    // Resize particle spatial hash for both dimensions
+    const newPNumX = Math.floor(newWidth * this.pInvSpacing) + 1;
+    const newPNumY = Math.floor(newHeight * this.pInvSpacing) + 1;
+    if (newPNumX !== this.pNumX || newPNumY !== this.pNumY) {
+      this.pNumX = newPNumX;
+      this.pNumY = newPNumY;
+      this.pNumCells = this.pNumX * this.pNumY;
+      this.numCellParticles = new Int32Array(this.pNumCells);
+      this.firstCellParticle = new Int32Array(this.pNumCells + 1);
+      // cellParticleIds is sized by maxParticles, unchanged
+    }
+
+    // Clamp particles to the new boundaries
+    const maxX = (this.fNumX - 1) * this.h - this.particleRadius;
+    const maxY = (this.fNumY - 1) * this.h - this.particleRadius;
+    for (let i = 0; i < this.numParticles; i++) {
+      if (this.particlePos[2 * i] > maxX) this.particlePos[2 * i] = maxX;
+      if (this.particlePos[2 * i + 1] > maxY) this.particlePos[2 * i + 1] = maxY;
+    }
+  }
 }
