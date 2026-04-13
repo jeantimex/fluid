@@ -439,15 +439,15 @@ export class FlipFluid {
   //   Read updated grid velocities back onto particles using a blend of:
   //     PIC  – interpolated post-pressure grid velocity (fully dissipative).
   //     FLIP – particle velocity + pressure-induced correction only (low dissipation).
-  //   particleVel = (1 − flipRatio) × PIC  +  flipRatio × FLIP
-  //   flipRatio ≈ 0.95 gives mostly FLIP (energetic) with a small PIC component
-  //   to suppress high-frequency noise.
+  //   particleVel = picRatio × PIC  +  (1 − picRatio) × FLIP
+  //   picRatio ≈ 0.05 gives mostly FLIP (energetic) with a small PIC component
+  //   to suppress high-frequency noise; 1.0 is pure PIC, 0.0 is pure FLIP.
   //
   // The stencil is staggered: u samples are offset by (0, h/2) so they align
   // with left-face midpoints; v samples are offset by (h/2, 0) to align with
   // bottom-face midpoints.  Both components are handled in the same loop body
   // via the `component` index (0 = u, 1 = v).
-  transferVelocities(toGrid: boolean, flipRatio: number): void {
+  transferVelocities(toGrid: boolean, picRatio: number): void {
     const n  = this.fNumY;
     const h  = this.h;
     const h1 = this.fInvSpacing;
@@ -558,7 +558,7 @@ export class FlipFluid {
                valid3 * d3 * (f[nr3] - prevF[nr3])) / totalValid;
             const flipV = v + corr;
 
-            this.particleVel[2 * i + component] = (1.0 - flipRatio) * picV + flipRatio * flipV;
+            this.particleVel[2 * i + component] = picRatio * picV + (1.0 - picRatio) * flipV;
           }
         }
       }
@@ -784,7 +784,7 @@ export class FlipFluid {
     dt: number,
     gravityX: number,
     gravityY: number,
-    flipRatio: number,
+    picRatio: number,
     numPressureIters: number,
     numParticleIters: number,
     overRelaxation: number,
@@ -799,10 +799,10 @@ export class FlipFluid {
       this.integrateParticles(sdt, gravityX, gravityY, damping);
       if (separateParticles) this.pushParticlesApart(numParticleIters);
       this.handleParticleCollisions();
-      this.transferVelocities(true, flipRatio);
+      this.transferVelocities(true, picRatio);
       this.updateParticleDensity();
       this.solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
-      this.transferVelocities(false, flipRatio);
+      this.transferVelocities(false, picRatio);
     }
 
     this.updateParticleColors(sdt);

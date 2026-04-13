@@ -1,7 +1,7 @@
 import GUI from 'lil-gui';
 import type { FluidPalette, SimulationParams, Vec2 } from './types';
 
-export interface PureFlipGuiState {
+export interface PicFlipGuiState {
   useDeviceMotion: boolean;
   gravityX: number;
   gravityY: number;
@@ -10,7 +10,7 @@ export interface PureFlipGuiState {
   colorDiffusionCoeff: number;
   foamReturnRate: number;
   dt: number;
-  flipRatio: number;
+  picRatio: number;
   numPressureIters: number;
   numParticleIters: number;
   overRelaxation: number;
@@ -24,14 +24,14 @@ export interface PureFlipGuiState {
   reset: () => void;
 }
 
-export interface PureFlipGuiCallbacks {
+export interface PicFlipGuiCallbacks {
   onUseDeviceMotionChange: (enabled: boolean) => void;
   onGravityChange: (gravity: Vec2) => void;
   onPaletteChange: (palette: FluidPalette) => void;
   onReset: () => void;
 }
 
-export interface PureFlipGuiHandle {
+export interface PicFlipGuiHandle {
   gui: GUI;
   destroy: () => void;
   syncGravity: (gravity: Vec2) => void;
@@ -68,9 +68,9 @@ export function setupGui(
   params: SimulationParams,
   palette: FluidPalette,
   initialGravity: Vec2,
-  callbacks: PureFlipGuiCallbacks
-): PureFlipGuiHandle {
-  const state: PureFlipGuiState = {
+  callbacks: PicFlipGuiCallbacks
+): PicFlipGuiHandle {
+  const state: PicFlipGuiState = {
     useDeviceMotion: true,
     gravityX: initialGravity.x,
     gravityY: initialGravity.y,
@@ -79,7 +79,7 @@ export function setupGui(
     colorDiffusionCoeff: palette.colorDiffusionCoeff,
     foamReturnRate: palette.foamReturnRate,
     dt: params.dt,
-    flipRatio: params.flipRatio,
+    picRatio: params.picRatio,
     numPressureIters: params.numPressureIters,
     numParticleIters: params.numParticleIters,
     overRelaxation: params.overRelaxation,
@@ -93,7 +93,7 @@ export function setupGui(
     reset: callbacks.onReset,
   };
 
-  const gui = new GUI({ title: 'Pure FLIP Controls' });
+  const gui = new GUI({ title: 'PIC/FLIP Controls' });
   gui.close();
 
   const gravityFolder = gui.addFolder('Gravity');
@@ -131,10 +131,10 @@ export function setupGui(
       params.dt = value;
     });
   simulationFolder
-    .add(state, 'flipRatio', 0, 1, 0.01)
-    .name('FLIP Ratio')
+    .add(state, 'picRatio', 0, 1, 0.01)
+    .name('PIC Blend')
     .onChange((value: number) => {
-      params.flipRatio = value;
+      params.picRatio = value;
     });
   simulationFolder
     .add(state, 'numPressureIters', 1, 120, 1)

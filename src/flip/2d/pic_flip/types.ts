@@ -25,7 +25,7 @@ export interface FluidPalette {
 
 export interface SimulationParams {
   dt: number;
-  flipRatio: number;
+  picRatio: number;
   numPressureIters: number;
   numParticleIters: number;
   overRelaxation: number;

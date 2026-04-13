@@ -40,13 +40,9 @@ export default defineConfig({
           'src/sph/3d/webgpu_fluid/index.html'
         ),
         'demo-3d-scene': resolve(__dirname, 'src/sph/3d/scene/index.html'),
-        'demo-flip-2d-canvas2d': resolve(
+        'demo-flip-2d-pic-flip': resolve(
           __dirname,
-          'src/flip/2d/canvas2d/index.html'
-        ),
-        'demo-flip-2d-pure-flip': resolve(
-          __dirname,
-          'src/flip/2d/pure_flip/index.html'
+          'src/flip/2d/pic_flip/index.html'
         ),
         'demo-flip-3d-webgpu': resolve(
           __dirname,
