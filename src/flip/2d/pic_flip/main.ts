@@ -2,13 +2,13 @@ import './style.css';
 import { setupGui } from './gui';
 import { FLUID_PALETTES } from './palette';
 import { MotionController } from './motion';
-import { PureFlipSimulation } from './simulation';
+import { PicFlipSimulation } from './simulation';
 import { createAppShell, renderAppState } from './ui';
 import type { AppState, FluidPalette, RGB, SimulationParams, Vec2 } from './types';
 
 const DEFAULT_PARAMS: SimulationParams = {
   dt: 1 / 120,
-  flipRatio: 0.95,
+  picRatio: 0.05,
   numPressureIters: 60,
   numParticleIters: 3,
   overRelaxation: 1.7,
@@ -59,7 +59,7 @@ let currentPalette = clonePalette(FLUID_PALETTES[0]);
 let destroyed = false;
 let useDeviceMotion = true;
 
-const simulation = new PureFlipSimulation(
+const simulation = new PicFlipSimulation(
   elements.canvas,
   gravity,
   currentPalette,

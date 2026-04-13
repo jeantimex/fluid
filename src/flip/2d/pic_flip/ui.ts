@@ -12,14 +12,14 @@ export interface AppElements {
 export function createAppShell(root: HTMLElement): AppElements {
   root.innerHTML = `
     <div class="pure-flip-app">
-      <canvas class="pure-flip-canvas" aria-label="2D FLIP fluid simulation"></canvas>
+      <canvas class="pure-flip-canvas" aria-label="2D PIC/FLIP fluid simulation"></canvas>
       <div class="pure-flip-hint" hidden>
         <p>Tilt your device to control the fluid.</p>
         <p>Shake to cycle palettes.</p>
       </div>
       <div class="pure-flip-overlay">
         <div class="pure-flip-panel">
-          <div class="pure-flip-kicker">2D Pure FLIP</div>
+          <div class="pure-flip-kicker">2D PIC/FLIP</div>
           <h1 class="pure-flip-title"></h1>
           <p class="pure-flip-message"></p>
           <button class="pure-flip-button" type="button"></button>
