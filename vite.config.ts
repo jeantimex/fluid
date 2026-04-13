@@ -44,6 +44,10 @@ export default defineConfig({
           __dirname,
           'src/flip/2d/pic_flip/index.html'
         ),
+        'demo-flip-2d-apic': resolve(
+          __dirname,
+          'src/flip/2d/apic/index.html'
+        ),
         'demo-flip-3d-webgpu': resolve(
           __dirname,
           'src/flip/3d/webgpu_flip/index.html'
