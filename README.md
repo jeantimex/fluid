@@ -6,7 +6,7 @@ This project is ported from [Sebastian Lague](https://github.com/SebLague)'s [Fl
 
 ## Key Features
 
-- **GPU-Accelerated Physics**: SPH calculations (Density, Pressure, Viscosity) and PIC/FLIP grid-based solving run entirely in WebGPU compute shaders.
+- **GPU-Accelerated Physics**: SPH calculations (Density, Pressure, Viscosity) and the 3D PIC/FLIP grid-based solver run entirely in WebGPU compute shaders.
 - **Efficient Spatial Sorting**: Uses a parallel Prefix-Sum and Linear Grid approach to handle tens of thousands of particles at 60 FPS.
 - **Diverse Renderers**: From simple billboards to complex screen-space refraction and volumetric raymarching.
 - **Interactive Simulation**: Real-time particle interaction (push/pull), dynamic obstacle manipulation, and smoothly interpolating bounding boxes.
@@ -22,6 +22,8 @@ https://github.com/user-attachments/assets/6559bca9-59b1-4ca3-9723-de5a8d6c1b95
   - [Live Demo](https://jeantimex.github.io/fluid/canvas2d.html)
 - **WebGPU 2D**: A 2D simulation utilizing WebGPU compute shaders for physics and a custom render pipeline.
   - [Live Demo](https://jeantimex.github.io/fluid/webgpu2d.html)
+- **2D PIC/FLIP**: A particle-grid fluid solver with a tunable PIC/FLIP blend, pressure projection on a staggered MAC grid, and tilt-driven gravity controls.
+  - [Live Demo](https://jeantimex.github.io/fluid/src/flip/2d/pic_flip/)
 
 ### 3D Simulations
 
