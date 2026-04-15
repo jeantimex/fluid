@@ -130,7 +130,10 @@ export class PicFlipSimulation {
       this.params.sprayGravity,
       this.params.weightTurbulence,
       this.params.weightWavecrest,
-      this.params.weightKinetic
+      this.params.weightKinetic,
+      this.params.bubbleEmissionScale,
+      this.params.foamEmissionScale,
+      this.params.sprayEmissionScale
     );
 
     this.renderer.render(this.fluid, {

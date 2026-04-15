@@ -31,6 +31,9 @@ export interface PicFlipGuiState {
   weightTurbulence: number;
   weightWavecrest: number;
   weightKinetic: number;
+  bubbleEmissionScale: number;
+  foamEmissionScale: number;
+  sprayEmissionScale: number;
   showDiffuseParticles: boolean;
   showGrid: boolean;
   reset: () => void;
@@ -112,6 +115,9 @@ export function setupGui(
     weightTurbulence: params.weightTurbulence,
     weightWavecrest: params.weightWavecrest,
     weightKinetic: params.weightKinetic,
+    bubbleEmissionScale: params.bubbleEmissionScale,
+    foamEmissionScale: params.foamEmissionScale,
+    sprayEmissionScale: params.sprayEmissionScale,
     showDiffuseParticles: params.showDiffuseParticles,
     showGrid: params.showGrid,
     reset: callbacks.onReset,
@@ -299,6 +305,24 @@ export function setupGui(
     .name('Kinetic Weight')
     .onChange((value: number) => {
       params.weightKinetic = value;
+    });
+  whitewaterFolder
+    .add(state, 'bubbleEmissionScale', 0, 10, 0.1)
+    .name('Bubble Emission')
+    .onChange((value: number) => {
+      params.bubbleEmissionScale = value;
+    });
+  whitewaterFolder
+    .add(state, 'foamEmissionScale', 0, 10, 0.1)
+    .name('Foam Emission')
+    .onChange((value: number) => {
+      params.foamEmissionScale = value;
+    });
+  whitewaterFolder
+    .add(state, 'sprayEmissionScale', 0, 10, 0.1)
+    .name('Spray Emission')
+    .onChange((value: number) => {
+      params.sprayEmissionScale = value;
     });
 
   const colorFolder = gui.addFolder('Color');

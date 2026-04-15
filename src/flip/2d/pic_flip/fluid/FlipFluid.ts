@@ -819,11 +819,13 @@ export class FlipFluid {
     dt: number,
     weightTurbulence: number,
     weightWavecrest: number,
-    weightKinetic: number
+    weightKinetic: number,
+    bubbleEmissionScale: number,
+    foamEmissionScale: number,
+    sprayEmissionScale: number
   ): void {
     if (this.diffuseEmissionRate <= 0 || this.maxDiffuseParticles === 0) return;
     const h1 = this.fInvSpacing;
-    const d0 = this.particleRestDensity;
     const h = this.h;
 
     // Use a fixed search radius for wavecrest/turbulence triggers.
@@ -842,16 +844,13 @@ export class FlipFluid {
       const cell = xi * this.fNumY + yi;
       const nearAir = this.isNearAirCell(xi, yi);
 
-      // 1. Kinetic Energy Potential (normalized speed)
-      // I_k = (v - v_min) / (v_max - v_min)
+      // 1. Kinetic Energy Potential
       const energyPotential = Math.min(1.0, (speed - this.diffuseMinSpeed) / 5.0);
 
-      // 2. Turbulence Potential (vorticity magnitude)
-      // We sample the pre-computed grid vorticity.
+      // 2. Turbulence Potential
       const turbulencePotential = Math.min(1.0, this.vorticity[cell] / 20.0);
 
       // 3. Wavecrest Sharpness Potential
-      // Approximate curvature by checking neighbor distribution in the spatial hash.
       let avgX = 0, avgY = 0, neighborCount = 0;
       const pxi = Math.floor(x * this.pInvSpacing);
       const pyi = Math.floor(y * this.pInvSpacing);
@@ -873,31 +872,36 @@ export class FlipFluid {
         }
       }
 
-      // If neighborCount is low and CM is shifted, it's a crest.
-      // n points into the fluid.
       const dx = avgX / Math.max(1, neighborCount);
       const dy = avgY / Math.max(1, neighborCount);
       const d = Math.sqrt(dx * dx + dy * dy);
       const normalX = -dx / Math.max(0.001, d);
       const normalY = -dy / Math.max(0.001, d);
-
-      // Sharpness is higher when CM is further from the particle.
       const sharpness = Math.min(1.0, d / this.particleRadius);
-      // Wavecrest trigger also requires velocity to point outward.
       const dot = vx * normalX + vy * normalY;
       const wavecrestPotential = (nearAir && dot > 0) ? sharpness : 0.0;
 
-      // Combine triggers (Ihmsen et al. 2012)
+      // Combined trigger potential
       const combined = (
         weightKinetic * energyPotential +
         weightTurbulence * turbulencePotential +
         weightWavecrest * wavecrestPotential
       );
 
-      const probability = Math.min(0.95, this.diffuseEmissionRate * dt * combined);
+      // Apply type-specific emission scale.
+      // If submerged, it's a bubble. If near surface, it's foam or spray.
+      // Foam is generally more likely than spray in high-vorticity surface areas.
+      let typeScale = 1.0;
+      if (!nearAir) {
+        typeScale = bubbleEmissionScale;
+      } else {
+        // Simple heuristic: if moving fast and outward, it's more likely spray.
+        typeScale = dot > 1.0 ? sprayEmissionScale : foamEmissionScale;
+      }
+
+      const probability = Math.min(0.95, this.diffuseEmissionRate * dt * combined * typeScale);
       if (Math.random() > probability) continue;
 
-      // Scatter the diffuse particle within a disk of radius particleRadius.
       const r = this.particleRadius * Math.sqrt(Math.random());
       const theta = Math.random() * 2.0 * Math.PI;
       const px = x + r * Math.cos(theta);
@@ -1085,7 +1089,10 @@ export class FlipFluid {
     sprayGravity: number,
     weightTurbulence: number,
     weightWavecrest: number,
-    weightKinetic: number
+    weightKinetic: number,
+    bubbleEmissionScale: number,
+    foamEmissionScale: number,
+    sprayEmissionScale: number
   ): void {
     // Advance and cull existing particles first so that newly-spawned particles
     // are NOT advanced in the same frame they are born.  If we emitted first and
@@ -1100,7 +1107,15 @@ export class FlipFluid {
       this.updateDiffuseParticleColors();
       this.removeDeadDiffuseParticles();
     }
-    this.emitDiffuseParticles(dt, weightTurbulence, weightWavecrest, weightKinetic);
+    this.emitDiffuseParticles(
+      dt,
+      weightTurbulence,
+      weightWavecrest,
+      weightKinetic,
+      bubbleEmissionScale,
+      foamEmissionScale,
+      sprayEmissionScale
+    );
   }
 
   // ── updateVorticity ───────────────────────────────────────────────────────
@@ -1213,7 +1228,10 @@ export class FlipFluid {
     sprayGravity = 1.0,
     weightTurbulence = 0.5,
     weightWavecrest = 0.8,
-    weightKinetic = 0.3
+    weightKinetic = 0.3,
+    bubbleEmissionScale = 0.5,
+    foamEmissionScale = 1.0,
+    sprayEmissionScale = 1.0
   ): void {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
@@ -1243,7 +1261,10 @@ export class FlipFluid {
         sprayGravity,
         weightTurbulence,
         weightWavecrest,
-        weightKinetic
+        weightKinetic,
+        bubbleEmissionScale,
+        foamEmissionScale,
+        sprayEmissionScale
       );
     }
 
