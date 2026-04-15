@@ -782,12 +782,35 @@ export class FlipFluid {
     const sx = 1.0 - tx;
     const sy = 1.0 - ty;
 
-    return (
-      sx * sy * f[x0 * n + y0] +
-      tx * sy * f[x1 * n + y0] +
-      tx * ty * f[x1 * n + y1] +
-      sx * ty * f[x0 * n + y1]
-    );
+    const nr0 = x0 * n + y0;
+    const nr1 = x1 * n + y0;
+    const nr2 = x1 * n + y1;
+    const nr3 = x0 * n + y1;
+
+    // Use the same "valid face" logic as transferVelocities to avoid
+    // interpolating with zero-velocity air cells at the fluid boundary.
+    const offset = component === 0 ? n : 1;
+    const valid0 = (this.cellType[nr0] !== AIR_CELL || this.cellType[nr0 - offset] !== AIR_CELL) ? 1.0 : 0.0;
+    const valid1 = (this.cellType[nr1] !== AIR_CELL || this.cellType[nr1 - offset] !== AIR_CELL) ? 1.0 : 0.0;
+    const valid2 = (this.cellType[nr2] !== AIR_CELL || this.cellType[nr2 - offset] !== AIR_CELL) ? 1.0 : 0.0;
+    const valid3 = (this.cellType[nr3] !== AIR_CELL || this.cellType[nr3 - offset] !== AIR_CELL) ? 1.0 : 0.0;
+
+    const d0 = sx * sy;
+    const d1 = tx * sy;
+    const d2 = tx * ty;
+    const d3 = sx * ty;
+
+    const totalValid = valid0 * d0 + valid1 * d1 + valid2 * d2 + valid3 * d3;
+    if (totalValid > 0.0) {
+      return (
+        (valid0 * d0 * f[nr0] +
+         valid1 * d1 * f[nr1] +
+         valid2 * d2 * f[nr2] +
+         valid3 * d3 * f[nr3]) / totalValid
+      );
+    }
+
+    return 0.0;
   }
 
   private emitDiffuseParticles(dt: number): void {
@@ -854,7 +877,14 @@ export class FlipFluid {
     }
   }
 
-  private advanceDiffuseParticles(dt: number, gravityX: number, gravityY: number): void {
+  private advanceDiffuseParticles(
+    dt: number,
+    gravityX: number,
+    gravityY: number,
+    bubbleBuoyancy: number,
+    foamGravity: number,
+    sprayGravity: number
+  ): void {
     const minX = this.h;
     const maxX = (this.fNumX - 1) * this.h;
     const minY = this.h;
@@ -871,8 +901,8 @@ export class FlipFluid {
         // Purely ballistic: gravity only, no grid coupling.
         // Life burns at 2× to keep spray short-lived (matches GridFluidSim3D
         // _sprayParticleLifetimeModifier = 2.0).
-        vx += gravityX * dt;
-        vy += gravityY * dt;
+        vx += gravityX * sprayGravity * dt;
+        vy += gravityY * sprayGravity * dt;
         this.diffuseLife[i] -= 2.0 * dt;
       } else {
         // Sample grid velocity at the particle's current position.
@@ -883,10 +913,11 @@ export class FlipFluid {
           // Bubbles: strong drag toward local fluid velocity (drag coeff = 1.0,
           // i.e. instantly match the field each frame, like GridFluidSim3D
           // _bubbleDragCoefficient = 1.0) plus a buoyancy impulse opposite to
-          // gravity.  Buoyancy coefficient 4.0 matches the 3D reference; this
-          // makes bubbles rise clearly relative to the falling fluid.
-          const buoyancyX = -4.0 * gravityX;
-          const buoyancyY = -4.0 * gravityY;
+          // gravity.  Buoyancy coefficient bubbleBuoyancy (default 4.0) matches
+          // the 3D reference; this makes bubbles rise clearly relative to the
+          // falling fluid.
+          const buoyancyX = -bubbleBuoyancy * gravityX;
+          const buoyancyY = -bubbleBuoyancy * gravityY;
           vx = gridVel.x + buoyancyX * dt;
           vy = gridVel.y + buoyancyY * dt;
           // Bubbles live longest (modifier ≈ 1/3, matching _bubbleParticleLifetimeModifier = 0.333).
@@ -902,9 +933,11 @@ export class FlipFluid {
           // equivalent is setting velocity to the field value, but the drag
           // factor here gives a gentler, visually smoother result in 2D.
           // Follow the MAC grid velocity (matches 3D RK2 advection intent).
-          // No gravity term — foam rides the surface flow like the 3D reference.
-          vx += (gridVel.x - vx) * 0.5;
-          vy += (gridVel.y - vy) * 0.5;
+          // We include a gravity compensation term (1-drag)*g*dt*foamGravity so
+          // that foam accelerates with the fluid even if gridVel (sampled at
+          // the surface) is slightly lagged by the 0.5 drag factor.
+          vx += (gridVel.x - vx) * 0.5 + 0.5 * gravityX * foamGravity * dt;
+          vy += (gridVel.y - vy) * 0.5 + 0.5 * gravityY * foamGravity * dt;
           this.diffuseLife[i] -= 1.0 * dt;
         }
       }
@@ -988,7 +1021,14 @@ export class FlipFluid {
     this.numDiffuseParticles = dst;
   }
 
-  private updateDiffuseParticles(dt: number, gravityX: number, gravityY: number): void {
+  private updateDiffuseParticles(
+    dt: number,
+    gravityX: number,
+    gravityY: number,
+    bubbleBuoyancy: number,
+    foamGravity: number,
+    sprayGravity: number
+  ): void {
     // Advance and cull existing particles first so that newly-spawned particles
     // are NOT advanced in the same frame they are born.  If we emitted first and
     // then advanced, every new particle would immediately fly speed*dt away from
@@ -997,7 +1037,7 @@ export class FlipFluid {
     // at their spawn position until the next frame.
     if (this.numDiffuseParticles > 0) {
       this.updateDiffuseParticleTypes();
-      this.advanceDiffuseParticles(dt, gravityX, gravityY);
+      this.advanceDiffuseParticles(dt, gravityX, gravityY, bubbleBuoyancy, foamGravity, sprayGravity);
       this.updateDiffuseParticleTypes();
       this.updateDiffuseParticleColors();
       this.removeDeadDiffuseParticles();
@@ -1079,7 +1119,10 @@ export class FlipFluid {
     maxDiffuseParticles = this.maxDiffuseParticles,
     diffuseEmissionRate = this.diffuseEmissionRate,
     diffuseMinSpeed = this.diffuseMinSpeed,
-    diffuseLifetime = this.diffuseLifetime
+    diffuseLifetime = this.diffuseLifetime,
+    bubbleBuoyancy = 4.0,
+    foamGravity = 1.0,
+    sprayGravity = 1.0
   ): void {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
@@ -1099,7 +1142,7 @@ export class FlipFluid {
       this.updateParticleDensity();
       this.solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
       this.transferVelocities(false, picRatio);
-      this.updateDiffuseParticles(sdt, gravityX, gravityY);
+      this.updateDiffuseParticles(sdt, gravityX, gravityY, bubbleBuoyancy, foamGravity, sprayGravity);
     }
 
     this.updateParticleColors();

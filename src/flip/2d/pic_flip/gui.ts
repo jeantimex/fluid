@@ -25,6 +25,9 @@ export interface PicFlipGuiState {
   diffuseEmissionRate: number;
   diffuseMinSpeed: number;
   diffuseLifetime: number;
+  bubbleBuoyancy: number;
+  foamGravity: number;
+  sprayGravity: number;
   showDiffuseParticles: boolean;
   showGrid: boolean;
   reset: () => void;
@@ -100,6 +103,9 @@ export function setupGui(
     diffuseEmissionRate: params.diffuseEmissionRate,
     diffuseMinSpeed: params.diffuseMinSpeed,
     diffuseLifetime: params.diffuseLifetime,
+    bubbleBuoyancy: params.bubbleBuoyancy,
+    foamGravity: params.foamGravity,
+    sprayGravity: params.sprayGravity,
     showDiffuseParticles: params.showDiffuseParticles,
     showGrid: params.showGrid,
     reset: callbacks.onReset,
@@ -251,6 +257,24 @@ export function setupGui(
     .name('Lifetime')
     .onChange((value: number) => {
       params.diffuseLifetime = value;
+    });
+  whitewaterFolder
+    .add(state, 'bubbleBuoyancy', 0, 10, 0.1)
+    .name('Bubble Buoyancy')
+    .onChange((value: number) => {
+      params.bubbleBuoyancy = value;
+    });
+  whitewaterFolder
+    .add(state, 'foamGravity', 0, 2, 0.01)
+    .name('Foam Gravity')
+    .onChange((value: number) => {
+      params.foamGravity = value;
+    });
+  whitewaterFolder
+    .add(state, 'sprayGravity', 0, 2, 0.01)
+    .name('Spray Gravity')
+    .onChange((value: number) => {
+      params.sprayGravity = value;
     });
 
   const colorFolder = gui.addFolder('Color');

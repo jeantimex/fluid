@@ -37,6 +37,9 @@ export interface SimulationParams {
   diffuseEmissionRate: number;
   diffuseMinSpeed: number;
   diffuseLifetime: number;
+  bubbleBuoyancy: number;
+  foamGravity: number;
+  sprayGravity: number;
   showDiffuseParticles: boolean;
   showParticles: boolean;
   showGrid: boolean;
