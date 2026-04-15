@@ -19,8 +19,8 @@ export type AppState =
 export interface FluidPalette {
   fluidColor: RGB;
   foamColor: RGB;
-  colorDiffusionCoeff: number;
-  foamReturnRate: number;
+  sprayColor: RGB;
+  bubbleColor: RGB;
 }
 
 export interface SimulationParams {
@@ -32,6 +32,12 @@ export interface SimulationParams {
   compensateDrift: boolean;
   separateParticles: boolean;
   damping: number;
+  enableWhitewater: boolean;
+  maxDiffuseParticles: number;
+  diffuseEmissionRate: number;
+  diffuseMinSpeed: number;
+  diffuseLifetime: number;
+  showDiffuseParticles: boolean;
   showParticles: boolean;
   showGrid: boolean;
   resolution: number;

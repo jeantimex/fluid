@@ -15,6 +15,12 @@ const DEFAULT_PARAMS: SimulationParams = {
   compensateDrift: true,
   separateParticles: true,
   damping: 1.0,
+  enableWhitewater: true,
+  maxDiffuseParticles: 12000,
+  diffuseEmissionRate: 6,
+  diffuseMinSpeed: 1.4,
+  diffuseLifetime: 2.4,
+  showDiffuseParticles: true,
   showParticles: true,
   showGrid: false,
   resolution: 70,
@@ -39,10 +45,10 @@ function lerpColor(current: RGB, target: RGB, t: number): RGB {
 
 function clonePalette(palette: FluidPalette): FluidPalette {
   return {
-    fluidColor: { ...palette.fluidColor },
-    foamColor: { ...palette.foamColor },
-    colorDiffusionCoeff: palette.colorDiffusionCoeff,
-    foamReturnRate: palette.foamReturnRate,
+    fluidColor:  { ...palette.fluidColor },
+    foamColor:   { ...palette.foamColor },
+    sprayColor:  { ...palette.sprayColor },
+    bubbleColor: { ...palette.bubbleColor },
   };
 }
 
@@ -130,14 +136,10 @@ function animatePaletteTransition(previousTime = performance.now()): void {
   const t = Math.min(1, dt * COLOR_LERP_SPEED);
 
   currentPalette = {
-    fluidColor: lerpColor(currentPalette.fluidColor, targetPalette.fluidColor, t),
-    foamColor: lerpColor(currentPalette.foamColor, targetPalette.foamColor, t),
-    colorDiffusionCoeff: lerp(
-      currentPalette.colorDiffusionCoeff,
-      targetPalette.colorDiffusionCoeff,
-      t
-    ),
-    foamReturnRate: lerp(currentPalette.foamReturnRate, targetPalette.foamReturnRate, t),
+    fluidColor:  lerpColor(currentPalette.fluidColor,  targetPalette.fluidColor,  t),
+    foamColor:   lerpColor(currentPalette.foamColor,   targetPalette.foamColor,   t),
+    sprayColor:  lerpColor(currentPalette.sprayColor,  targetPalette.sprayColor,  t),
+    bubbleColor: lerpColor(currentPalette.bubbleColor, targetPalette.bubbleColor, t),
   };
 
   simulation.setPalette(currentPalette);
