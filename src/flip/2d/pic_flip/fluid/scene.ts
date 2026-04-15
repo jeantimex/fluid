@@ -8,10 +8,7 @@ export function setupFluidScene(
   relWaterWidth = 0.6,
   relWaterHeight = 0.8,
   numParticlesTarget = 0,
-  baseColor?: RGB,
-  foamColor?: RGB,
-  colorDiffusionCoeff: number = 0.01,
-  foamReturnRate: number = 1.0
+  baseColor?: RGB
 ): FlipFluid {
   const tankHeight = simHeight;
   const tankWidth = simWidth;
@@ -43,10 +40,7 @@ export function setupFluidScene(
     h,
     r,
     maxParticles,
-    baseColor,
-    foamColor,
-    colorDiffusionCoeff,
-    foamReturnRate
+    baseColor
   );
 
   fluid.numParticles = numX * numY;

@@ -7,8 +7,8 @@ export interface PicFlipGuiState {
   gravityY: number;
   fluidColor: string;
   foamColor: string;
-  colorDiffusionCoeff: number;
-  foamReturnRate: number;
+  sprayColor: string;
+  bubbleColor: string;
   dt: number;
   picRatio: number;
   numPressureIters: number;
@@ -20,6 +20,12 @@ export interface PicFlipGuiState {
   relWaterHeight: number;
   numParticles: number;
   separateParticles: boolean;
+  enableWhitewater: boolean;
+  maxDiffuseParticles: number;
+  diffuseEmissionRate: number;
+  diffuseMinSpeed: number;
+  diffuseLifetime: number;
+  showDiffuseParticles: boolean;
   showGrid: boolean;
   reset: () => void;
 }
@@ -76,8 +82,8 @@ export function setupGui(
     gravityY: initialGravity.y,
     fluidColor: rgbToHex(palette.fluidColor),
     foamColor: rgbToHex(palette.foamColor),
-    colorDiffusionCoeff: palette.colorDiffusionCoeff,
-    foamReturnRate: palette.foamReturnRate,
+    sprayColor: rgbToHex(palette.sprayColor),
+    bubbleColor: rgbToHex(palette.bubbleColor),
     dt: params.dt,
     picRatio: params.picRatio,
     numPressureIters: params.numPressureIters,
@@ -89,6 +95,12 @@ export function setupGui(
     relWaterHeight: params.relWaterHeight,
     numParticles: params.numParticles,
     separateParticles: params.separateParticles,
+    enableWhitewater: params.enableWhitewater,
+    maxDiffuseParticles: params.maxDiffuseParticles,
+    diffuseEmissionRate: params.diffuseEmissionRate,
+    diffuseMinSpeed: params.diffuseMinSpeed,
+    diffuseLifetime: params.diffuseLifetime,
+    showDiffuseParticles: params.showDiffuseParticles,
     showGrid: params.showGrid,
     reset: callbacks.onReset,
   };
@@ -167,6 +179,18 @@ export function setupGui(
       params.separateParticles = value;
     });
   simulationFolder
+    .add(state, 'enableWhitewater')
+    .name('Whitewater')
+    .onChange((value: boolean) => {
+      params.enableWhitewater = value;
+    });
+  simulationFolder
+    .add(state, 'showDiffuseParticles')
+    .name('Show Whitewater')
+    .onChange((value: boolean) => {
+      params.showDiffuseParticles = value;
+    });
+  simulationFolder
     .add(state, 'showGrid')
     .name('Show Grid')
     .onChange((value: boolean) => {
@@ -203,12 +227,38 @@ export function setupGui(
       callbacks.onReset();
     });
 
+  const whitewaterFolder = gui.addFolder('Whitewater');
+  whitewaterFolder
+    .add(state, 'maxDiffuseParticles', 0, 50000, 500)
+    .name('Max Particles')
+    .onFinishChange((value: number) => {
+      params.maxDiffuseParticles = value;
+    });
+  whitewaterFolder
+    .add(state, 'diffuseEmissionRate', 0, 40, 0.1)
+    .name('Emission Rate')
+    .onChange((value: number) => {
+      params.diffuseEmissionRate = value;
+    });
+  whitewaterFolder
+    .add(state, 'diffuseMinSpeed', 0, 8, 0.05)
+    .name('Min Speed')
+    .onChange((value: number) => {
+      params.diffuseMinSpeed = value;
+    });
+  whitewaterFolder
+    .add(state, 'diffuseLifetime', 0.1, 8, 0.1)
+    .name('Lifetime')
+    .onChange((value: number) => {
+      params.diffuseLifetime = value;
+    });
+
   const colorFolder = gui.addFolder('Color');
   const emitPaletteChange = () => {
-    palette.fluidColor = hexToRgb(state.fluidColor);
-    palette.foamColor = hexToRgb(state.foamColor);
-    palette.colorDiffusionCoeff = state.colorDiffusionCoeff;
-    palette.foamReturnRate = state.foamReturnRate;
+    palette.fluidColor  = hexToRgb(state.fluidColor);
+    palette.foamColor   = hexToRgb(state.foamColor);
+    palette.sprayColor  = hexToRgb(state.sprayColor);
+    palette.bubbleColor = hexToRgb(state.bubbleColor);
     callbacks.onPaletteChange(palette);
   };
 
@@ -221,12 +271,12 @@ export function setupGui(
     .name('Foam Color')
     .onChange(emitPaletteChange);
   colorFolder
-    .add(state, 'colorDiffusionCoeff', 0, 0.01, 0.0001)
-    .name('Color Diffusion')
+    .addColor(state, 'sprayColor')
+    .name('Spray Color')
     .onChange(emitPaletteChange);
   colorFolder
-    .add(state, 'foamReturnRate', 0, 2, 0.01)
-    .name('Foam Return')
+    .addColor(state, 'bubbleColor')
+    .name('Bubble Color')
     .onChange(emitPaletteChange);
 
   gui.add(state, 'reset').name('Reset Simulation');

@@ -90,25 +90,22 @@ export class PicFlipSimulation {
   }
 
   private createFluid() {
-    return setupFluidScene(
+    const fluid = setupFluidScene(
       this.simWidth,
       SIM_HEIGHT, // always use the reference height for h computation
       this.params.resolution,
       this.params.relWaterWidth,
       this.params.relWaterHeight,
       this.params.numParticles,
-      this.palette.fluidColor,
-      this.palette.foamColor,
-      this.palette.colorDiffusionCoeff,
-      this.palette.foamReturnRate
+      this.palette.fluidColor
     );
+    fluid.setDiffuseColors(this.palette.foamColor, this.palette.sprayColor, this.palette.bubbleColor);
+    return fluid;
   }
 
   private applyPalette(): void {
     this.fluid.setFluidColor(this.palette.fluidColor);
-    this.fluid.setFoamColor(this.palette.foamColor);
-    this.fluid.setColorDiffusionCoeff(this.palette.colorDiffusionCoeff);
-    this.fluid.setFoamReturnRate(this.palette.foamReturnRate);
+    this.fluid.setDiffuseColors(this.palette.foamColor, this.palette.sprayColor, this.palette.bubbleColor);
   }
 
   private tick = (): void => {
@@ -122,11 +119,17 @@ export class PicFlipSimulation {
       this.params.overRelaxation,
       this.params.compensateDrift,
       this.params.separateParticles,
-      this.params.damping
+      this.params.damping,
+      this.params.enableWhitewater,
+      this.params.maxDiffuseParticles,
+      this.params.diffuseEmissionRate,
+      this.params.diffuseMinSpeed,
+      this.params.diffuseLifetime
     );
 
     this.renderer.render(this.fluid, {
       showParticles: this.params.showParticles,
+      showDiffuseParticles: this.params.showDiffuseParticles,
       showGrid: this.params.showGrid,
       simWidth: this.simWidth,
       simHeight: this.simHeight,

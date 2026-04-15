@@ -37,6 +37,7 @@ const pointFragmentShader = `
 
 export interface RenderConfig {
   showParticles: boolean;
+  showDiffuseParticles: boolean;
   showGrid: boolean;
   simWidth: number;
   simHeight: number;
@@ -145,6 +146,10 @@ export class FluidRenderer {
       this.renderParticles(fluid, config, positionLocation, colorLocation);
     }
 
+    if (config.showDiffuseParticles) {
+      this.renderDiffuseParticles(fluid, config, positionLocation, colorLocation);
+    }
+
     gl.disableVertexAttribArray(positionLocation);
     gl.disableVertexAttribArray(colorLocation);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -213,6 +218,38 @@ export class FluidRenderer {
     gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
 
     gl.drawArrays(gl.POINTS, 0, fluid.numParticles);
+  }
+
+  private renderDiffuseParticles(
+    fluid: FlipFluid,
+    config: RenderConfig,
+    positionLocation: number,
+    colorLocation: number
+  ): void {
+    if (fluid.numDiffuseParticles === 0) return;
+
+    const gl = this.gl;
+    const pointSize = (1.35 * fluid.particleRadius * gl.canvas.width) / config.simWidth;
+    gl.uniform1f(gl.getUniformLocation(this.pointShader, 'pointSize'), pointSize);
+    gl.uniform1f(gl.getUniformLocation(this.pointShader, 'drawDisk'), 1.0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.pointVertexBuffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      fluid.diffusePos.subarray(0, 2 * fluid.numDiffuseParticles),
+      gl.DYNAMIC_DRAW
+    );
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.pointColorBuffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      fluid.diffuseColor.subarray(0, 3 * fluid.numDiffuseParticles),
+      gl.DYNAMIC_DRAW
+    );
+    gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
+
+    gl.drawArrays(gl.POINTS, 0, fluid.numDiffuseParticles);
   }
 
   invalidateGridBuffer(): void {
