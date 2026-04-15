@@ -40,6 +40,9 @@ export interface SimulationParams {
   bubbleBuoyancy: number;
   foamGravity: number;
   sprayGravity: number;
+  weightTurbulence: number;
+  weightWavecrest: number;
+  weightKinetic: number;
   showDiffuseParticles: boolean;
   showParticles: boolean;
   showGrid: boolean;

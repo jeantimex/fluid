@@ -28,6 +28,9 @@ export interface PicFlipGuiState {
   bubbleBuoyancy: number;
   foamGravity: number;
   sprayGravity: number;
+  weightTurbulence: number;
+  weightWavecrest: number;
+  weightKinetic: number;
   showDiffuseParticles: boolean;
   showGrid: boolean;
   reset: () => void;
@@ -106,6 +109,9 @@ export function setupGui(
     bubbleBuoyancy: params.bubbleBuoyancy,
     foamGravity: params.foamGravity,
     sprayGravity: params.sprayGravity,
+    weightTurbulence: params.weightTurbulence,
+    weightWavecrest: params.weightWavecrest,
+    weightKinetic: params.weightKinetic,
     showDiffuseParticles: params.showDiffuseParticles,
     showGrid: params.showGrid,
     reset: callbacks.onReset,
@@ -275,6 +281,24 @@ export function setupGui(
     .name('Spray Gravity')
     .onChange((value: number) => {
       params.sprayGravity = value;
+    });
+  whitewaterFolder
+    .add(state, 'weightTurbulence', 0, 5, 0.05)
+    .name('Turbulence Weight')
+    .onChange((value: number) => {
+      params.weightTurbulence = value;
+    });
+  whitewaterFolder
+    .add(state, 'weightWavecrest', 0, 5, 0.05)
+    .name('Wavecrest Weight')
+    .onChange((value: number) => {
+      params.weightWavecrest = value;
+    });
+  whitewaterFolder
+    .add(state, 'weightKinetic', 0, 5, 0.05)
+    .name('Kinetic Weight')
+    .onChange((value: number) => {
+      params.weightKinetic = value;
     });
 
   const colorFolder = gui.addFolder('Color');

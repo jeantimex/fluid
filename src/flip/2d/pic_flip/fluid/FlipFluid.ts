@@ -71,6 +71,7 @@ export class FlipFluid {
   s: Float32Array;
   cellType: Int32Array;    // per-cell type (FLUID_CELL / AIR_CELL / SOLID_CELL)
   cellColor: Float32Array; // packed RGB [0,1] for grid debug visualisation (3 floats per cell)
+  vorticity: Float32Array; // vorticity magnitude for whitewater emission
 
   // ── Particle data ────────────────────────────────────────────────────────
   maxParticles: number;         // allocated capacity (fixed after construction)
@@ -160,6 +161,7 @@ export class FlipFluid {
     this.s = new Float32Array(this.fNumCells);
     this.cellType = new Int32Array(this.fNumCells);
     this.cellColor = new Float32Array(3 * this.fNumCells);
+    this.vorticity = new Float32Array(this.fNumCells);
 
     this.maxParticles = maxParticles;
     this.particlePos = new Float32Array(2 * this.maxParticles);
@@ -813,10 +815,19 @@ export class FlipFluid {
     return 0.0;
   }
 
-  private emitDiffuseParticles(dt: number): void {
+  private emitDiffuseParticles(
+    dt: number,
+    weightTurbulence: number,
+    weightWavecrest: number,
+    weightKinetic: number
+  ): void {
     if (this.diffuseEmissionRate <= 0 || this.maxDiffuseParticles === 0) return;
     const h1 = this.fInvSpacing;
     const d0 = this.particleRestDensity;
+    const h = this.h;
+
+    // Use a fixed search radius for wavecrest/turbulence triggers.
+    const searchRadius = 2.0 * this.particleRadius;
 
     for (let i = 0; i < this.numParticles && this.numDiffuseParticles < this.maxDiffuseParticles; i++) {
       const vx = this.particleVel[2 * i];
@@ -830,19 +841,63 @@ export class FlipFluid {
       const yi = clamp(Math.floor(y * h1), 1, this.fNumY - 2);
       const cell = xi * this.fNumY + yi;
       const nearAir = this.isNearAirCell(xi, yi);
-      const relDensity = d0 > 0 ? this.particleDensity[cell] / d0 : 1.0;
-      if (!nearAir && relDensity > 0.9) continue;
 
-      const surfacePotential = nearAir ? 1.0 : Math.max(0, 0.9 - relDensity) / 0.9;
-      const energyPotential = Math.min(1.0, (speed - this.diffuseMinSpeed) / Math.max(0.001, 5.0 - this.diffuseMinSpeed));
-      const probability = Math.min(0.95, this.diffuseEmissionRate * dt * surfacePotential * energyPotential);
+      // 1. Kinetic Energy Potential (normalized speed)
+      // I_k = (v - v_min) / (v_max - v_min)
+      const energyPotential = Math.min(1.0, (speed - this.diffuseMinSpeed) / 5.0);
+
+      // 2. Turbulence Potential (vorticity magnitude)
+      // We sample the pre-computed grid vorticity.
+      const turbulencePotential = Math.min(1.0, this.vorticity[cell] / 20.0);
+
+      // 3. Wavecrest Sharpness Potential
+      // Approximate curvature by checking neighbor distribution in the spatial hash.
+      let avgX = 0, avgY = 0, neighborCount = 0;
+      const pxi = Math.floor(x * this.pInvSpacing);
+      const pyi = Math.floor(y * this.pInvSpacing);
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          const cxi = clamp(pxi + ox, 0, this.pNumX - 1);
+          const cyi = clamp(pyi + oy, 0, this.pNumY - 1);
+          const cellNr = cxi * this.pNumY + cyi;
+          for (let k = this.firstCellParticle[cellNr]; k < this.firstCellParticle[cellNr + 1]; k++) {
+            const id = this.cellParticleIds[k];
+            const dx = this.particlePos[2 * id] - x;
+            const dy = this.particlePos[2 * id + 1] - y;
+            if (dx * dx + dy * dy < searchRadius * searchRadius) {
+              avgX += dx;
+              avgY += dy;
+              neighborCount++;
+            }
+          }
+        }
+      }
+
+      // If neighborCount is low and CM is shifted, it's a crest.
+      // n points into the fluid.
+      const dx = avgX / Math.max(1, neighborCount);
+      const dy = avgY / Math.max(1, neighborCount);
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const normalX = -dx / Math.max(0.001, d);
+      const normalY = -dy / Math.max(0.001, d);
+
+      // Sharpness is higher when CM is further from the particle.
+      const sharpness = Math.min(1.0, d / this.particleRadius);
+      // Wavecrest trigger also requires velocity to point outward.
+      const dot = vx * normalX + vy * normalY;
+      const wavecrestPotential = (nearAir && dot > 0) ? sharpness : 0.0;
+
+      // Combine triggers (Ihmsen et al. 2012)
+      const combined = (
+        weightKinetic * energyPotential +
+        weightTurbulence * turbulencePotential +
+        weightWavecrest * wavecrestPotential
+      );
+
+      const probability = Math.min(0.95, this.diffuseEmissionRate * dt * combined);
       if (Math.random() > probability) continue;
 
-      // Scatter the diffuse particle within a disk of radius particleRadius
-      // centred on the emitter.  A forward "along" component (as in the 3D
-      // reference) is intentionally omitted: in 2D it is the DOMINANT term and
-      // points into the air above surface particles, which pushes newly-spawned
-      // white particles visibly away from the fluid surface.
+      // Scatter the diffuse particle within a disk of radius particleRadius.
       const r = this.particleRadius * Math.sqrt(Math.random());
       const theta = Math.random() * 2.0 * Math.PI;
       const px = x + r * Math.cos(theta);
@@ -1027,7 +1082,10 @@ export class FlipFluid {
     gravityY: number,
     bubbleBuoyancy: number,
     foamGravity: number,
-    sprayGravity: number
+    sprayGravity: number,
+    weightTurbulence: number,
+    weightWavecrest: number,
+    weightKinetic: number
   ): void {
     // Advance and cull existing particles first so that newly-spawned particles
     // are NOT advanced in the same frame they are born.  If we emitted first and
@@ -1042,7 +1100,37 @@ export class FlipFluid {
       this.updateDiffuseParticleColors();
       this.removeDeadDiffuseParticles();
     }
-    this.emitDiffuseParticles(dt);
+    this.emitDiffuseParticles(dt, weightTurbulence, weightWavecrest, weightKinetic);
+  }
+
+  // ── updateVorticity ───────────────────────────────────────────────────────
+  // Computes the magnitude of the 2D vorticity (curl of velocity) at each grid
+  // cell center.  Since velocity is staggered (MAC grid), the discrete curl is
+  // naturally defined at cell corners: ω = (v_right - v_left)/h - (u_top - u_bottom)/h.
+  // We average the four surrounding corner values to obtain a cell-centered ω.
+  updateVorticity(): void {
+    const n = this.fNumY;
+    const h1 = this.fInvSpacing;
+    this.vorticity.fill(0.0);
+
+    for (let i = 1; i < this.fNumX - 1; i++) {
+      for (let j = 1; j < this.fNumY - 1; j++) {
+        // Compute ω at the FOUR corners of cell (i,j).
+        // Corner (i,j) is at (i*h, j*h).
+        const omega = (cornerI: number, cornerJ: number) => {
+          const dv_dx = (this.v[cornerI * n + cornerJ] - this.v[(cornerI - 1) * n + cornerJ]) * h1;
+          const du_dy = (this.u[cornerI * n + cornerJ] - this.u[cornerI * n + cornerJ - 1]) * h1;
+          return Math.abs(dv_dx - du_dy);
+        };
+
+        const w00 = omega(i, j);         // bottom-left corner
+        const w10 = omega(i + 1, j);     // bottom-right
+        const w11 = omega(i + 1, j + 1); // top-right
+        const w01 = omega(i, j + 1);     // top-left
+
+        this.vorticity[i * n + j] = 0.25 * (w00 + w10 + w11 + w01);
+      }
+    }
   }
 
   // ── setSciColor ───────────────────────────────────────────────────────────
@@ -1122,7 +1210,10 @@ export class FlipFluid {
     diffuseLifetime = this.diffuseLifetime,
     bubbleBuoyancy = 4.0,
     foamGravity = 1.0,
-    sprayGravity = 1.0
+    sprayGravity = 1.0,
+    weightTurbulence = 0.5,
+    weightWavecrest = 0.8,
+    weightKinetic = 0.3
   ): void {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
@@ -1142,7 +1233,18 @@ export class FlipFluid {
       this.updateParticleDensity();
       this.solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
       this.transferVelocities(false, picRatio);
-      this.updateDiffuseParticles(sdt, gravityX, gravityY, bubbleBuoyancy, foamGravity, sprayGravity);
+      this.updateVorticity();
+      this.updateDiffuseParticles(
+        sdt,
+        gravityX,
+        gravityY,
+        bubbleBuoyancy,
+        foamGravity,
+        sprayGravity,
+        weightTurbulence,
+        weightWavecrest,
+        weightKinetic
+      );
     }
 
     this.updateParticleColors();
@@ -1212,6 +1314,7 @@ export class FlipFluid {
     this.s             = new Float32Array(this.fNumCells);
     this.cellType      = new Int32Array(this.fNumCells);
     this.cellColor     = new Float32Array(3 * this.fNumCells);
+    this.vorticity     = new Float32Array(this.fNumCells);
     this.particleDensity = new Float32Array(this.fNumCells);
 
     // Rebuild solid boundaries: left, right, and bottom walls; top is open.
