@@ -44,6 +44,10 @@ export default defineConfig({
           __dirname,
           'src/flip/2d/pic_flip/index.html'
         ),
+        'demo-flip-2d-hybrid-flip': resolve(
+          __dirname,
+          'src/flip/2d/hybrid_flip/index.html'
+        ),
         'demo-flip-2d-apic': resolve(
           __dirname,
           'src/flip/2d/apic/index.html'
