@@ -48,6 +48,9 @@ export interface SimulationParams {
   sprayEmissionScale: number;
   diffuseRepulsionStrength: number;
   showDiffuseParticles: boolean;
+  showSpray: boolean;
+  showFoam: boolean;
+  showBubble: boolean;
   showParticles: boolean;
   showGrid: boolean;
   resolution: number;

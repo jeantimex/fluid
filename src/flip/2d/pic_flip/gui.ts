@@ -36,6 +36,9 @@ export interface PicFlipGuiState {
   sprayEmissionScale: number;
   diffuseRepulsionStrength: number;
   showDiffuseParticles: boolean;
+  showSpray: boolean;
+  showFoam: boolean;
+  showBubble: boolean;
   showGrid: boolean;
   reset: () => void;
 }
@@ -121,6 +124,9 @@ export function setupGui(
     sprayEmissionScale: params.sprayEmissionScale,
     diffuseRepulsionStrength: params.diffuseRepulsionStrength,
     showDiffuseParticles: params.showDiffuseParticles,
+    showSpray: params.showSpray,
+    showFoam: params.showFoam,
+    showBubble: params.showBubble,
     showGrid: params.showGrid,
     reset: callbacks.onReset,
   };
@@ -331,6 +337,24 @@ export function setupGui(
     .name('Repulsion Strength')
     .onChange((value: number) => {
       params.diffuseRepulsionStrength = value;
+    });
+  whitewaterFolder
+    .add(state, 'showSpray')
+    .name('Show Spray')
+    .onChange((value: boolean) => {
+      params.showSpray = value;
+    });
+  whitewaterFolder
+    .add(state, 'showFoam')
+    .name('Show Foam')
+    .onChange((value: boolean) => {
+      params.showFoam = value;
+    });
+  whitewaterFolder
+    .add(state, 'showBubble')
+    .name('Show Bubble')
+    .onChange((value: boolean) => {
+      params.showBubble = value;
     });
 
   const colorFolder = gui.addFolder('Color');

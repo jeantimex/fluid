@@ -140,6 +140,9 @@ export class PicFlipSimulation {
     this.renderer.render(this.fluid, {
       showParticles: this.params.showParticles,
       showDiffuseParticles: this.params.showDiffuseParticles,
+      showSpray: this.params.showSpray,
+      showFoam: this.params.showFoam,
+      showBubble: this.params.showBubble,
       showGrid: this.params.showGrid,
       simWidth: this.simWidth,
       simHeight: this.simHeight,

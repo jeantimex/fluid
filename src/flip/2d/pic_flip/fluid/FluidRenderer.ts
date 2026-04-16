@@ -38,6 +38,9 @@ const pointFragmentShader = `
 export interface RenderConfig {
   showParticles: boolean;
   showDiffuseParticles: boolean;
+  showSpray: boolean;
+  showFoam: boolean;
+  showBubble: boolean;
   showGrid: boolean;
   simWidth: number;
   simHeight: number;
@@ -233,23 +236,63 @@ export class FluidRenderer {
     gl.uniform1f(gl.getUniformLocation(this.pointShader, 'pointSize'), pointSize);
     gl.uniform1f(gl.getUniformLocation(this.pointShader, 'drawDisk'), 1.0);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.pointVertexBuffer);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
-      fluid.diffusePos.subarray(0, 2 * fluid.numDiffuseParticles),
-      gl.DYNAMIC_DRAW
-    );
-    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+    // Create a temporary set of filtered arrays to upload in one pass if all are enabled,
+    // or just render the whole buffer if all are visible.
+    const allEnabled = config.showSpray && config.showFoam && config.showBubble;
+    if (allEnabled) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.pointVertexBuffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        fluid.diffusePos.subarray(0, 2 * fluid.numDiffuseParticles),
+        gl.DYNAMIC_DRAW
+      );
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.pointColorBuffer);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
-      fluid.diffuseColor.subarray(0, 3 * fluid.numDiffuseParticles),
-      gl.DYNAMIC_DRAW
-    );
-    gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.pointColorBuffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        fluid.diffuseColor.subarray(0, 3 * fluid.numDiffuseParticles),
+        gl.DYNAMIC_DRAW
+      );
+      gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
 
-    gl.drawArrays(gl.POINTS, 0, fluid.numDiffuseParticles);
+      gl.drawArrays(gl.POINTS, 0, fluid.numDiffuseParticles);
+    } else {
+      // Filter the particles that match the visibility config.
+      const filteredPos = new Float32Array(2 * fluid.numDiffuseParticles);
+      const filteredColor = new Float32Array(3 * fluid.numDiffuseParticles);
+      let count = 0;
+
+      for (let i = 0; i < fluid.numDiffuseParticles; i++) {
+        const type = fluid.diffuseType[i];
+        let visible = false;
+        // Check alignment with DIFFUSE_BUBBLE=0, FOAM=1, SPRAY=2
+        if (type === 0 && config.showBubble) visible = true;
+        else if (type === 1 && config.showFoam) visible = true;
+        else if (type === 2 && config.showSpray) visible = true;
+
+        if (visible) {
+          filteredPos[2 * count] = fluid.diffusePos[2 * i];
+          filteredPos[2 * count + 1] = fluid.diffusePos[2 * i + 1];
+          filteredColor[3 * count] = fluid.diffuseColor[3 * i];
+          filteredColor[3 * count + 1] = fluid.diffuseColor[3 * i + 1];
+          filteredColor[3 * count + 2] = fluid.diffuseColor[3 * i + 2];
+          count++;
+        }
+      }
+
+      if (count > 0) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.pointVertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, filteredPos.subarray(0, 2 * count), gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.pointColorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, filteredColor.subarray(0, 3 * count), gl.DYNAMIC_DRAW);
+        gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
+
+        gl.drawArrays(gl.POINTS, 0, count);
+      }
+    }
   }
 
   invalidateGridBuffer(): void {
