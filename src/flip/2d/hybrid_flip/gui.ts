@@ -1,7 +1,7 @@
 import GUI from 'lil-gui';
 import type { FluidPalette, SimulationParams, Vec2 } from './types';
 
-export interface PicFlipGuiState {
+export interface HybridFlipGuiState {
   useDeviceMotion: boolean;
   gravityX: number;
   gravityY: number;
@@ -13,6 +13,7 @@ export interface PicFlipGuiState {
   picRatio: number;
   numPressureIters: number;
   numParticleIters: number;
+  numExtrapolationIters: number;
   overRelaxation: number;
   damping: number;
   resolution: number;
@@ -20,7 +21,6 @@ export interface PicFlipGuiState {
   relWaterHeight: number;
   numParticles: number;
   separateParticles: boolean;
-  enableWhitewater: boolean;
   maxDiffuseParticles: number;
   diffuseEmissionRate: number;
   diffuseMinSpeed: number;
@@ -35,7 +35,6 @@ export interface PicFlipGuiState {
   foamEmissionScale: number;
   sprayEmissionScale: number;
   diffuseRepulsionStrength: number;
-  showDiffuseParticles: boolean;
   showSpray: boolean;
   showFoam: boolean;
   showBubble: boolean;
@@ -43,14 +42,14 @@ export interface PicFlipGuiState {
   reset: () => void;
 }
 
-export interface PicFlipGuiCallbacks {
+export interface HybridFlipGuiCallbacks {
   onUseDeviceMotionChange: (enabled: boolean) => void;
   onGravityChange: (gravity: Vec2) => void;
   onPaletteChange: (palette: FluidPalette) => void;
   onReset: () => void;
 }
 
-export interface PicFlipGuiHandle {
+export interface HybridFlipGuiHandle {
   gui: GUI;
   destroy: () => void;
   syncGravity: (gravity: Vec2) => void;
@@ -87,9 +86,9 @@ export function setupGui(
   params: SimulationParams,
   palette: FluidPalette,
   initialGravity: Vec2,
-  callbacks: PicFlipGuiCallbacks
-): PicFlipGuiHandle {
-  const state: PicFlipGuiState = {
+  callbacks: HybridFlipGuiCallbacks
+): HybridFlipGuiHandle {
+  const state: HybridFlipGuiState = {
     useDeviceMotion: true,
     gravityX: initialGravity.x,
     gravityY: initialGravity.y,
@@ -101,6 +100,7 @@ export function setupGui(
     picRatio: params.picRatio,
     numPressureIters: params.numPressureIters,
     numParticleIters: params.numParticleIters,
+    numExtrapolationIters: params.numExtrapolationIters,
     overRelaxation: params.overRelaxation,
     damping: params.damping,
     resolution: params.resolution,
@@ -108,7 +108,6 @@ export function setupGui(
     relWaterHeight: params.relWaterHeight,
     numParticles: params.numParticles,
     separateParticles: params.separateParticles,
-    enableWhitewater: params.enableWhitewater,
     maxDiffuseParticles: params.maxDiffuseParticles,
     diffuseEmissionRate: params.diffuseEmissionRate,
     diffuseMinSpeed: params.diffuseMinSpeed,
@@ -123,7 +122,6 @@ export function setupGui(
     foamEmissionScale: params.foamEmissionScale,
     sprayEmissionScale: params.sprayEmissionScale,
     diffuseRepulsionStrength: params.diffuseRepulsionStrength,
-    showDiffuseParticles: params.showDiffuseParticles,
     showSpray: params.showSpray,
     showFoam: params.showFoam,
     showBubble: params.showBubble,
@@ -131,7 +129,7 @@ export function setupGui(
     reset: callbacks.onReset,
   };
 
-  const gui = new GUI({ title: 'PIC/FLIP Controls' });
+  const gui = new GUI({ title: 'Hybrid FLIP Controls' });
   gui.close();
 
   const gravityFolder = gui.addFolder('Gravity');
@@ -187,6 +185,12 @@ export function setupGui(
       params.numParticleIters = value;
     });
   simulationFolder
+    .add(state, 'numExtrapolationIters', 0, 10, 1)
+    .name('Extrapolation Iters')
+    .onChange((value: number) => {
+      params.numExtrapolationIters = value;
+    });
+  simulationFolder
     .add(state, 'overRelaxation', 1, 2, 0.01)
     .name('Over Relaxation')
     .onChange((value: number) => {
@@ -203,18 +207,6 @@ export function setupGui(
     .name('Separate Particles')
     .onChange((value: boolean) => {
       params.separateParticles = value;
-    });
-  simulationFolder
-    .add(state, 'enableWhitewater')
-    .name('Whitewater')
-    .onChange((value: boolean) => {
-      params.enableWhitewater = value;
-    });
-  simulationFolder
-    .add(state, 'showDiffuseParticles')
-    .name('Show Whitewater')
-    .onChange((value: boolean) => {
-      params.showDiffuseParticles = value;
     });
   simulationFolder
     .add(state, 'showGrid')

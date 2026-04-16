@@ -235,58 +235,67 @@ export class FlipFluid {
   // ── extrapolateVelocity ──────────────────────────────────────────────────
   // Extends the velocity field from FLUID cells into adjacent AIR cells.
   // This is essential for FLIP to ensure that particles moving near the
-  // surface can always sample a valid velocity from the grid.  Without this,
-  // particles would sample zero velocity from empty cells, causing artificial
-  // "stickiness" or numerical viscosity at the surface.
+  // surface can always sample a valid velocity from the grid.
   //
-  // We use a simple iterative approach: for each AIR cell face, if it is not
-  // valid but has valid neighbors, we set its velocity to the average of its
-  // valid neighbors.
-  extrapolateVelocity(): void {
+  // NOTE: We also set prevU/prevV equal to the extrapolated values. This
+  // ensures that the FLIP correction (f - prevF) is zero in extrapolated
+  // regions, effectively falling back to a pure PIC update there. This
+  // prevents particles from receiving massive "kicks" when entering air.
+  extrapolateVelocity(numIters: number): void {
     const n = this.fNumY;
 
     for (let component = 0; component < 2; component++) {
       const f = component === 0 ? this.u : this.v;
+      const prevF = component === 0 ? this.prevU : this.prevV;
       const tempF = component === 0 ? this.tempU : this.tempV;
       const offset = component === 0 ? n : 1;
 
-      // We'll perform a few iterations of extrapolation.
-      for (let iter = 0; iter < 2; iter++) {
+      for (let iter = 0; iter < numIters; iter++) {
         tempF.set(f);
 
-        for (let i = 1; i < this.fNumX - 1; i++) {
-          for (let j = 1; j < this.fNumY - 1; j++) {
+        for (let i = 0; i < this.fNumX; i++) {
+          for (let j = 0; j < this.fNumY; j++) {
             const idx = i * n + j;
 
-            // A face is "valid" if either cell sharing it is a FLUID cell.
+            // A face is valid if it touches a fluid cell.
             const isValid =
-              this.cellType[idx] === FLUID_CELL ||
-              this.cellType[idx - offset] === FLUID_CELL;
+              (idx < this.fNumCells && this.cellType[idx] === FLUID_CELL) ||
+              (idx >= offset && this.cellType[idx - offset] === FLUID_CELL);
 
             if (!isValid) {
               let sum = 0.0;
               let count = 0;
 
-              // Check neighbors in the grid.
-              // For u-component (horizontal), neighbors are top/bottom/left/right.
-              const neighbors = [
-                idx - n, idx + n, idx - 1, idx + 1
-              ];
-
-              for (const neighborIdx of neighbors) {
-                if (neighborIdx < 0 || neighborIdx >= this.fNumCells) continue;
-                const neighborValid =
-                  this.cellType[neighborIdx] === FLUID_CELL ||
-                  this.cellType[neighborIdx - offset] === FLUID_CELL;
-
-                if (neighborValid) {
-                  sum += f[neighborIdx];
-                  count++;
+              // Check 4-neighbors
+              if (i > 0) { // Left
+                const nIdx = (i - 1) * n + j;
+                if (this.cellType[nIdx] === FLUID_CELL || (nIdx >= offset && this.cellType[nIdx - offset] === FLUID_CELL)) {
+                  sum += f[nIdx]; count++;
+                }
+              }
+              if (i < this.fNumX - 1) { // Right
+                const nIdx = (i + 1) * n + j;
+                if (this.cellType[nIdx] === FLUID_CELL || (nIdx >= offset && this.cellType[nIdx - offset] === FLUID_CELL)) {
+                  sum += f[nIdx]; count++;
+                }
+              }
+              if (j > 0) { // Bottom
+                const nIdx = i * n + (j - 1);
+                if (this.cellType[nIdx] === FLUID_CELL || (nIdx >= offset && this.cellType[nIdx - offset] === FLUID_CELL)) {
+                  sum += f[nIdx]; count++;
+                }
+              }
+              if (j < this.fNumY - 1) { // Top
+                const nIdx = i * n + (j + 1);
+                if (this.cellType[nIdx] === FLUID_CELL || (nIdx >= offset && this.cellType[nIdx - offset] === FLUID_CELL)) {
+                  sum += f[nIdx]; count++;
                 }
               }
 
               if (count > 0) {
                 tempF[idx] = sum / count;
+                // Sync prevF so FLIP delta is zero here
+                prevF[idx] = tempF[idx];
               }
             }
           }
@@ -309,22 +318,27 @@ export class FlipFluid {
 
   // ── advectParticles ───────────────────────────────────────────────────────
   // Moves particles through the velocity field using the Midpoint method (RK2).
-  // This is more accurate than simple Euler and is standard in high-quality
-  // solvers like GridFluidSim3D.
   advectParticles(dt: number): void {
     for (let i = 0; i < this.numParticles; i++) {
       const x = this.particlePos[2 * i];
       const y = this.particlePos[2 * i + 1];
 
       // Step 1: Sample velocity at current position (v1)
-      const v1 = this.sampleVelocity(x, y);
+      let v1 = this.sampleVelocity(x, y);
+      
+      // Fallback to particle velocity if we are deep in air (outside grid field)
+      if (v1.x === 0 && v1.y === 0) {
+        v1.x = this.particleVel[2 * i];
+        v1.y = this.particleVel[2 * i + 1];
+      }
 
       // Step 2: Midpoint position (x_mid = x + v1 * dt/2)
       const xMid = x + v1.x * dt * 0.5;
       const yMid = y + v1.y * dt * 0.5;
 
       // Step 3: Sample velocity at midpoint (v_mid)
-      const vMid = this.sampleVelocity(xMid, yMid);
+      let vMid = this.sampleVelocity(xMid, yMid);
+      if (vMid.x === 0 && vMid.y === 0) vMid = v1;
 
       // Step 4: Final position (x_new = x + v_mid * dt)
       this.particlePos[2 * i]     += vMid.x * dt;
@@ -700,46 +714,40 @@ export class FlipFluid {
         const nr3 = x0 * n + y1;
 
         if (toGrid) {
-          // Accumulate weighted particle velocity onto surrounding grid faces.
+          // ... (toGrid logic remains same)
           const pv = this.particleVel[2 * i + component];
           f[nr0] += pv * d0;  d[nr0] += d0;
           f[nr1] += pv * d1;  d[nr1] += d1;
           f[nr2] += pv * d2;  d[nr2] += d2;
           f[nr3] += pv * d3;  d[nr3] += d3;
         } else {
-          // G→P: a face velocity is only valid if at least one of the two cells
-          // sharing that face is non-air (i.e. has actual velocity data).
-          // `offset` is the stride to reach the cell on the "negative" side of
-          // the face: n (= fNumY) for u faces (step in the i direction),
-          // 1 for v faces (step in the j direction).
+          // G→P: With extrapolation, we can sample from ANY face that has a
+          // valid velocity (splat or extrapolated). We check if the face
+          // touches a non-solid cell or has non-zero velocity.
           const offset = component === 0 ? n : 1;
-          const valid0 = (this.cellType[nr0] !== AIR_CELL || this.cellType[nr0 - offset] !== AIR_CELL) ? 1.0 : 0.0;
-          const valid1 = (this.cellType[nr1] !== AIR_CELL || this.cellType[nr1 - offset] !== AIR_CELL) ? 1.0 : 0.0;
-          const valid2 = (this.cellType[nr2] !== AIR_CELL || this.cellType[nr2 - offset] !== AIR_CELL) ? 1.0 : 0.0;
-          const valid3 = (this.cellType[nr3] !== AIR_CELL || this.cellType[nr3 - offset] !== AIR_CELL) ? 1.0 : 0.0;
+          
+          // Simplified validity: if the face touches a fluid cell, or was extrapolated (exists in f)
+          const isV0 = (this.cellType[nr0] !== SOLID_CELL && this.cellType[nr0 - offset] !== SOLID_CELL);
+          const isV1 = (this.cellType[nr1] !== SOLID_CELL && this.cellType[nr1 - offset] !== SOLID_CELL);
+          const isV2 = (this.cellType[nr2] !== SOLID_CELL && this.cellType[nr2 - offset] !== SOLID_CELL);
+          const isV3 = (this.cellType[nr3] !== SOLID_CELL && this.cellType[nr3 - offset] !== SOLID_CELL);
 
-          const v = this.particleVel[2 * i + component];
-          const totalValid = valid0 * d0 + valid1 * d1 + valid2 * d2 + valid3 * d3;
+          const totalValid = (isV0 ? d0 : 0) + (isV1 ? d1 : 0) + (isV2 ? d2 : 0) + (isV3 ? d3 : 0);
 
           if (totalValid > 0.0) {
-            // PIC: interpolate the post-pressure grid velocity directly.
             const picV =
-              (valid0 * d0 * f[nr0] +
-               valid1 * d1 * f[nr1] +
-               valid2 * d2 * f[nr2] +
-               valid3 * d3 * f[nr3]) / totalValid;
+              ((isV0 ? d0 * f[nr0] : 0) +
+               (isV1 ? d1 * f[nr1] : 0) +
+               (isV2 ? d2 * f[nr2] : 0) +
+               (isV3 ? d3 * f[nr3] : 0)) / totalValid;
 
-            // FLIP correction: interpolate only the pressure-induced velocity
-            // change (f − prevF, where prevF was set to post-P2G by
-            // solveIncompressibility).  Add that delta to the particle's own
-            // carried velocity to recover the low-dissipation FLIP update.
             const corr =
-              (valid0 * d0 * (f[nr0] - prevF[nr0]) +
-               valid1 * d1 * (f[nr1] - prevF[nr1]) +
-               valid2 * d2 * (f[nr2] - prevF[nr2]) +
-               valid3 * d3 * (f[nr3] - prevF[nr3])) / totalValid;
-            const flipV = v + corr;
-
+              ((isV0 ? d0 * (f[nr0] - prevF[nr0]) : 0) +
+               (isV1 ? d1 * (f[nr1] - prevF[nr1]) : 0) +
+               (isV2 ? d2 * (f[nr2] - prevF[nr2]) : 0) +
+               (isV3 ? d3 * (f[nr3] - prevF[nr3]) : 0)) / totalValid;
+            
+            const flipV = this.particleVel[2 * i + component] + corr;
             this.particleVel[2 * i + component] = picRatio * picV + (1.0 - picRatio) * flipV;
           }
         }
@@ -751,18 +759,16 @@ export class FlipFluid {
           if (d[i] > 0.0) f[i] /= d[i];
         }
 
-        // Restore no-slip condition on solid-wall faces.  Any face that touches
-        // a SOLID cell is forced back to its pre-splat value (prevU/prevV),
-        // which is zero for stationary walls.  This must happen after the splat
-        // normalisation so that the surrounding fluid faces are unaffected.
+        // Restore no-slip condition on solid-wall faces.
+        // For a static tank, wall-touching faces must be zero.
         for (let i = 0; i < this.fNumX; i++) {
           for (let j = 0; j < this.fNumY; j++) {
             const solid = this.cellType[i * n + j] === SOLID_CELL;
             if (solid || (i > 0 && this.cellType[(i - 1) * n + j] === SOLID_CELL)) {
-              this.u[i * n + j] = this.prevU[i * n + j];
+              this.u[i * n + j] = 0.0;
             }
             if (solid || (j > 0 && this.cellType[i * n + j - 1] === SOLID_CELL)) {
-              this.v[i * n + j] = this.prevV[i * n + j];
+              this.v[i * n + j] = 0.0;
             }
           }
         }
@@ -772,28 +778,7 @@ export class FlipFluid {
 
   // ── solveIncompressibility ────────────────────────────────────────────────
   // Gauss-Seidel pressure projection that drives the velocity divergence to zero
-  // in every FLUID cell.  This is the core of the Eulerian incompressible-flow
-  // solver and is responsible for all pressure-driven effects (buoyancy,
-  // splashing, wave propagation).
-  //
-  // For each FLUID cell we compute the discrete divergence:
-  //   div = u[right] − u[center] + v[top] − v[center]
-  // and add a pressure correction that removes it:
-  //   p += cp × (−div / numOpenNeighbours)
-  // where cp = ρ h / dt is the pressure coefficient that makes units consistent.
-  //
-  // The solid mask s[*] gates each direction: a 0.0 entry means the neighbour
-  // in that direction is a wall, so we neither push velocity into it nor count
-  // it as an open face.
-  //
-  // Optional drift compensation: if a cell is over-compressed relative to
-  // particleRestDensity, an extra positive term is added to div so the solver
-  // generates an outward pressure impulse that disperses the excess.
-  //
-  // NOTE: prevU/prevV are overwritten here (after the P→G step has already used
-  // them for wall restoration) to snapshot the pre-pressure velocities.  The
-  // G→P transfer uses this snapshot to compute the FLIP correction (Δu from
-  // pressure only).
+  // in every FLUID cell.
   solveIncompressibility(
     numIters: number,
     dt: number,
@@ -802,14 +787,14 @@ export class FlipFluid {
   ): void {
     this.p.fill(0.0);
 
-    // Snapshot velocities before modification so G→P can isolate the pressure
-    // delta.  This overwrites the wall-restoration snapshot from transferVelocities,
-    // which is no longer needed at this point.
     this.prevU.set(this.u);
     this.prevV.set(this.v);
 
     const n  = this.fNumY;
-    const cp = (this.density * this.h) / dt; // pressure scaling coefficient
+    const cp = (this.density * this.h) / dt;
+
+    // Drift compensation stiffness (k). Higher = stiffer fluid, lower = more compressible.
+    const stiffness = 0.1;
 
     for (let iter = 0; iter < numIters; iter++) {
       for (let i = 1; i < this.fNumX - 1; i++) {
@@ -822,32 +807,26 @@ export class FlipFluid {
           const bottom = i * n + j - 1;
           const top    = i * n + j + 1;
 
-          // s values of neighbours (0 = solid wall, 1 = open).
           const sx0 = this.s[left];
           const sx1 = this.s[right];
           const sy0 = this.s[bottom];
           const sy1 = this.s[top];
-          const s   = sx0 + sx1 + sy0 + sy1; // number of open neighbours
-          if (s === 0.0) continue;            // fully surrounded by walls
+          const s   = sx0 + sx1 + sy0 + sy1;
+          if (s === 0.0) continue;
 
-          // Discrete divergence of the velocity field at this cell.
           let div = this.u[right] - this.u[center] + this.v[top] - this.v[center];
 
-          // Drift compensation: treat over-compression as additional divergence
-          // so the solver pushes particles outward to relieve the excess density.
           if (this.particleRestDensity > 0.0 && compensateDrift) {
             const compression = this.particleDensity[i * n + j] - this.particleRestDensity;
             if (compression > 0.0) {
-              div -= compression;
+              // Scale compression by stiffness to prevent violent jitter
+              div -= stiffness * compression;
             }
           }
 
-          // Pressure correction scaled by overRelaxation (> 1 accelerates
-          // convergence at the cost of some stability; 1.7 is a common choice).
           let p = (-div / s) * overRelaxation;
           this.p[center] += cp * p;
 
-          // Push the face velocities of open neighbours to zero divergence.
           this.u[center] -= sx0 * p;
           this.u[right]  += sx1 * p;
           this.v[center] -= sy0 * p;
@@ -960,26 +939,26 @@ export class FlipFluid {
     const nr2 = x1 * n + y1;
     const nr3 = x0 * n + y1;
 
-    // Use the same "valid face" logic as transferVelocities to avoid
-    // interpolating with zero-velocity air cells at the fluid boundary.
+    // Use the same "valid face" logic as transferVelocities (G->P)
     const offset = component === 0 ? n : 1;
-    const valid0 = (this.cellType[nr0] !== AIR_CELL || this.cellType[nr0 - offset] !== AIR_CELL) ? 1.0 : 0.0;
-    const valid1 = (this.cellType[nr1] !== AIR_CELL || this.cellType[nr1 - offset] !== AIR_CELL) ? 1.0 : 0.0;
-    const valid2 = (this.cellType[nr2] !== AIR_CELL || this.cellType[nr2 - offset] !== AIR_CELL) ? 1.0 : 0.0;
-    const valid3 = (this.cellType[nr3] !== AIR_CELL || this.cellType[nr3 - offset] !== AIR_CELL) ? 1.0 : 0.0;
+    const isV0 = (this.cellType[nr0] !== SOLID_CELL && this.cellType[nr0 - offset] !== SOLID_CELL);
+    const isV1 = (this.cellType[nr1] !== SOLID_CELL && this.cellType[nr1 - offset] !== SOLID_CELL);
+    const isV2 = (this.cellType[nr2] !== SOLID_CELL && this.cellType[nr2 - offset] !== SOLID_CELL);
+    const isV3 = (this.cellType[nr3] !== SOLID_CELL && this.cellType[nr3 - offset] !== SOLID_CELL);
 
     const d0 = sx * sy;
     const d1 = tx * sy;
     const d2 = tx * ty;
     const d3 = sx * ty;
 
-    const totalValid = valid0 * d0 + valid1 * d1 + valid2 * d2 + valid3 * d3;
+    const totalValid = (isV0 ? d0 : 0) + (isV1 ? d1 : 0) + (isV2 ? d2 : 0) + (isV3 ? d3 : 0);
+
     if (totalValid > 0.0) {
       return (
-        (valid0 * d0 * f[nr0] +
-         valid1 * d1 * f[nr1] +
-         valid2 * d2 * f[nr2] +
-         valid3 * d3 * f[nr3]) / totalValid
+        ((isV0 ? d0 * f[nr0] : 0) +
+         (isV1 ? d1 * f[nr1] : 0) +
+         (isV2 ? d2 * f[nr2] : 0) +
+         (isV3 ? d3 * f[nr3] : 0)) / totalValid
       );
     }
 
@@ -1389,7 +1368,7 @@ export class FlipFluid {
     compensateDrift: boolean,
     separateParticles: boolean,
     damping: number = 1.0,
-    enableWhitewater = true,
+    numExtrapolationIters = 2,
     maxDiffuseParticles = this.maxDiffuseParticles,
     diffuseEmissionRate = this.diffuseEmissionRate,
     diffuseMinSpeed = this.diffuseMinSpeed,
@@ -1408,7 +1387,7 @@ export class FlipFluid {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
     this.setWhitewaterSettings(
-      enableWhitewater,
+      true,
       maxDiffuseParticles,
       diffuseEmissionRate,
       diffuseMinSpeed,
@@ -1429,7 +1408,7 @@ export class FlipFluid {
       this.solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
 
       // 5. Extrapolate velocity into air cells for smooth particle sampling
-      this.extrapolateVelocity();
+      this.extrapolateVelocity(numExtrapolationIters);
 
       // 6. Transfer velocities from grid back to particles (G→P)
       this.transferVelocities(false, picRatio);

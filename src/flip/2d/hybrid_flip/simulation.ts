@@ -6,7 +6,7 @@ import type { FluidPalette, SimulationParams, Vec2 } from './types';
 // domain height (simHeight) adapts to the canvas while keeping the same scale.
 const SIM_HEIGHT = 3.0;
 
-export class PicFlipSimulation {
+export class HybridFlipSimulation {
   private renderer: FluidRenderer;
   private fluid;
   private simWidth: number;
@@ -120,7 +120,7 @@ export class PicFlipSimulation {
       this.params.compensateDrift,
       this.params.separateParticles,
       this.params.damping,
-      this.params.enableWhitewater,
+      this.params.numExtrapolationIters,
       this.params.maxDiffuseParticles,
       this.params.diffuseEmissionRate,
       this.params.diffuseMinSpeed,
@@ -139,7 +139,6 @@ export class PicFlipSimulation {
 
     this.renderer.render(this.fluid, {
       showParticles: this.params.showParticles,
-      showDiffuseParticles: this.params.showDiffuseParticles,
       showSpray: this.params.showSpray,
       showFoam: this.params.showFoam,
       showBubble: this.params.showBubble,

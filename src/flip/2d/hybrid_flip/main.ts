@@ -2,7 +2,7 @@ import './style.css';
 import { setupGui } from './gui';
 import { FLUID_PALETTES } from './palette';
 import { MotionController } from './motion';
-import { PicFlipSimulation } from './simulation';
+import { HybridFlipSimulation } from './simulation';
 import { createAppShell, renderAppState } from './ui';
 import type { AppState, FluidPalette, RGB, SimulationParams, Vec2 } from './types';
 
@@ -15,7 +15,7 @@ const DEFAULT_PARAMS: SimulationParams = {
   compensateDrift: true,
   separateParticles: true,
   damping: 1.0,
-  enableWhitewater: true,
+  numExtrapolationIters: 2,
   maxDiffuseParticles: 12000,
   diffuseEmissionRate: 6,
   diffuseMinSpeed: 1.4,
@@ -30,7 +30,6 @@ const DEFAULT_PARAMS: SimulationParams = {
   foamEmissionScale: 1.0,
   sprayEmissionScale: 1.0,
   diffuseRepulsionStrength: 0.1,
-  showDiffuseParticles: true,
   showSpray: true,
   showFoam: true,
   showBubble: true,
@@ -78,7 +77,7 @@ let currentPalette = clonePalette(FLUID_PALETTES[0]);
 let destroyed = false;
 let useDeviceMotion = true;
 
-const simulation = new PicFlipSimulation(
+const simulation = new HybridFlipSimulation(
   elements.canvas,
   gravity,
   currentPalette,

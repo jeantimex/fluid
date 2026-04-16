@@ -32,7 +32,7 @@ export interface SimulationParams {
   compensateDrift: boolean;
   separateParticles: boolean;
   damping: number;
-  enableWhitewater: boolean;
+  numExtrapolationIters: number;
   maxDiffuseParticles: number;
   diffuseEmissionRate: number;
   diffuseMinSpeed: number;
@@ -47,7 +47,6 @@ export interface SimulationParams {
   foamEmissionScale: number;
   sprayEmissionScale: number;
   diffuseRepulsionStrength: number;
-  showDiffuseParticles: boolean;
   showSpray: boolean;
   showFoam: boolean;
   showBubble: boolean;

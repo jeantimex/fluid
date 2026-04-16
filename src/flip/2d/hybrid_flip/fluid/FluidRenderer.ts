@@ -37,7 +37,6 @@ const pointFragmentShader = `
 
 export interface RenderConfig {
   showParticles: boolean;
-  showDiffuseParticles: boolean;
   showSpray: boolean;
   showFoam: boolean;
   showBubble: boolean;
@@ -149,7 +148,7 @@ export class FluidRenderer {
       this.renderParticles(fluid, config, positionLocation, colorLocation);
     }
 
-    if (config.showDiffuseParticles) {
+    if (config.showSpray || config.showFoam || config.showBubble) {
       this.renderDiffuseParticles(fluid, config, positionLocation, colorLocation);
     }
 
