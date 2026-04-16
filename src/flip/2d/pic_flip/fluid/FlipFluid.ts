@@ -916,7 +916,6 @@ export class FlipFluid {
   ): void {
     if (this.diffuseEmissionRate <= 0 || this.maxDiffuseParticles === 0) return;
     const h1 = this.fInvSpacing;
-    const h = this.h;
 
     // Use a fixed search radius for wavecrest/turbulence triggers.
     const searchRadius = 2.0 * this.particleRadius;

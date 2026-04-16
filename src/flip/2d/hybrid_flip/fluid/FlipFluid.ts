@@ -239,7 +239,8 @@ export class FlipFluid {
       
       if (v1.x === 0 && v1.y === 0) {
         if (isAir) {
-          this.particleVel[2 * i] *= 0.95; // air drag
+          this.particleVel[2 * i]     += dt * gravityX;
+          this.particleVel[2 * i]     *= 0.95; // air drag
           this.particleVel[2 * i + 1] += dt * gravityY;
         }
         v1.x = this.particleVel[2 * i];
