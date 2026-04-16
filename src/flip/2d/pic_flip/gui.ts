@@ -25,7 +25,20 @@ export interface PicFlipGuiState {
   diffuseEmissionRate: number;
   diffuseMinSpeed: number;
   diffuseLifetime: number;
+  bubbleBuoyancy: number;
+  foamGravity: number;
+  sprayGravity: number;
+  weightTurbulence: number;
+  weightWavecrest: number;
+  weightKinetic: number;
+  bubbleEmissionScale: number;
+  foamEmissionScale: number;
+  sprayEmissionScale: number;
+  diffuseRepulsionStrength: number;
   showDiffuseParticles: boolean;
+  showSpray: boolean;
+  showFoam: boolean;
+  showBubble: boolean;
   showGrid: boolean;
   reset: () => void;
 }
@@ -100,7 +113,20 @@ export function setupGui(
     diffuseEmissionRate: params.diffuseEmissionRate,
     diffuseMinSpeed: params.diffuseMinSpeed,
     diffuseLifetime: params.diffuseLifetime,
+    bubbleBuoyancy: params.bubbleBuoyancy,
+    foamGravity: params.foamGravity,
+    sprayGravity: params.sprayGravity,
+    weightTurbulence: params.weightTurbulence,
+    weightWavecrest: params.weightWavecrest,
+    weightKinetic: params.weightKinetic,
+    bubbleEmissionScale: params.bubbleEmissionScale,
+    foamEmissionScale: params.foamEmissionScale,
+    sprayEmissionScale: params.sprayEmissionScale,
+    diffuseRepulsionStrength: params.diffuseRepulsionStrength,
     showDiffuseParticles: params.showDiffuseParticles,
+    showSpray: params.showSpray,
+    showFoam: params.showFoam,
+    showBubble: params.showBubble,
     showGrid: params.showGrid,
     reset: callbacks.onReset,
   };
@@ -251,6 +277,84 @@ export function setupGui(
     .name('Lifetime')
     .onChange((value: number) => {
       params.diffuseLifetime = value;
+    });
+  whitewaterFolder
+    .add(state, 'bubbleBuoyancy', 0, 10, 0.1)
+    .name('Bubble Buoyancy')
+    .onChange((value: number) => {
+      params.bubbleBuoyancy = value;
+    });
+  whitewaterFolder
+    .add(state, 'foamGravity', 0, 2, 0.01)
+    .name('Foam Gravity')
+    .onChange((value: number) => {
+      params.foamGravity = value;
+    });
+  whitewaterFolder
+    .add(state, 'sprayGravity', 0, 2, 0.01)
+    .name('Spray Gravity')
+    .onChange((value: number) => {
+      params.sprayGravity = value;
+    });
+  whitewaterFolder
+    .add(state, 'weightTurbulence', 0, 5, 0.05)
+    .name('Turbulence Weight')
+    .onChange((value: number) => {
+      params.weightTurbulence = value;
+    });
+  whitewaterFolder
+    .add(state, 'weightWavecrest', 0, 5, 0.05)
+    .name('Wavecrest Weight')
+    .onChange((value: number) => {
+      params.weightWavecrest = value;
+    });
+  whitewaterFolder
+    .add(state, 'weightKinetic', 0, 5, 0.05)
+    .name('Kinetic Weight')
+    .onChange((value: number) => {
+      params.weightKinetic = value;
+    });
+  whitewaterFolder
+    .add(state, 'bubbleEmissionScale', 0, 10, 0.1)
+    .name('Bubble Emission')
+    .onChange((value: number) => {
+      params.bubbleEmissionScale = value;
+    });
+  whitewaterFolder
+    .add(state, 'foamEmissionScale', 0, 10, 0.1)
+    .name('Foam Emission')
+    .onChange((value: number) => {
+      params.foamEmissionScale = value;
+    });
+  whitewaterFolder
+    .add(state, 'sprayEmissionScale', 0, 10, 0.1)
+    .name('Spray Emission')
+    .onChange((value: number) => {
+      params.sprayEmissionScale = value;
+    });
+  whitewaterFolder
+    .add(state, 'diffuseRepulsionStrength', 0, 1, 0.01)
+    .name('Repulsion Strength')
+    .onChange((value: number) => {
+      params.diffuseRepulsionStrength = value;
+    });
+  whitewaterFolder
+    .add(state, 'showSpray')
+    .name('Show Spray')
+    .onChange((value: boolean) => {
+      params.showSpray = value;
+    });
+  whitewaterFolder
+    .add(state, 'showFoam')
+    .name('Show Foam')
+    .onChange((value: boolean) => {
+      params.showFoam = value;
+    });
+  whitewaterFolder
+    .add(state, 'showBubble')
+    .name('Show Bubble')
+    .onChange((value: boolean) => {
+      params.showBubble = value;
     });
 
   const colorFolder = gui.addFolder('Color');

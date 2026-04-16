@@ -71,6 +71,7 @@ export class FlipFluid {
   s: Float32Array;
   cellType: Int32Array;    // per-cell type (FLUID_CELL / AIR_CELL / SOLID_CELL)
   cellColor: Float32Array; // packed RGB [0,1] for grid debug visualisation (3 floats per cell)
+  vorticity: Float32Array; // vorticity magnitude for whitewater emission
 
   // ── Particle data ────────────────────────────────────────────────────────
   maxParticles: number;         // allocated capacity (fixed after construction)
@@ -108,6 +109,13 @@ export class FlipFluid {
   diffuseEmissionRate: number;
   diffuseMinSpeed: number;
   diffuseLifetime: number;
+
+  // ── Diffuse spatial hash ─────────────────────────────────────────────────
+  // Used for diffuse-diffuse repulsion to prevent bubbles/foam from clumping.
+  // We use the same h spacing as the liquid spatial hash for simplicity.
+  numCellDiffuse: Int32Array;
+  firstCellDiffuse: Int32Array;
+  cellDiffuseIds: Int32Array;
 
   // ── Particle spatial hash ────────────────────────────────────────────────
   // A uniform grid hash used to accelerate the nearest-neighbour search in
@@ -160,6 +168,7 @@ export class FlipFluid {
     this.s = new Float32Array(this.fNumCells);
     this.cellType = new Int32Array(this.fNumCells);
     this.cellColor = new Float32Array(3 * this.fNumCells);
+    this.vorticity = new Float32Array(this.fNumCells);
 
     this.maxParticles = maxParticles;
     this.particlePos = new Float32Array(2 * this.maxParticles);
@@ -203,6 +212,11 @@ export class FlipFluid {
 
     this.maxDiffuseParticles = 12000;
     this.numDiffuseParticles = 0;
+
+    this.numCellDiffuse = new Int32Array(this.pNumCells);
+    this.firstCellDiffuse = new Int32Array(this.pNumCells + 1);
+    this.cellDiffuseIds = new Int32Array(this.maxDiffuseParticles);
+
     this.diffusePos = new Float32Array(2 * this.maxDiffuseParticles);
     this.diffuseVel = new Float32Array(2 * this.maxDiffuseParticles);
     this.diffuseLife = new Float32Array(this.maxDiffuseParticles);
@@ -340,6 +354,83 @@ export class FlipFluid {
               this.particlePos[2 * i + 1] -= deltaY;
               this.particlePos[2 * id]    += deltaX;
               this.particlePos[2 * id + 1]+= deltaY;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── pushDiffuseParticlesApart ─────────────────────────────────────────────
+  // Separation pass for diffuse particles (whitewater) to prevent clumping.
+  // This helps bubbles and foam spread out more naturally on the surface.
+  // Unlike liquid particles, this is a "soft" repulsion: we only push by
+  // a fraction of the penetration depth controlled by `strength`.
+  pushDiffuseParticlesApart(numIters: number, strength: number): void {
+    if (this.numDiffuseParticles === 0 || strength <= 0) return;
+
+    // ── Build diffuse spatial hash ──────────────────────────────────────────
+    this.numCellDiffuse.fill(0);
+    for (let i = 0; i < this.numDiffuseParticles; i++) {
+      const xi = clamp(Math.floor(this.diffusePos[2 * i] * this.pInvSpacing), 0, this.pNumX - 1);
+      const yi = clamp(Math.floor(this.diffusePos[2 * i + 1] * this.pInvSpacing), 0, this.pNumY - 1);
+      this.numCellDiffuse[xi * this.pNumY + yi]++;
+    }
+
+    let first = 0;
+    for (let i = 0; i < this.pNumCells; i++) {
+      first += this.numCellDiffuse[i];
+      this.firstCellDiffuse[i] = first;
+    }
+    this.firstCellDiffuse[this.pNumCells] = first;
+
+    for (let i = 0; i < this.numDiffuseParticles; i++) {
+      const xi = clamp(Math.floor(this.diffusePos[2 * i] * this.pInvSpacing), 0, this.pNumX - 1);
+      const yi = clamp(Math.floor(this.diffusePos[2 * i + 1] * this.pInvSpacing), 0, this.pNumY - 1);
+      const cellNr = xi * this.pNumY + yi;
+      this.firstCellDiffuse[cellNr]--;
+      this.cellDiffuseIds[this.firstCellDiffuse[cellNr]] = i;
+    }
+
+    // ── Separation iterations ─────────────────────────────────────────────
+    const minDist = 1.0 * this.particleRadius; // slightly tighter than liquid
+    const minDist2 = minDist * minDist;
+
+    for (let iter = 0; iter < numIters; iter++) {
+      for (let i = 0; i < this.numDiffuseParticles; i++) {
+        const px = this.diffusePos[2 * i];
+        const py = this.diffusePos[2 * i + 1];
+        const pxi = Math.floor(px * this.pInvSpacing);
+        const pyi = Math.floor(py * this.pInvSpacing);
+
+        const x0 = Math.max(pxi - 1, 0);
+        const y0 = Math.max(pyi - 1, 0);
+        const x1 = Math.min(pxi + 1, this.pNumX - 1);
+        const y1 = Math.min(pyi + 1, this.pNumY - 1);
+
+        for (let xi = x0; xi <= x1; xi++) {
+          for (let yi = y0; yi <= y1; yi++) {
+            const cellNr = xi * this.pNumY + yi;
+            for (let j = this.firstCellDiffuse[cellNr]; j < this.firstCellDiffuse[cellNr + 1]; j++) {
+              const id = this.cellDiffuseIds[j];
+              if (id === i) continue;
+
+              const dx = this.diffusePos[2 * id] - px;
+              const dy = this.diffusePos[2 * id + 1] - py;
+              const d2 = dx * dx + dy * dy;
+
+              if (d2 > minDist2 || d2 === 0.0) continue;
+
+              const d = Math.sqrt(d2);
+              // "Soft" push: only move by a fraction of the penetration depth.
+              const s = (0.5 * strength * (minDist - d)) / d;
+              const deltaX = dx * s;
+              const deltaY = dy * s;
+
+              this.diffusePos[2 * i]      -= deltaX;
+              this.diffusePos[2 * i + 1]  -= deltaY;
+              this.diffusePos[2 * id]     += deltaX;
+              this.diffusePos[2 * id + 1] += deltaY;
             }
           }
         }
@@ -728,6 +819,7 @@ export class FlipFluid {
     this.diffuseLife = nextLife;
     this.diffuseType = nextType;
     this.diffuseColor = nextColor;
+    this.cellDiffuseIds = new Int32Array(this.maxDiffuseParticles);
   }
 
   private isNearAirCell(xi: number, yi: number): boolean {
@@ -782,18 +874,52 @@ export class FlipFluid {
     const sx = 1.0 - tx;
     const sy = 1.0 - ty;
 
-    return (
-      sx * sy * f[x0 * n + y0] +
-      tx * sy * f[x1 * n + y0] +
-      tx * ty * f[x1 * n + y1] +
-      sx * ty * f[x0 * n + y1]
-    );
+    const nr0 = x0 * n + y0;
+    const nr1 = x1 * n + y0;
+    const nr2 = x1 * n + y1;
+    const nr3 = x0 * n + y1;
+
+    // Use the same "valid face" logic as transferVelocities to avoid
+    // interpolating with zero-velocity air cells at the fluid boundary.
+    const offset = component === 0 ? n : 1;
+    const valid0 = (this.cellType[nr0] !== AIR_CELL || this.cellType[nr0 - offset] !== AIR_CELL) ? 1.0 : 0.0;
+    const valid1 = (this.cellType[nr1] !== AIR_CELL || this.cellType[nr1 - offset] !== AIR_CELL) ? 1.0 : 0.0;
+    const valid2 = (this.cellType[nr2] !== AIR_CELL || this.cellType[nr2 - offset] !== AIR_CELL) ? 1.0 : 0.0;
+    const valid3 = (this.cellType[nr3] !== AIR_CELL || this.cellType[nr3 - offset] !== AIR_CELL) ? 1.0 : 0.0;
+
+    const d0 = sx * sy;
+    const d1 = tx * sy;
+    const d2 = tx * ty;
+    const d3 = sx * ty;
+
+    const totalValid = valid0 * d0 + valid1 * d1 + valid2 * d2 + valid3 * d3;
+    if (totalValid > 0.0) {
+      return (
+        (valid0 * d0 * f[nr0] +
+         valid1 * d1 * f[nr1] +
+         valid2 * d2 * f[nr2] +
+         valid3 * d3 * f[nr3]) / totalValid
+      );
+    }
+
+    return 0.0;
   }
 
-  private emitDiffuseParticles(dt: number): void {
+  private emitDiffuseParticles(
+    dt: number,
+    weightTurbulence: number,
+    weightWavecrest: number,
+    weightKinetic: number,
+    bubbleEmissionScale: number,
+    foamEmissionScale: number,
+    sprayEmissionScale: number
+  ): void {
     if (this.diffuseEmissionRate <= 0 || this.maxDiffuseParticles === 0) return;
     const h1 = this.fInvSpacing;
-    const d0 = this.particleRestDensity;
+    const h = this.h;
+
+    // Use a fixed search radius for wavecrest/turbulence triggers.
+    const searchRadius = 2.0 * this.particleRadius;
 
     for (let i = 0; i < this.numParticles && this.numDiffuseParticles < this.maxDiffuseParticles; i++) {
       const vx = this.particleVel[2 * i];
@@ -807,19 +933,65 @@ export class FlipFluid {
       const yi = clamp(Math.floor(y * h1), 1, this.fNumY - 2);
       const cell = xi * this.fNumY + yi;
       const nearAir = this.isNearAirCell(xi, yi);
-      const relDensity = d0 > 0 ? this.particleDensity[cell] / d0 : 1.0;
-      if (!nearAir && relDensity > 0.9) continue;
 
-      const surfacePotential = nearAir ? 1.0 : Math.max(0, 0.9 - relDensity) / 0.9;
-      const energyPotential = Math.min(1.0, (speed - this.diffuseMinSpeed) / Math.max(0.001, 5.0 - this.diffuseMinSpeed));
-      const probability = Math.min(0.95, this.diffuseEmissionRate * dt * surfacePotential * energyPotential);
+      // 1. Kinetic Energy Potential
+      const energyPotential = Math.min(1.0, (speed - this.diffuseMinSpeed) / 5.0);
+
+      // 2. Turbulence Potential
+      const turbulencePotential = Math.min(1.0, this.vorticity[cell] / 20.0);
+
+      // 3. Wavecrest Sharpness Potential
+      let avgX = 0, avgY = 0, neighborCount = 0;
+      const pxi = Math.floor(x * this.pInvSpacing);
+      const pyi = Math.floor(y * this.pInvSpacing);
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          const cxi = clamp(pxi + ox, 0, this.pNumX - 1);
+          const cyi = clamp(pyi + oy, 0, this.pNumY - 1);
+          const cellNr = cxi * this.pNumY + cyi;
+          for (let k = this.firstCellParticle[cellNr]; k < this.firstCellParticle[cellNr + 1]; k++) {
+            const id = this.cellParticleIds[k];
+            const dx = this.particlePos[2 * id] - x;
+            const dy = this.particlePos[2 * id + 1] - y;
+            if (dx * dx + dy * dy < searchRadius * searchRadius) {
+              avgX += dx;
+              avgY += dy;
+              neighborCount++;
+            }
+          }
+        }
+      }
+
+      const dx = avgX / Math.max(1, neighborCount);
+      const dy = avgY / Math.max(1, neighborCount);
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const normalX = -dx / Math.max(0.001, d);
+      const normalY = -dy / Math.max(0.001, d);
+      const sharpness = Math.min(1.0, d / this.particleRadius);
+      const dot = vx * normalX + vy * normalY;
+      const wavecrestPotential = (nearAir && dot > 0) ? sharpness : 0.0;
+
+      // Combined trigger potential
+      const combined = (
+        weightKinetic * energyPotential +
+        weightTurbulence * turbulencePotential +
+        weightWavecrest * wavecrestPotential
+      );
+
+      // Apply type-specific emission scale.
+      // If submerged, it's a bubble. If near surface, it's foam or spray.
+      // Foam is generally more likely than spray in high-vorticity surface areas.
+      let typeScale = 1.0;
+      if (!nearAir) {
+        typeScale = bubbleEmissionScale;
+      } else {
+        // Simple heuristic: if moving fast and outward, it's more likely spray.
+        typeScale = dot > 1.0 ? sprayEmissionScale : foamEmissionScale;
+      }
+
+      const probability = Math.min(0.95, this.diffuseEmissionRate * dt * combined * typeScale);
       if (Math.random() > probability) continue;
 
-      // Scatter the diffuse particle within a disk of radius particleRadius
-      // centred on the emitter.  A forward "along" component (as in the 3D
-      // reference) is intentionally omitted: in 2D it is the DOMINANT term and
-      // points into the air above surface particles, which pushes newly-spawned
-      // white particles visibly away from the fluid surface.
       const r = this.particleRadius * Math.sqrt(Math.random());
       const theta = Math.random() * 2.0 * Math.PI;
       const px = x + r * Math.cos(theta);
@@ -854,7 +1026,14 @@ export class FlipFluid {
     }
   }
 
-  private advanceDiffuseParticles(dt: number, gravityX: number, gravityY: number): void {
+  private advanceDiffuseParticles(
+    dt: number,
+    gravityX: number,
+    gravityY: number,
+    bubbleBuoyancy: number,
+    foamGravity: number,
+    sprayGravity: number
+  ): void {
     const minX = this.h;
     const maxX = (this.fNumX - 1) * this.h;
     const minY = this.h;
@@ -871,8 +1050,8 @@ export class FlipFluid {
         // Purely ballistic: gravity only, no grid coupling.
         // Life burns at 2× to keep spray short-lived (matches GridFluidSim3D
         // _sprayParticleLifetimeModifier = 2.0).
-        vx += gravityX * dt;
-        vy += gravityY * dt;
+        vx += gravityX * sprayGravity * dt;
+        vy += gravityY * sprayGravity * dt;
         this.diffuseLife[i] -= 2.0 * dt;
       } else {
         // Sample grid velocity at the particle's current position.
@@ -883,10 +1062,11 @@ export class FlipFluid {
           // Bubbles: strong drag toward local fluid velocity (drag coeff = 1.0,
           // i.e. instantly match the field each frame, like GridFluidSim3D
           // _bubbleDragCoefficient = 1.0) plus a buoyancy impulse opposite to
-          // gravity.  Buoyancy coefficient 4.0 matches the 3D reference; this
-          // makes bubbles rise clearly relative to the falling fluid.
-          const buoyancyX = -4.0 * gravityX;
-          const buoyancyY = -4.0 * gravityY;
+          // gravity.  Buoyancy coefficient bubbleBuoyancy (default 4.0) matches
+          // the 3D reference; this makes bubbles rise clearly relative to the
+          // falling fluid.
+          const buoyancyX = -bubbleBuoyancy * gravityX;
+          const buoyancyY = -bubbleBuoyancy * gravityY;
           vx = gridVel.x + buoyancyX * dt;
           vy = gridVel.y + buoyancyY * dt;
           // Bubbles live longest (modifier ≈ 1/3, matching _bubbleParticleLifetimeModifier = 0.333).
@@ -902,9 +1082,11 @@ export class FlipFluid {
           // equivalent is setting velocity to the field value, but the drag
           // factor here gives a gentler, visually smoother result in 2D.
           // Follow the MAC grid velocity (matches 3D RK2 advection intent).
-          // No gravity term — foam rides the surface flow like the 3D reference.
-          vx += (gridVel.x - vx) * 0.5;
-          vy += (gridVel.y - vy) * 0.5;
+          // We include a gravity compensation term (1-drag)*g*dt*foamGravity so
+          // that foam accelerates with the fluid even if gridVel (sampled at
+          // the surface) is slightly lagged by the 0.5 drag factor.
+          vx += (gridVel.x - vx) * 0.5 + 0.5 * gravityX * foamGravity * dt;
+          vy += (gridVel.y - vy) * 0.5 + 0.5 * gravityY * foamGravity * dt;
           this.diffuseLife[i] -= 1.0 * dt;
         }
       }
@@ -988,7 +1170,20 @@ export class FlipFluid {
     this.numDiffuseParticles = dst;
   }
 
-  private updateDiffuseParticles(dt: number, gravityX: number, gravityY: number): void {
+  private updateDiffuseParticles(
+    dt: number,
+    gravityX: number,
+    gravityY: number,
+    bubbleBuoyancy: number,
+    foamGravity: number,
+    sprayGravity: number,
+    weightTurbulence: number,
+    weightWavecrest: number,
+    weightKinetic: number,
+    bubbleEmissionScale: number,
+    foamEmissionScale: number,
+    sprayEmissionScale: number
+  ): void {
     // Advance and cull existing particles first so that newly-spawned particles
     // are NOT advanced in the same frame they are born.  If we emitted first and
     // then advanced, every new particle would immediately fly speed*dt away from
@@ -997,12 +1192,50 @@ export class FlipFluid {
     // at their spawn position until the next frame.
     if (this.numDiffuseParticles > 0) {
       this.updateDiffuseParticleTypes();
-      this.advanceDiffuseParticles(dt, gravityX, gravityY);
+      this.advanceDiffuseParticles(dt, gravityX, gravityY, bubbleBuoyancy, foamGravity, sprayGravity);
       this.updateDiffuseParticleTypes();
       this.updateDiffuseParticleColors();
       this.removeDeadDiffuseParticles();
     }
-    this.emitDiffuseParticles(dt);
+    this.emitDiffuseParticles(
+      dt,
+      weightTurbulence,
+      weightWavecrest,
+      weightKinetic,
+      bubbleEmissionScale,
+      foamEmissionScale,
+      sprayEmissionScale
+    );
+  }
+
+  // ── updateVorticity ───────────────────────────────────────────────────────
+  // Computes the magnitude of the 2D vorticity (curl of velocity) at each grid
+  // cell center.  Since velocity is staggered (MAC grid), the discrete curl is
+  // naturally defined at cell corners: ω = (v_right - v_left)/h - (u_top - u_bottom)/h.
+  // We average the four surrounding corner values to obtain a cell-centered ω.
+  updateVorticity(): void {
+    const n = this.fNumY;
+    const h1 = this.fInvSpacing;
+    this.vorticity.fill(0.0);
+
+    for (let i = 1; i < this.fNumX - 1; i++) {
+      for (let j = 1; j < this.fNumY - 1; j++) {
+        // Compute ω at the FOUR corners of cell (i,j).
+        // Corner (i,j) is at (i*h, j*h).
+        const omega = (cornerI: number, cornerJ: number) => {
+          const dv_dx = (this.v[cornerI * n + cornerJ] - this.v[(cornerI - 1) * n + cornerJ]) * h1;
+          const du_dy = (this.u[cornerI * n + cornerJ] - this.u[cornerI * n + cornerJ - 1]) * h1;
+          return Math.abs(dv_dx - du_dy);
+        };
+
+        const w00 = omega(i, j);         // bottom-left corner
+        const w10 = omega(i + 1, j);     // bottom-right
+        const w11 = omega(i + 1, j + 1); // top-right
+        const w01 = omega(i, j + 1);     // top-left
+
+        this.vorticity[i * n + j] = 0.25 * (w00 + w10 + w11 + w01);
+      }
+    }
   }
 
   // ── setSciColor ───────────────────────────────────────────────────────────
@@ -1079,7 +1312,17 @@ export class FlipFluid {
     maxDiffuseParticles = this.maxDiffuseParticles,
     diffuseEmissionRate = this.diffuseEmissionRate,
     diffuseMinSpeed = this.diffuseMinSpeed,
-    diffuseLifetime = this.diffuseLifetime
+    diffuseLifetime = this.diffuseLifetime,
+    bubbleBuoyancy = 4.0,
+    foamGravity = 1.0,
+    sprayGravity = 1.0,
+    weightTurbulence = 0.5,
+    weightWavecrest = 0.8,
+    weightKinetic = 0.3,
+    bubbleEmissionScale = 0.5,
+    foamEmissionScale = 1.0,
+    sprayEmissionScale = 1.0,
+    diffuseRepulsionStrength = 0.1
   ): void {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
@@ -1099,7 +1342,24 @@ export class FlipFluid {
       this.updateParticleDensity();
       this.solveIncompressibility(numPressureIters, sdt, overRelaxation, compensateDrift);
       this.transferVelocities(false, picRatio);
-      this.updateDiffuseParticles(sdt, gravityX, gravityY);
+      this.updateVorticity();
+      this.updateDiffuseParticles(
+        sdt,
+        gravityX,
+        gravityY,
+        bubbleBuoyancy,
+        foamGravity,
+        sprayGravity,
+        weightTurbulence,
+        weightWavecrest,
+        weightKinetic,
+        bubbleEmissionScale,
+        foamEmissionScale,
+        sprayEmissionScale
+      );
+      if (diffuseRepulsionStrength > 0) {
+        this.pushDiffuseParticlesApart(1, diffuseRepulsionStrength);
+      }
     }
 
     this.updateParticleColors();
@@ -1169,6 +1429,7 @@ export class FlipFluid {
     this.s             = new Float32Array(this.fNumCells);
     this.cellType      = new Int32Array(this.fNumCells);
     this.cellColor     = new Float32Array(3 * this.fNumCells);
+    this.vorticity     = new Float32Array(this.fNumCells);
     this.particleDensity = new Float32Array(this.fNumCells);
 
     // Rebuild solid boundaries: left, right, and bottom walls; top is open.

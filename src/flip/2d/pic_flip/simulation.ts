@@ -124,12 +124,25 @@ export class PicFlipSimulation {
       this.params.maxDiffuseParticles,
       this.params.diffuseEmissionRate,
       this.params.diffuseMinSpeed,
-      this.params.diffuseLifetime
+      this.params.diffuseLifetime,
+      this.params.bubbleBuoyancy,
+      this.params.foamGravity,
+      this.params.sprayGravity,
+      this.params.weightTurbulence,
+      this.params.weightWavecrest,
+      this.params.weightKinetic,
+      this.params.bubbleEmissionScale,
+      this.params.foamEmissionScale,
+      this.params.sprayEmissionScale,
+      this.params.diffuseRepulsionStrength
     );
 
     this.renderer.render(this.fluid, {
       showParticles: this.params.showParticles,
       showDiffuseParticles: this.params.showDiffuseParticles,
+      showSpray: this.params.showSpray,
+      showFoam: this.params.showFoam,
+      showBubble: this.params.showBubble,
       showGrid: this.params.showGrid,
       simWidth: this.simWidth,
       simHeight: this.simHeight,
