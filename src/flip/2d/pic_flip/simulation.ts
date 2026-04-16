@@ -133,7 +133,8 @@ export class PicFlipSimulation {
       this.params.weightKinetic,
       this.params.bubbleEmissionScale,
       this.params.foamEmissionScale,
-      this.params.sprayEmissionScale
+      this.params.sprayEmissionScale,
+      this.params.diffuseRepulsionStrength
     );
 
     this.renderer.render(this.fluid, {

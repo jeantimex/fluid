@@ -110,6 +110,13 @@ export class FlipFluid {
   diffuseMinSpeed: number;
   diffuseLifetime: number;
 
+  // ── Diffuse spatial hash ─────────────────────────────────────────────────
+  // Used for diffuse-diffuse repulsion to prevent bubbles/foam from clumping.
+  // We use the same h spacing as the liquid spatial hash for simplicity.
+  numCellDiffuse: Int32Array;
+  firstCellDiffuse: Int32Array;
+  cellDiffuseIds: Int32Array;
+
   // ── Particle spatial hash ────────────────────────────────────────────────
   // A uniform grid hash used to accelerate the nearest-neighbour search in
   // pushParticlesApart.  Its cell size is set to 2.2 × particleRadius so each
@@ -205,6 +212,11 @@ export class FlipFluid {
 
     this.maxDiffuseParticles = 12000;
     this.numDiffuseParticles = 0;
+
+    this.numCellDiffuse = new Int32Array(this.pNumCells);
+    this.firstCellDiffuse = new Int32Array(this.pNumCells + 1);
+    this.cellDiffuseIds = new Int32Array(this.maxDiffuseParticles);
+
     this.diffusePos = new Float32Array(2 * this.maxDiffuseParticles);
     this.diffuseVel = new Float32Array(2 * this.maxDiffuseParticles);
     this.diffuseLife = new Float32Array(this.maxDiffuseParticles);
@@ -342,6 +354,83 @@ export class FlipFluid {
               this.particlePos[2 * i + 1] -= deltaY;
               this.particlePos[2 * id]    += deltaX;
               this.particlePos[2 * id + 1]+= deltaY;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── pushDiffuseParticlesApart ─────────────────────────────────────────────
+  // Separation pass for diffuse particles (whitewater) to prevent clumping.
+  // This helps bubbles and foam spread out more naturally on the surface.
+  // Unlike liquid particles, this is a "soft" repulsion: we only push by
+  // a fraction of the penetration depth controlled by `strength`.
+  pushDiffuseParticlesApart(numIters: number, strength: number): void {
+    if (this.numDiffuseParticles === 0 || strength <= 0) return;
+
+    // ── Build diffuse spatial hash ──────────────────────────────────────────
+    this.numCellDiffuse.fill(0);
+    for (let i = 0; i < this.numDiffuseParticles; i++) {
+      const xi = clamp(Math.floor(this.diffusePos[2 * i] * this.pInvSpacing), 0, this.pNumX - 1);
+      const yi = clamp(Math.floor(this.diffusePos[2 * i + 1] * this.pInvSpacing), 0, this.pNumY - 1);
+      this.numCellDiffuse[xi * this.pNumY + yi]++;
+    }
+
+    let first = 0;
+    for (let i = 0; i < this.pNumCells; i++) {
+      first += this.numCellDiffuse[i];
+      this.firstCellDiffuse[i] = first;
+    }
+    this.firstCellDiffuse[this.pNumCells] = first;
+
+    for (let i = 0; i < this.numDiffuseParticles; i++) {
+      const xi = clamp(Math.floor(this.diffusePos[2 * i] * this.pInvSpacing), 0, this.pNumX - 1);
+      const yi = clamp(Math.floor(this.diffusePos[2 * i + 1] * this.pInvSpacing), 0, this.pNumY - 1);
+      const cellNr = xi * this.pNumY + yi;
+      this.firstCellDiffuse[cellNr]--;
+      this.cellDiffuseIds[this.firstCellDiffuse[cellNr]] = i;
+    }
+
+    // ── Separation iterations ─────────────────────────────────────────────
+    const minDist = 1.0 * this.particleRadius; // slightly tighter than liquid
+    const minDist2 = minDist * minDist;
+
+    for (let iter = 0; iter < numIters; iter++) {
+      for (let i = 0; i < this.numDiffuseParticles; i++) {
+        const px = this.diffusePos[2 * i];
+        const py = this.diffusePos[2 * i + 1];
+        const pxi = Math.floor(px * this.pInvSpacing);
+        const pyi = Math.floor(py * this.pInvSpacing);
+
+        const x0 = Math.max(pxi - 1, 0);
+        const y0 = Math.max(pyi - 1, 0);
+        const x1 = Math.min(pxi + 1, this.pNumX - 1);
+        const y1 = Math.min(pyi + 1, this.pNumY - 1);
+
+        for (let xi = x0; xi <= x1; xi++) {
+          for (let yi = y0; yi <= y1; yi++) {
+            const cellNr = xi * this.pNumY + yi;
+            for (let j = this.firstCellDiffuse[cellNr]; j < this.firstCellDiffuse[cellNr + 1]; j++) {
+              const id = this.cellDiffuseIds[j];
+              if (id === i) continue;
+
+              const dx = this.diffusePos[2 * id] - px;
+              const dy = this.diffusePos[2 * id + 1] - py;
+              const d2 = dx * dx + dy * dy;
+
+              if (d2 > minDist2 || d2 === 0.0) continue;
+
+              const d = Math.sqrt(d2);
+              // "Soft" push: only move by a fraction of the penetration depth.
+              const s = (0.5 * strength * (minDist - d)) / d;
+              const deltaX = dx * s;
+              const deltaY = dy * s;
+
+              this.diffusePos[2 * i]      -= deltaX;
+              this.diffusePos[2 * i + 1]  -= deltaY;
+              this.diffusePos[2 * id]     += deltaX;
+              this.diffusePos[2 * id + 1] += deltaY;
             }
           }
         }
@@ -730,6 +819,7 @@ export class FlipFluid {
     this.diffuseLife = nextLife;
     this.diffuseType = nextType;
     this.diffuseColor = nextColor;
+    this.cellDiffuseIds = new Int32Array(this.maxDiffuseParticles);
   }
 
   private isNearAirCell(xi: number, yi: number): boolean {
@@ -1231,7 +1321,8 @@ export class FlipFluid {
     weightKinetic = 0.3,
     bubbleEmissionScale = 0.5,
     foamEmissionScale = 1.0,
-    sprayEmissionScale = 1.0
+    sprayEmissionScale = 1.0,
+    diffuseRepulsionStrength = 0.1
   ): void {
     const numSubSteps = 1;
     const sdt = dt / numSubSteps;
@@ -1266,6 +1357,9 @@ export class FlipFluid {
         foamEmissionScale,
         sprayEmissionScale
       );
+      if (diffuseRepulsionStrength > 0) {
+        this.pushDiffuseParticlesApart(1, diffuseRepulsionStrength);
+      }
     }
 
     this.updateParticleColors();

@@ -29,6 +29,7 @@ const DEFAULT_PARAMS: SimulationParams = {
   bubbleEmissionScale: 0.5,
   foamEmissionScale: 1.0,
   sprayEmissionScale: 1.0,
+  diffuseRepulsionStrength: 0.1,
   showDiffuseParticles: true,
   showParticles: true,
   showGrid: false,
