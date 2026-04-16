@@ -24,6 +24,8 @@ https://github.com/user-attachments/assets/6559bca9-59b1-4ca3-9723-de5a8d6c1b95
   - [Live Demo](https://jeantimex.github.io/fluid/webgpu2d.html)
 - **2D PIC/FLIP**: A particle-grid fluid solver with a tunable PIC/FLIP blend, pressure projection on a staggered MAC grid, and tilt-driven gravity controls.
   - [Live Demo](https://jeantimex.github.io/fluid/src/flip/2d/pic_flip/)
+- **Hybrid FLIP**: An advanced Bridson-style 2D solver consistent with `GridFluidSim3D`. It features RK2 (Midpoint) advection, iterative velocity extrapolation into air cells, and a triple-threat whitewater system (Spray, Foam, Bubble).
+  - [Live Demo](https://jeantimex.github.io/fluid/src/flip/2d/hybrid_flip/)
 
 ### 3D Simulations
 
