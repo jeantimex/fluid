@@ -39,9 +39,7 @@ export function createAppShell(root: HTMLElement): AppElements {
 }
 
 export function renderAppState(elements: AppElements, state: AppState): void {
-  const { overlay, title, message, actionButton, hint } = elements;
-
-  hint.hidden = state !== 'ready';
+  const { overlay, title, message, actionButton } = elements;
 
   switch (state) {
     case 'loading':

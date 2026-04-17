@@ -73,6 +73,7 @@ let paletteIndex = 0;
 let targetPalette = clonePalette(FLUID_PALETTES[0]);
 let currentPalette = clonePalette(FLUID_PALETTES[0]);
 let destroyed = false;
+let useDeviceMotion = false;
 
 const simulation = new HybridFlipSimulation(
   elements.canvas,
@@ -81,24 +82,42 @@ const simulation = new HybridFlipSimulation(
   DEFAULT_PARAMS
 );
 
+function updateHintVisibility(): void {
+  elements.hint.hidden = !(useDeviceMotion && motion.hasMotionSupport());
+}
+
 const motion = new MotionController({
   onGravityChange(nextGravity) {
-    simulation.setGravity(nextGravity);
+    if (useDeviceMotion) {
+      simulation.setGravity(nextGravity);
+    }
   },
   onShake() {
-    paletteIndex = (paletteIndex + 1) % FLUID_PALETTES.length;
-    targetPalette = clonePalette(FLUID_PALETTES[paletteIndex]);
+    if (useDeviceMotion) {
+      paletteIndex = (paletteIndex + 1) % FLUID_PALETTES.length;
+      targetPalette = clonePalette(FLUID_PALETTES[paletteIndex]);
+    }
   },
   onStateChange(nextState) {
     appState = nextState;
     renderAppState(elements, appState);
+    updateHintVisibility();
   },
 });
 
 const gui = setupGui(DEFAULT_PARAMS, currentPalette, gravityMagnitude, {
+  onUseDeviceMotionChange(enabled) {
+    useDeviceMotion = enabled;
+    if (enabled && motion.hasMotionSupport()) {
+      motion.setGravityMagnitude(gravityMagnitude);
+    } else {
+      simulation.setGravity({ x: 0, y: -gravityMagnitude });
+    }
+    updateHintVisibility();
+  },
   onGravityChange(magnitude) {
     gravityMagnitude = magnitude;
-    if (motion.hasMotionSupport()) {
+    if (useDeviceMotion && motion.hasMotionSupport()) {
       motion.setGravityMagnitude(magnitude);
     } else {
       simulation.setGravity({ x: 0, y: -magnitude });

@@ -2,6 +2,7 @@ import GUI from 'lil-gui';
 import type { FluidPalette, SimulationParams } from './types';
 
 export interface HybridFlipGuiState {
+  useDeviceMotion: boolean;
   gravity: number;
   fluidColor: string;
   foamColor: string;
@@ -39,6 +40,7 @@ export interface HybridFlipGuiState {
 }
 
 export interface HybridFlipGuiCallbacks {
+  onUseDeviceMotionChange: (enabled: boolean) => void;
   onGravityChange: (magnitude: number) => void;
   onPaletteChange: (palette: FluidPalette) => void;
   onReset: () => void;
@@ -83,6 +85,7 @@ export function setupGui(
   callbacks: HybridFlipGuiCallbacks
 ): HybridFlipGuiHandle {
   const state: HybridFlipGuiState = {
+    useDeviceMotion: false,
     gravity: initialGravityMagnitude,
     fluidColor: rgbToHex(palette.fluidColor),
     foamColor: rgbToHex(palette.foamColor),
@@ -184,6 +187,12 @@ export function setupGui(
     .name('Gravity')
     .onChange((value: number) => {
       callbacks.onGravityChange(value);
+    });
+  fluidFolder
+    .add(state, 'useDeviceMotion')
+    .name('Use Device Tilt')
+    .onChange((enabled: boolean) => {
+      callbacks.onUseDeviceMotionChange(enabled);
     });
   fluidFolder
     .add(state, 'resolution', 20, 140, 1)
