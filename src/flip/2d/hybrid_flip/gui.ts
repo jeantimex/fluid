@@ -1,10 +1,8 @@
 import GUI from 'lil-gui';
-import type { FluidPalette, SimulationParams, Vec2 } from './types';
+import type { FluidPalette, SimulationParams } from './types';
 
 export interface HybridFlipGuiState {
-  useDeviceMotion: boolean;
-  gravityX: number;
-  gravityY: number;
+  gravity: number;
   fluidColor: string;
   foamColor: string;
   sprayColor: string;
@@ -26,8 +24,6 @@ export interface HybridFlipGuiState {
   diffuseMinSpeed: number;
   diffuseLifetime: number;
   bubbleBuoyancy: number;
-  foamGravity: number;
-  sprayGravity: number;
   weightTurbulence: number;
   weightWavecrest: number;
   weightKinetic: number;
@@ -43,8 +39,7 @@ export interface HybridFlipGuiState {
 }
 
 export interface HybridFlipGuiCallbacks {
-  onUseDeviceMotionChange: (enabled: boolean) => void;
-  onGravityChange: (gravity: Vec2) => void;
+  onGravityChange: (magnitude: number) => void;
   onPaletteChange: (palette: FluidPalette) => void;
   onReset: () => void;
 }
@@ -52,8 +47,7 @@ export interface HybridFlipGuiCallbacks {
 export interface HybridFlipGuiHandle {
   gui: GUI;
   destroy: () => void;
-  syncGravity: (gravity: Vec2) => void;
-  syncUseDeviceMotion: (enabled: boolean) => void;
+  syncGravity: (magnitude: number) => void;
 }
 
 function rgbToHex({ r, g, b }: { r: number; g: number; b: number }): string {
@@ -85,13 +79,11 @@ function hexToRgb(hex: string) {
 export function setupGui(
   params: SimulationParams,
   palette: FluidPalette,
-  initialGravity: Vec2,
+  initialGravityMagnitude: number,
   callbacks: HybridFlipGuiCallbacks
 ): HybridFlipGuiHandle {
   const state: HybridFlipGuiState = {
-    useDeviceMotion: true,
-    gravityX: initialGravity.x,
-    gravityY: initialGravity.y,
+    gravity: initialGravityMagnitude,
     fluidColor: rgbToHex(palette.fluidColor),
     foamColor: rgbToHex(palette.foamColor),
     sprayColor: rgbToHex(palette.sprayColor),
@@ -113,8 +105,6 @@ export function setupGui(
     diffuseMinSpeed: params.diffuseMinSpeed,
     diffuseLifetime: params.diffuseLifetime,
     bubbleBuoyancy: params.bubbleBuoyancy,
-    foamGravity: params.foamGravity,
-    sprayGravity: params.sprayGravity,
     weightTurbulence: params.weightTurbulence,
     weightWavecrest: params.weightWavecrest,
     weightKinetic: params.weightKinetic,
@@ -132,34 +122,7 @@ export function setupGui(
   const gui = new GUI({ title: 'Hybrid FLIP Controls' });
   gui.close();
 
-  const gravityFolder = gui.addFolder('Gravity');
-  const gravityControllers = {
-    x: gravityFolder.add(state, 'gravityX', -9.81, 9.81, 0.01).name('X'),
-    y: gravityFolder.add(state, 'gravityY', -9.81, 9.81, 0.01).name('Y'),
-  };
-
-  gui
-    .add(state, 'useDeviceMotion')
-    .name('Use Device Motion')
-    .onChange((enabled: boolean) => {
-      callbacks.onUseDeviceMotionChange(enabled);
-      if (!enabled) {
-        callbacks.onGravityChange({ x: state.gravityX, y: state.gravityY });
-      }
-    });
-
-  gravityControllers.x.onChange((value: number) => {
-    if (!state.useDeviceMotion) {
-      callbacks.onGravityChange({ x: value, y: state.gravityY });
-    }
-  });
-  gravityControllers.y.onChange((value: number) => {
-    if (!state.useDeviceMotion) {
-      callbacks.onGravityChange({ x: state.gravityX, y: value });
-    }
-  });
-
-  const simulationFolder = gui.addFolder('Simulation');
+  const simulationFolder = gui.addFolder('Simulation').close();
   simulationFolder
     .add(state, 'dt', 1 / 240, 1 / 30, 1 / 240)
     .name('Delta Time')
@@ -215,7 +178,13 @@ export function setupGui(
       params.showGrid = value;
     });
 
-  const fluidFolder = gui.addFolder('Fluid');
+  const fluidFolder = gui.addFolder('Fluid').close();
+  const gravityController = fluidFolder
+    .add(state, 'gravity', -20, 20, 0.1)
+    .name('Gravity')
+    .onChange((value: number) => {
+      callbacks.onGravityChange(value);
+    });
   fluidFolder
     .add(state, 'resolution', 20, 140, 1)
     .name('Resolution')
@@ -245,7 +214,7 @@ export function setupGui(
       callbacks.onReset();
     });
 
-  const whitewaterFolder = gui.addFolder('Whitewater');
+  const whitewaterFolder = gui.addFolder('Whitewater').close();
   whitewaterFolder
     .add(state, 'maxDiffuseParticles', 0, 50000, 500)
     .name('Max Particles')
@@ -275,18 +244,6 @@ export function setupGui(
     .name('Bubble Buoyancy')
     .onChange((value: number) => {
       params.bubbleBuoyancy = value;
-    });
-  whitewaterFolder
-    .add(state, 'foamGravity', 0, 2, 0.01)
-    .name('Foam Gravity')
-    .onChange((value: number) => {
-      params.foamGravity = value;
-    });
-  whitewaterFolder
-    .add(state, 'sprayGravity', 0, 2, 0.01)
-    .name('Spray Gravity')
-    .onChange((value: number) => {
-      params.sprayGravity = value;
     });
   whitewaterFolder
     .add(state, 'weightTurbulence', 0, 5, 0.05)
@@ -349,7 +306,7 @@ export function setupGui(
       params.showBubble = value;
     });
 
-  const colorFolder = gui.addFolder('Color');
+  const colorFolder = gui.addFolder('Color').close();
   const emitPaletteChange = () => {
     palette.fluidColor  = hexToRgb(state.fluidColor);
     palette.foamColor   = hexToRgb(state.foamColor);
@@ -380,19 +337,9 @@ export function setupGui(
   return {
     gui,
     destroy: () => gui.destroy(),
-    syncGravity: (gravity) => {
-      state.gravityX = gravity.x;
-      state.gravityY = gravity.y;
-      gravityControllers.x.updateDisplay();
-      gravityControllers.y.updateDisplay();
-    },
-    syncUseDeviceMotion: (enabled) => {
-      state.useDeviceMotion = enabled;
-      gui.controllersRecursive().forEach((controller) => {
-        if (controller.property === 'useDeviceMotion') {
-          controller.updateDisplay();
-        }
-      });
+    syncGravity: (magnitude) => {
+      state.gravity = magnitude;
+      gravityController.updateDisplay();
     },
   };
 }

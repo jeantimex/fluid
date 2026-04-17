@@ -126,8 +126,6 @@ export class HybridFlipSimulation {
       this.params.diffuseMinSpeed,
       this.params.diffuseLifetime,
       this.params.bubbleBuoyancy,
-      this.params.foamGravity,
-      this.params.sprayGravity,
       this.params.weightTurbulence,
       this.params.weightWavecrest,
       this.params.weightKinetic,

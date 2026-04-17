@@ -693,16 +693,16 @@ export class FlipFluid {
     }
   }
 
-  private advanceDiffuseParticles(dt: number, gX: number, gY: number, bB: number, fG: number, sG: number): void {
+  private advanceDiffuseParticles(dt: number, gX: number, gY: number, bB: number): void {
     const h = this.h; const minX = h; const maxX = (this.fNumX - 1) * h; const minY = h; const maxY = (this.fNumY - 1) * h;
     for (let i = 0; i < this.numDiffuseParticles; i++) {
       const t = this.diffuseType[i]; let x = this.diffusePos[2 * i]; let y = this.diffusePos[2 * i + 1];
       let vx = this.diffuseVel[2 * i]; let vy = this.diffuseVel[2 * i + 1];
-      if (t === DIFFUSE_SPRAY) { vx += gX * sG * dt; vy += gY * sG * dt; this.diffuseLife[i] -= 2.0 * dt; }
+      if (t === DIFFUSE_SPRAY) { vx += gX * dt; vy += gY * dt; this.diffuseLife[i] -= 2.0 * dt; }
       else {
         const gV = this.sampleVelocity(x, y);
         if (t === DIFFUSE_BUBBLE) { vx = gV.x - bB * gX * dt; vy = gV.y - bB * gY * dt; this.diffuseLife[i] -= 0.333 * dt; }
-        else { vx += (gV.x - vx) * 0.5 + 0.5 * gX * fG * dt; vy += (gV.y - vy) * 0.5 + 0.5 * gY * fG * dt; this.diffuseLife[i] -= 1.0 * dt; }
+        else { vx += (gV.x - vx) * 0.5 + 0.5 * gX * dt; vy += (gV.y - vy) * 0.5 + 0.5 * gY * dt; this.diffuseLife[i] -= 1.0 * dt; }
       }
       x += vx * dt; y += vy * dt;
       if (t === DIFFUSE_SPRAY) {
@@ -741,10 +741,10 @@ export class FlipFluid {
     this.numDiffuseParticles = dst;
   }
 
-  private updateDiffuseParticles(dt: number, gX: number, gY: number, bB: number, fG: number, sG: number, wT: number, wW: number, wK: number, bES: number, fES: number, sES: number): void {
+  private updateDiffuseParticles(dt: number, gX: number, gY: number, bB: number, wT: number, wW: number, wK: number, bES: number, fES: number, sES: number): void {
     if (this.numDiffuseParticles > 0) {
       this.updateDiffuseParticleTypes();
-      this.advanceDiffuseParticles(dt, gX, gY, bB, fG, sG);
+      this.advanceDiffuseParticles(dt, gX, gY, bB);
       this.updateDiffuseParticleTypes();
       this.updateDiffuseParticleColors();
       this.removeDeadDiffuseParticles();
@@ -788,7 +788,7 @@ export class FlipFluid {
     }
   }
 
-  simulate(dt: number, gX: number, gY: number, pR: number, pI: number, paI: number, oR: number, cD: boolean, sP: boolean, damp = 1.0, eI = 2, maxDP = this.maxDiffuseParticles, dER = this.diffuseEmissionRate, dMS = this.diffuseMinSpeed, dL = this.diffuseLifetime, bB = 4.0, fG = 1.0, sG = 1.0, wT = 0.5, wW = 0.8, wK = 0.3, bES = 0.5, fES = 1.0, sES = 1.0, dRS = 0.1): void {
+  simulate(dt: number, gX: number, gY: number, pR: number, pI: number, paI: number, oR: number, cD: boolean, sP: boolean, damp = 1.0, eI = 2, maxDP = this.maxDiffuseParticles, dER = this.diffuseEmissionRate, dMS = this.diffuseMinSpeed, dL = this.diffuseLifetime, bB = 4.0, wT = 0.5, wW = 0.8, wK = 0.3, bES = 0.5, fES = 1.0, sES = 1.0, dRS = 0.1): void {
     const numSubSteps = 1; const sdt = dt / numSubSteps;
     this.setWhitewaterSettings(true, maxDP, dER, dMS, dL);
     for (let step = 0; step < numSubSteps; step++) {
@@ -802,7 +802,7 @@ export class FlipFluid {
       if (sP) this.pushParticlesApart(paI);
       this.handleParticleCollisions();
       this.updateVorticity();
-      this.updateDiffuseParticles(sdt, gX, gY, bB, fG, sG, wT, wW, wK, bES, fES, sES);
+      this.updateDiffuseParticles(sdt, gX, gY, bB, wT, wW, wK, bES, fES, sES);
       if (dRS > 0) this.pushDiffuseParticlesApart(1, dRS);
     }
     this.updateParticleColors(); this.updateCellColors();

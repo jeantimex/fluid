@@ -4,7 +4,7 @@ import { FLUID_PALETTES } from './palette';
 import { MotionController } from './motion';
 import { HybridFlipSimulation } from './simulation';
 import { createAppShell, renderAppState } from './ui';
-import type { AppState, FluidPalette, RGB, SimulationParams, Vec2 } from './types';
+import type { AppState, FluidPalette, RGB, SimulationParams } from './types';
 
 const DEFAULT_PARAMS: SimulationParams = {
   dt: 1 / 120,
@@ -21,8 +21,6 @@ const DEFAULT_PARAMS: SimulationParams = {
   diffuseMinSpeed: 1.4,
   diffuseLifetime: 2.4,
   bubbleBuoyancy: 4.0,
-  foamGravity: 1.0,
-  sprayGravity: 1.0,
   weightTurbulence: 0.5,
   weightWavecrest: 0.8,
   weightKinetic: 0.3,
@@ -70,27 +68,22 @@ if (!root) throw new Error('Missing #app container');
 const elements = createAppShell(root);
 
 let appState: AppState = 'loading';
-let gravity: Vec2 = { x: 0, y: -9.81 };
+let gravityMagnitude = 9.81;
 let paletteIndex = 0;
 let targetPalette = clonePalette(FLUID_PALETTES[0]);
 let currentPalette = clonePalette(FLUID_PALETTES[0]);
 let destroyed = false;
-let useDeviceMotion = true;
 
 const simulation = new HybridFlipSimulation(
   elements.canvas,
-  gravity,
+  { x: 0, y: -gravityMagnitude },
   currentPalette,
   DEFAULT_PARAMS
 );
 
 const motion = new MotionController({
   onGravityChange(nextGravity) {
-    gravity = nextGravity;
-    if (useDeviceMotion) {
-      simulation.setGravity(nextGravity);
-      gui.syncGravity(nextGravity);
-    }
+    simulation.setGravity(nextGravity);
   },
   onShake() {
     paletteIndex = (paletteIndex + 1) % FLUID_PALETTES.length;
@@ -98,33 +91,18 @@ const motion = new MotionController({
   },
   onStateChange(nextState) {
     appState = nextState;
-    if (nextState === 'denied' || nextState === 'not-supported') {
-      useDeviceMotion = false;
-      gui.syncUseDeviceMotion(false);
-    }
-    if (nextState === 'ready') {
-      gui.syncUseDeviceMotion(useDeviceMotion);
-    }
     renderAppState(elements, appState);
   },
 });
 
-const gui = setupGui(DEFAULT_PARAMS, currentPalette, gravity, {
-  onUseDeviceMotionChange(enabled) {
-    useDeviceMotion = enabled;
-    if (enabled) {
-      void motion.requestPermission().then(() => {
-        const sensorGravity = motion.getGravity();
-        simulation.setGravity(sensorGravity);
-        gui.syncGravity(sensorGravity);
-      });
+const gui = setupGui(DEFAULT_PARAMS, currentPalette, gravityMagnitude, {
+  onGravityChange(magnitude) {
+    gravityMagnitude = magnitude;
+    if (motion.hasMotionSupport()) {
+      motion.setGravityMagnitude(magnitude);
     } else {
-      simulation.setGravity(gravity);
+      simulation.setGravity({ x: 0, y: -magnitude });
     }
-  },
-  onGravityChange(nextGravity) {
-    gravity = nextGravity;
-    simulation.setGravity(nextGravity);
   },
   onPaletteChange(nextPalette) {
     currentPalette = clonePalette(nextPalette);

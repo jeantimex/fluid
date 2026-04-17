@@ -38,8 +38,6 @@ export interface SimulationParams {
   diffuseMinSpeed: number;
   diffuseLifetime: number;
   bubbleBuoyancy: number;
-  foamGravity: number;
-  sprayGravity: number;
   weightTurbulence: number;
   weightWavecrest: number;
   weightKinetic: number;
