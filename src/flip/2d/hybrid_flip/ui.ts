@@ -2,11 +2,8 @@ import type { AppState } from './types';
 
 export interface AppElements {
   canvas: HTMLCanvasElement;
-  overlay: HTMLDivElement;
-  title: HTMLHeadingElement;
-  message: HTMLParagraphElement;
-  actionButton: HTMLButtonElement;
   hint: HTMLDivElement;
+  mobilePrompt: HTMLDivElement;
 }
 
 export function createAppShell(root: HTMLElement): AppElements {
@@ -17,56 +14,19 @@ export function createAppShell(root: HTMLElement): AppElements {
         <p>Tilt your device to control the fluid.</p>
         <p>Shake to cycle palettes.</p>
       </div>
-      <div class="pure-flip-overlay">
-        <div class="pure-flip-panel">
-          <div class="pure-flip-kicker">2D PIC/FLIP</div>
-          <h1 class="pure-flip-title"></h1>
-          <p class="pure-flip-message"></p>
-          <button class="pure-flip-button" type="button"></button>
-        </div>
+      <div class="pure-flip-mobile-prompt" hidden>
+        <p>Tap here to enable device tilt</p>
       </div>
     </div>
   `;
 
   return {
     canvas: root.querySelector('.pure-flip-canvas') as HTMLCanvasElement,
-    overlay: root.querySelector('.pure-flip-overlay') as HTMLDivElement,
-    title: root.querySelector('.pure-flip-title') as HTMLHeadingElement,
-    message: root.querySelector('.pure-flip-message') as HTMLParagraphElement,
-    actionButton: root.querySelector('.pure-flip-button') as HTMLButtonElement,
     hint: root.querySelector('.pure-flip-hint') as HTMLDivElement,
+    mobilePrompt: root.querySelector('.pure-flip-mobile-prompt') as HTMLDivElement,
   };
 }
 
-export function renderAppState(elements: AppElements, state: AppState): void {
-  const { overlay, title, message, actionButton } = elements;
-
-  switch (state) {
-    case 'loading':
-      overlay.hidden = false;
-      title.textContent = 'Initializing';
-      message.textContent = 'Preparing the fluid simulation.';
-      actionButton.hidden = true;
-      break;
-    case 'needs-permission':
-      overlay.hidden = false;
-      title.textContent = 'Motion Sensors Required';
-      message.textContent =
-        "This port keeps the original tilt-driven interaction. Grant motion access to let device orientation drive the solver.";
-      actionButton.hidden = false;
-      actionButton.textContent = 'Enable Motion Sensors';
-      break;
-    case 'denied':
-      overlay.hidden = true;
-      actionButton.hidden = true;
-      break;
-    case 'not-supported':
-      overlay.hidden = true;
-      actionButton.hidden = true;
-      break;
-    case 'ready':
-      overlay.hidden = true;
-      actionButton.hidden = true;
-      break;
-  }
+export function renderAppState(_elements: AppElements, _state: AppState): void {
+  // No overlay to manage
 }

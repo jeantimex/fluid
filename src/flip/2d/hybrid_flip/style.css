@@ -160,6 +160,31 @@ body {
   }
 }
 
+.pure-flip-mobile-prompt {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  padding: 14px 24px;
+  border-radius: 999px;
+  color: white;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  box-shadow: 0 8px 24px rgba(29, 134, 255, 0.4);
+  cursor: pointer;
+  text-align: center;
+  font-weight: 600;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.pure-flip-mobile-prompt:active {
+  transform: translateX(-50%) scale(0.96);
+}
+
+.pure-flip-mobile-prompt p {
+  margin: 0;
+}
+
 @media (max-width: 640px) {
   .pure-flip-panel {
     padding: 24px 20px 20px;

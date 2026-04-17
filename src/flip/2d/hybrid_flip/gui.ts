@@ -50,6 +50,7 @@ export interface HybridFlipGuiHandle {
   gui: GUI;
   destroy: () => void;
   syncGravity: (magnitude: number) => void;
+  syncUseDeviceMotion: (enabled: boolean) => void;
 }
 
 function rgbToHex({ r, g, b }: { r: number; g: number; b: number }): string {
@@ -82,10 +83,11 @@ export function setupGui(
   params: SimulationParams,
   palette: FluidPalette,
   initialGravityMagnitude: number,
+  initialUseDeviceMotion: boolean,
   callbacks: HybridFlipGuiCallbacks
 ): HybridFlipGuiHandle {
   const state: HybridFlipGuiState = {
-    useDeviceMotion: false,
+    useDeviceMotion: initialUseDeviceMotion,
     gravity: initialGravityMagnitude,
     fluidColor: rgbToHex(palette.fluidColor),
     foamColor: rgbToHex(palette.foamColor),
@@ -188,7 +190,7 @@ export function setupGui(
     .onChange((value: number) => {
       callbacks.onGravityChange(value);
     });
-  fluidFolder
+  const useDeviceMotionController = fluidFolder
     .add(state, 'useDeviceMotion')
     .name('Use Device Tilt')
     .onChange((enabled: boolean) => {
@@ -349,6 +351,10 @@ export function setupGui(
     syncGravity: (magnitude) => {
       state.gravity = magnitude;
       gravityController.updateDisplay();
+    },
+    syncUseDeviceMotion: (enabled) => {
+      state.useDeviceMotion = enabled;
+      useDeviceMotionController.updateDisplay();
     },
   };
 }

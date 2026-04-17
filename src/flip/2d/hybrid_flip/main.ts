@@ -7,7 +7,7 @@ import { createAppShell, renderAppState } from './ui';
 import type { AppState, FluidPalette, RGB, SimulationParams } from './types';
 
 const DEFAULT_PARAMS: SimulationParams = {
-  dt: 1 / 120,
+  dt: 0.016,
   picRatio: 0.05,
   numPressureIters: 60,
   numParticleIters: 3,
@@ -36,7 +36,7 @@ const DEFAULT_PARAMS: SimulationParams = {
   resolution: 70,
   relWaterWidth: 0.6,
   relWaterHeight: 0.8,
-  numParticles: 5000,
+  numParticles: 2000,
 };
 
 const COLOR_LERP_SPEED = 4;
@@ -67,6 +67,11 @@ if (!root) throw new Error('Missing #app container');
 
 const elements = createAppShell(root);
 
+function isMobileDevice(): boolean {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    ('ontouchstart' in window && navigator.maxTouchPoints > 0);
+}
+
 let appState: AppState = 'loading';
 let gravityMagnitude = 9.81;
 let paletteIndex = 0;
@@ -93,7 +98,8 @@ const motion = new MotionController({
     }
   },
   onShake() {
-    if (useDeviceMotion) {
+    // Disable shake-to-change-color on mobile devices
+    if (useDeviceMotion && !isMobileDevice()) {
       paletteIndex = (paletteIndex + 1) % FLUID_PALETTES.length;
       targetPalette = clonePalette(FLUID_PALETTES[paletteIndex]);
     }
@@ -105,15 +111,21 @@ const motion = new MotionController({
   },
 });
 
-const gui = setupGui(DEFAULT_PARAMS, currentPalette, gravityMagnitude, {
+const gui = setupGui(DEFAULT_PARAMS, currentPalette, gravityMagnitude, useDeviceMotion, {
   onUseDeviceMotionChange(enabled) {
     useDeviceMotion = enabled;
-    if (enabled && motion.hasMotionSupport()) {
-      motion.setGravityMagnitude(gravityMagnitude);
+    if (enabled) {
+      // Request permission (needed for iOS) and set up motion
+      void motion.requestPermission().then(() => {
+        if (motion.hasMotionSupport()) {
+          motion.setGravityMagnitude(gravityMagnitude);
+        }
+        updateHintVisibility();
+      });
     } else {
       simulation.setGravity({ x: 0, y: -gravityMagnitude });
+      updateHintVisibility();
     }
-    updateHintVisibility();
   },
   onGravityChange(magnitude) {
     gravityMagnitude = magnitude;
@@ -131,10 +143,6 @@ const gui = setupGui(DEFAULT_PARAMS, currentPalette, gravityMagnitude, {
   onReset() {
     simulation.reset();
   },
-});
-
-elements.actionButton.addEventListener('click', () => {
-  void motion.requestPermission();
 });
 
 function animatePaletteTransition(previousTime = performance.now()): void {
@@ -169,5 +177,29 @@ window.addEventListener('beforeunload', () => {
 
 renderAppState(elements, appState);
 simulation.start();
-void motion.initialize();
+void motion.initialize().then(() => {
+  if (useDeviceMotion && motion.hasMotionSupport()) {
+    motion.setGravityMagnitude(gravityMagnitude);
+  }
+  updateHintVisibility();
+
+  // Show mobile prompt on mobile devices
+  if (isMobileDevice()) {
+    elements.mobilePrompt.hidden = false;
+  }
+});
 animatePaletteTransition();
+
+// Handle mobile prompt tap
+elements.mobilePrompt.addEventListener('click', () => {
+  elements.mobilePrompt.hidden = true;
+  useDeviceMotion = true;
+  gui.syncUseDeviceMotion(true);
+
+  void motion.requestPermission().then(() => {
+    if (motion.hasMotionSupport()) {
+      motion.setGravityMagnitude(gravityMagnitude);
+    }
+    updateHintVisibility();
+  });
+});
